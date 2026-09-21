@@ -1,0 +1,733 @@
+/* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
+(() => {
+  'use strict';
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const flag = (iso2) => (iso2 && /^[A-Za-z]{2}$/.test(iso2)) ? String.fromCodePoint(...[...iso2.toUpperCase()].map((c) => 0x1F1E6 + c.charCodeAt(0) - 65)) : '';
+  const ago = (iso) => {
+    if (!iso) return '';
+    const d = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (!isFinite(d)) return '';
+    if (d < 0) return 'now';
+    if (d < 60) return `${Math.floor(d)}s`;
+    if (d < 3600) return `${Math.floor(d / 60)}m`;
+    if (d < 86400) return `${Math.floor(d / 3600)}h`;
+    return `${Math.floor(d / 86400)}d`;
+  };
+  const fmtZ = (iso) => iso ? iso.replace('T', ' ').replace(/:\d\dZ$/, 'Z') : '';
+  async function api(path, opts) {
+    const r = await fetch(path, opts);
+    if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
+    return r.json();
+  }
+  const COLOURS = { cyber: '#3cc7ff', em: '#f3b23e', infra: '#2bb9a8', osint: '#b48cff' };
+  const state = { dom: 'all', q: '', hiOnly: false, hours: 48, country: null, status: null, briefId: null, layerCounts: {} };
+
+  // ---------------------------------------------------------------- map + basemaps
+  const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true })
+    .setView([38, 18], 3);
+  map.setMaxBounds([[-85, -200], [85, 200]]);
+  L.control.zoom({ position: 'topright' }).addTo(map);
+  const BASEMAPS = {
+    esri_dark: { label: 'Esri dark grey', make: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri, HERE, Garmin, OSM contributors', maxNativeZoom: 16, noWrap: true }) },
+    esri_imagery: { label: 'Esri imagery', make: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics', maxNativeZoom: 17, noWrap: true }) },
+    osm: { label: 'OpenStreetMap', make: () => L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors', maxNativeZoom: 19, noWrap: true }) },
+    carto_dark: { label: 'CARTO dark (may need key)', make: () => L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxNativeZoom: 19, noWrap: true }) },
+  };
+  let baseLayer = null;
+  function setBasemap(key) {
+    if (!BASEMAPS[key]) key = 'esri_dark';
+    if (baseLayer) map.removeLayer(baseLayer);
+    baseLayer = BASEMAPS[key].make().addTo(map);
+    baseLayer.bringToBack();
+    try { localStorage.setItem('cyem.basemap', key); } catch {}
+    $$('#layers input[name=basemap]').forEach((r) => { r.checked = r.value === key; });
+  }
+
+  // ---------------------------------------------------------------- overlay layers (grouped)
+  const layerCtl = $('#layers');
+  const GROUPS = [
+    { id: 'basemap', label: 'Basemap' },
+    { id: 'iono', label: 'HF / ionosphere' },
+    { id: 'em', label: 'EM / spectrum' },
+    { id: 'cyber', label: 'Cyber' },
+    { id: 'infra', label: 'Infrastructure' },
+    { id: 'osint', label: 'OSINT / reference' },
+  ];
+  const G = (glyph, col, size = 13) => `<span class="lg" style="color:${col};font-size:${size}px">${glyph}</span>`;
+  const DOT = (col, r = 8, extra = '') => `<span class="lgdot" style="background:${col};width:${r}px;height:${r}px;${extra}"></span>`;
+  const LAYERS = [
+    { id: 'terminator', group: 'iono', label: 'Day / night + grey line', colour: '#f3b23e', on: true, load: loadTerminator, every: 1,
+      legend: `${DOT('rgba(0,0,0,.6)', 10, 'border:1px solid #445')} night ${DOT('#f3b23e', 10, 'opacity:.35')} grey line` },
+    { id: 'hfmap', group: 'iono', label: 'MUF contours + ionosondes', colour: '#9ad7ff', on: true, load: loadHfmap, every: 15,
+      legend: `<span class="lgline" style="background:#e04040"></span>7 <span class="lgline" style="background:#f0c030"></span>14 <span class="lgline" style="background:#40c060"></span>21 <span class="lgline" style="background:#3c8cff"></span>28 MHz · ${DOT('#9ad7ff', 7)} ionosonde` },
+    { id: 'drap', group: 'iono', label: 'HF absorption (D-RAP)', colour: '#ff8c42', on: true, load: loadDrap, every: 15,
+      legend: `${DOT('rgba(255,220,60,.6)', 9)} &lt;5 ${DOT('rgba(255,140,66,.7)', 9)} 5–15 ${DOT('rgba(255,60,60,.8)', 9)} 15–25 ${DOT('rgba(255,80,220,.85)', 9)} &gt;25 MHz` },
+    { id: 'aurora', group: 'iono', label: 'Aurora oval (OVATION)', colour: '#45d38a', on: true, load: loadAurora, every: 15,
+      legend: `${DOT('rgba(69,211,138,.5)', 9)} 10% ${DOT('rgba(240,200,60,.7)', 9)} 40% ${DOT('rgba(255,70,70,.85)', 9)} 70%+` },
+    { id: 'gpsjam', group: 'em', label: 'GNSS interference', colour: '#ff5c5c', on: true, load: loadGpsjam, every: 10,
+      legend: `${G('⬢', '#ff5c5c')} high (&gt;10% aircraft) ${G('⬢', '#f3b23e')} medium (2–10%)` },
+    { id: 'milair', group: 'em', label: 'Military aircraft (live)', colour: '#f3b23e', on: true, load: loadMilair, every: 2,
+      legend: `${G('➤', '#f3b23e', 15)} ISR ${G('➤', '#ff5c5c', 15)} EW ${G('➤', '#ffd166', 15)} AEW ${G('➤', '#ff8c42', 15)} C2 ${G('➤', '#2bb9a8', 15)} MPA ${G('➤', '#3cc7ff', 11)} tanker ${G('➤', '#8593a6', 11)} other`,
+      opts: [{ id: 'milair_isr', label: 'ISR / EW / AEW / MPA only', on: true }] },
+    { id: 'sats', group: 'em', label: 'Satellites (live)', colour: '#9ad7ff', on: false, load: loadSats, every: 2,
+      legend: `${DOT('#9ad7ff', 7, 'border-radius:0')} GNSS ${DOT('#ff6fb1', 7, 'border-radius:0')} military ${DOT('#2bb9a8', 7, 'border-radius:0')} SBAS · click one for its ground track`,
+      opts: [{ id: 'sats_gnss', label: 'GNSS', on: true }, { id: 'sats_military', label: 'military', on: true }, { id: 'sats_sbas', label: 'SBAS', on: false }] },
+    { id: 'emitters', group: 'em', label: 'Strategic emitters (ref)', colour: '#ff6fb1', on: true, load: loadEmitters, every: 0,
+      legend: `${G('▲', '#ff5c5c')} EW radar ${G('▲', '#ff8c42')} ABM ${G('△', '#ffd166')} OTH ${G('◬', '#c8d3e0')} space surv ${G('▴', '#f3b23e')} air def ${G('◆', '#ff6fb1')} SIGINT ${G('●', '#3cc7ff')} SATCOM ${G('▼', '#b48cff')} VLF ${G('▽', '#b48cff')} HF ${G('✦', '#9ad7ff')} GNSS gnd ${G('✧', '#45d38a')} ionosph ${G('◉', '#2bb9a8')} deep space ${G('✕', '#ff5c5c')} EW range ${G('○', '#5d6b7d')} historic` },
+    { id: 'radars', group: 'em', label: 'Radar sites (OSM)', colour: '#c8d3e0', on: false, load: loadRadars, every: 0,
+      legend: `${DOT('#e0e6ee', 7)} military ${DOT('#3cc7ff', 7)} space ${DOT('#f3b23e', 6)} aviation ${DOT('#45d38a', 6)} weather ${DOT('#2bb9a8', 6)} maritime ${DOT('#6f7f93', 6)} other`,
+      opts: [{ id: 'radars_mil', label: 'military / space only', on: true }] },
+    { id: 'launches', group: 'em', label: 'Upcoming launches', colour: '#ffffff', on: false, load: loadLaunches, every: 60, legend: `${G('▲', '#fff')} launch pad` },
+    { id: 'ransomware', group: 'cyber', label: 'Ransomware victims 30d', colour: '#b48cff', on: true, load: loadRansomware, every: 10, legend: `${DOT('rgba(180,140,255,.35)', 12, 'border:1px solid #b48cff')} victims per country (size = count)` },
+    { id: 'c2', group: 'cyber', label: 'Botnet C2 (country)', colour: '#3cc7ff', on: true, load: loadC2, every: 10, legend: `${DOT('rgba(60,199,255,.2)', 12, 'border:1px dashed #3cc7ff')} C2 servers per country` },
+    { id: 'apt', group: 'cyber', label: 'APT groups (ref)', colour: '#ff8c42', on: false, load: loadApt, every: 0, legend: `${G('◆', '#ff8c42')} state ${G('◆', '#ffd166')} criminal` },
+    { id: 'ioda', group: 'infra', label: 'Internet outages', colour: '#ff8c42', on: true, load: loadIoda, every: 10, legend: `${DOT('rgba(255,140,66,.4)', 12, 'border:1.5px solid #ff8c42')} critical alerts ${DOT('rgba(138,90,43,.2)', 10, 'border:1px solid #8a5a2b')} warnings` },
+    { id: 'cloudflare', group: 'infra', label: 'Cloudflare outages 7d', colour: '#ffd166', on: true, load: loadCloudflare, every: 10, legend: `${DOT('rgba(255,209,102,.3)', 11, 'border:1.5px solid #ffd166')} outage annotation (needs token)` },
+    { id: 'cables', group: 'infra', label: 'Submarine cables', colour: '#2bb9a8', on: false, load: loadCables, every: 0, legend: `<span class="lgline" style="background:#2bb9a8"></span> cable system` },
+    { id: 'gdelt', group: 'osint', label: 'GDELT news 24h', colour: '#45d38a', on: true, load: loadGdelt, every: 10, legend: `${DOT('#3cc7ff', 8)} cyber ${DOT('#f3b23e', 8)} GNSS/EW ${DOT('#2bb9a8', 8)} connectivity ${DOT('#ff6fb1', 8)} satellite` },
+    { id: 'items', group: 'osint', label: 'Located news 7d', colour: '#8593a6', on: false, load: loadItemsLayer, every: 10, legend: `${DOT('#3cc7ff', 6)} cyber ${DOT('#f3b23e', 6)} EM ${DOT('#2bb9a8', 6)} infra ${DOT('#b48cff', 6)} OSINT` },
+  ];  const groups = {};
+  const saved = (() => { try { return JSON.parse(localStorage.getItem('cyem.layers') || '{}'); } catch { return {}; } })();
+  const optState = (() => { try { return JSON.parse(localStorage.getItem('cyem.layeropts') || '{}'); } catch { return {}; } })();
+  const collapsed = (() => { try { return JSON.parse(localStorage.getItem('cyem.groups') || '{}'); } catch { return {}; } })();
+  function saveLs(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+  function optOn(id) { const o = LAYERS.flatMap((l) => l.opts || []).find((x) => x.id === id); return optState[id] ?? (o ? o.on : false); }
+  function isOn(L_) { return saved[L_.id] ?? L_.on; }
+
+  function buildLayerPanel() {
+    layerCtl.innerHTML = '<h3><span>Layers</span><a href="#" id="layers-toggle">hide</a></h3>';
+    for (const g of GROUPS) {
+      const sec = document.createElement('div');
+      sec.className = 'lgroup' + (collapsed[g.id] ? ' collapsed' : '');
+      sec.dataset.group = g.id;
+      let body = '';
+      if (g.id === 'basemap') {
+        const cur = (() => { try { return localStorage.getItem('cyem.basemap') || 'esri_dark'; } catch { return 'esri_dark'; } })();
+        body = Object.entries(BASEMAPS).map(([k, b]) => `<label><input type="radio" name="basemap" value="${k}" ${k === cur ? 'checked' : ''}> ${esc(b.label)}</label>`).join('');
+      } else {
+        body = LAYERS.filter((l) => l.group === g.id).map((L_) => `
+          <label data-layer="${L_.id}"><input type="checkbox" ${isOn(L_) ? 'checked' : ''}> <span class="sw" style="background:${L_.colour}"></span> ${esc(L_.label)} <span class="n" id="n-${L_.id}"></span></label>
+          ${L_.legend ? `<div class="lgkey">${L_.legend}</div>` : ''}
+          ${(L_.opts || []).map((o) => `<label class="sub" data-opt="${o.id}"><input type="checkbox" ${optOn(o.id) ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}`).join('');
+      }
+      sec.innerHTML = `<div class="ghead"><span class="gname">${esc(g.label)}</span>${g.id !== 'basemap' ? '<a href="#" data-all="on">all</a><a href="#" data-all="off">none</a>' : ''}<a href="#" class="gtoggle">${collapsed[g.id] ? '+' : '−'}</a></div><div class="gbody">${body}</div>`;
+      layerCtl.appendChild(sec);
+    }
+    $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; });
+    $$('#layers input[name=basemap]').forEach((r) => r.addEventListener('change', () => setBasemap(r.value)));
+    $$('#layers .lgroup').forEach((sec) => {
+      const gid = sec.dataset.group;
+      sec.querySelector('.gtoggle').addEventListener('click', (e) => { e.preventDefault(); sec.classList.toggle('collapsed'); collapsed[gid] = sec.classList.contains('collapsed'); e.target.textContent = collapsed[gid] ? '+' : '−'; saveLs('cyem.groups', collapsed); });
+      sec.querySelectorAll('a[data-all]').forEach((a) => a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const on = a.dataset.all === 'on';
+        sec.querySelectorAll('label[data-layer] input').forEach((cb) => { if (cb.checked !== on) cb.click(); });
+      }));
+      sec.querySelectorAll('label[data-layer]').forEach((lab) => {
+        const L_ = LAYERS.find((l) => l.id === lab.dataset.layer);
+        lab.querySelector('input').addEventListener('change', (e) => {
+          if (e.target.checked) { groups[L_.id].addTo(map); if (!L_.loaded) L_.load().catch(console.warn); }
+          else map.removeLayer(groups[L_.id]);
+          saved[L_.id] = e.target.checked; saveLs('cyem.layers', saved);
+        });
+      });
+      sec.querySelectorAll('label[data-opt]').forEach((lab) => {
+        lab.querySelector('input').addEventListener('change', (e) => {
+          optState[lab.dataset.opt] = e.target.checked; saveLs('cyem.layeropts', optState);
+          const L_ = LAYERS.find((l) => (l.opts || []).some((o) => o.id === lab.dataset.opt));
+          if (L_ && map.hasLayer(groups[L_.id])) L_.load().catch(console.warn);
+        });
+      });
+    });
+  }
+  for (const L_ of LAYERS) { groups[L_.id] = L.layerGroup(); if (isOn(L_)) groups[L_.id].addTo(map); }
+  buildLayerPanel();
+  setBasemap((() => { try { return localStorage.getItem('cyem.basemap') || 'esri_dark'; } catch { return 'esri_dark'; } })());
+  $('#legend').innerHTML = `<span><i style="background:#ff5c5c"></i>GNSS high</span><span><i style="background:#f3b23e"></i>GNSS medium / ISR aircraft</span><span><i style="background:#ff6fb1"></i>emitter</span><span><i style="background:#ff8c42"></i>outage</span><span><i style="background:#b48cff"></i>ransomware</span><span><i style="background:#3cc7ff"></i>C2</span><span><i style="background:#45d38a"></i>GDELT</span>`;
+
+  function setCount(id, n) { const el = $(`#n-${id}`); if (el) el.textContent = n == null ? '' : n; }
+  function done(id) { const L_ = LAYERS.find((l) => l.id === id); if (L_) L_.loaded = true; }
+  const kv = (pairs) => `<div class="kv">${pairs.filter((p) => p[1] !== undefined && p[1] !== null && p[1] !== '').map(([k, v]) => `<span class="k">${esc(k)}</span><span>${v}</span>`).join('')}</div>`;
+
+  // ---- ionosphere / spectrum overlays --------------------------------------------
+  const RAD = Math.PI / 180;
+  function sunPosition(date) {
+    const jd = date.getTime() / 86400000 + 2440587.5, n = jd - 2451545.0;
+    const L = (280.460 + 0.9856474 * n) % 360, g = ((357.528 + 0.9856003 * n) % 360) * RAD;
+    const lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD, eps = (23.439 - 0.0000004 * n) * RAD;
+    const dec = Math.asin(Math.sin(eps) * Math.sin(lambda));
+    const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda));
+    const gmst = ((18.697374558 + 24.06570982441908 * n) % 24 + 24) % 24;
+    let lon = ra / RAD - gmst * 15; lon = ((lon + 540) % 360) - 180;
+    return { dec, lon };
+  }
+  async function loadTerminator() {
+    const g = groups.terminator; g.clearLayers();
+    const { dec, lon: sunLon } = sunPosition(new Date());
+    const line = [];
+    for (let lon = -180; lon <= 180; lon += 1) {
+      const H = (lon - sunLon) * RAD;
+      const lat = Math.atan(-Math.cos(H) / Math.tan(dec)) / RAD;
+      line.push([lat, lon]);
+    }
+    const pole = dec > 0 ? -90 : 90;
+    const night = line.concat([[pole, 180], [pole, -180]]);
+    L.polygon(night, { stroke: false, fillColor: '#000', fillOpacity: 0.32, interactive: false }).addTo(g);
+    L.polyline(line, { color: '#f3b23e', weight: 14, opacity: 0.14, interactive: false }).addTo(g);
+    L.polyline(line, { color: '#f3b23e', weight: 1, opacity: 0.6, interactive: false }).addTo(g);
+    L.circleMarker([dec / RAD, sunLon], { radius: 5, color: '#ffd166', fillColor: '#ffd166', fillOpacity: 0.9, weight: 1 })
+      .bindTooltip('sub-solar point', { direction: 'top' }).addTo(g);
+    setCount('terminator', ''); done('terminator');
+  }
+  const MERC_LAT = 85;
+  function mercY(lat) { return Math.log(Math.tan(Math.PI / 4 + lat * RAD / 2)); }
+  function rasterOverlay(sample, opts) {
+    // sample(lat, lon) -> [r,g,b,a] or null; draws a Web-Mercator-correct raster between ±85°.
+    const W = 720, H = 400;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d'); const img = ctx.createImageData(W, H); const d = img.data;
+    const y0 = mercY(MERC_LAT), y1 = mercY(-MERC_LAT);
+    for (let py = 0; py < H; py++) {
+      const my = y0 + (y1 - y0) * (py + 0.5) / H;
+      const lat = (2 * Math.atan(Math.exp(my)) - Math.PI / 2) / RAD;
+      for (let px = 0; px < W; px++) {
+        const lon = -180 + 360 * (px + 0.5) / W;
+        const v = sample(lat, lon);
+        if (!v) continue;
+        const i = (py * W + px) * 4; d[i] = v[0]; d[i + 1] = v[1]; d[i + 2] = v[2]; d[i + 3] = v[3];
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return L.imageOverlay(c.toDataURL('image/png'), [[-MERC_LAT, -180], [MERC_LAT, 180]], Object.assign({ opacity: 1, interactive: false }, opts || {}));
+  }
+  async function loadDrap() {
+    const g = groups.drap; g.clearLayers();
+    const { data } = await api('/api/layers/drap');
+    if (!data) { setCount('drap', '–'); return; }
+    const lats = data.lats, lons = data.lons, grid = data.grid;
+    const dlat = lats.length > 1 ? Math.abs(lats[1] - lats[0]) : 2, dlon = lons.length > 1 ? Math.abs(lons[1] - lons[0]) : 4;
+    const sample = (lat, lon) => {
+      const yi = Math.round((lat - lats[0]) / dlat), xi = Math.round((lon - lons[0]) / dlon);
+      if (yi < 0 || yi >= lats.length || xi < 0 || xi >= lons.length) return null;
+      const v = grid[yi][xi];
+      if (!v || v < 1) return null;  // D-RAP carries a ~0.1 MHz daylight baseline; only show real absorption
+      if (v < 5) return [255, 220, 60, 90 + v * 20];
+      if (v < 15) return [255, 140, 66, 150];
+      if (v < 25) return [255, 60, 60, 180];
+      return [255, 80, 220, 200];
+    };
+    rasterOverlay(sample).bindTooltip('D-RAP HF absorption').addTo(g);
+    setCount('drap', data.max_mhz > 0 ? `${data.max_mhz} MHz` : 'clear'); done('drap');
+  }
+  async function loadAurora() {
+    const g = groups.aurora; g.clearLayers();
+    const { data } = await api('/api/layers/aurora');
+    if (!data) { setCount('aurora', '–'); return; }
+    const step = data.step || 2, grid = data.grid;
+    const sample = (lat, lon) => {
+      const yi = Math.round((lat + 90) / step), xi = Math.round((((lon + 360) % 360)) / step) % grid[0].length;
+      if (yi < 0 || yi >= grid.length) return null;
+      const v = grid[yi][xi];
+      if (!v || v < 5) return null;
+      const a = Math.min(215, 40 + v * 3);
+      if (v < 25) return [69, 211, 138, a];
+      if (v < 55) return [240, 200, 60, a];
+      return [255, 70, 70, a];
+    };
+    rasterOverlay(sample).addTo(g);
+    setCount('aurora', `N${data.max_north}% S${data.max_south}%`); done('aurora');
+  }
+  function mufColour(m) { return m < 10 ? '#e04040' : m < 16 ? '#f0c030' : m < 22 ? '#40c060' : m < 26 ? '#3cc7ff' : '#3c8cff'; }
+  async function loadHfmap() {
+    const g = groups.hfmap; g.clearLayers();
+    const { data } = await api('/api/layers/hfmap');
+    if (!data) { setCount('hfmap', '–'); return; }
+    for (const c of data.contours || []) {
+      const latlngs = c.coords.map(([x, y]) => [y, x]);
+      L.polyline(latlngs, { color: mufColour(c.mhz), weight: 1.2, opacity: 0.8, interactive: true })
+        .bindTooltip(`MUF(3000) ${c.mhz} MHz`, { sticky: true }).addTo(g);
+    }
+    for (const st of data.stations || []) {
+      if (!st.fresh) continue;
+      const col = st.mufd ? mufColour(st.mufd) : '#9ad7ff';
+      L.circleMarker([st.lat, st.lon], { radius: 4, color: '#000', weight: 0.8, fillColor: col, fillOpacity: 0.95 })
+        .bindPopup(`<h4>${esc(st.name)} <span class="muted">${esc(st.code)}</span></h4>${kv([['foF2', st.fof2 != null ? `${st.fof2} MHz` : ''], ['MUF(3000)', st.mufd != null ? `${st.mufd} MHz` : ''], ['hmF2', st.hmf2 != null ? `${st.hmf2} km` : ''], ['TEC', st.tec != null ? `${st.tec} TECU` : ''], ['foE', st.foe != null ? `${st.foe} MHz` : ''], ['Sounding', fmtZ(st.time)]])}<p class="dim" style="margin:6px 0 0">GIRO ionosonde via prop.kc2g.com</p>`)
+        .addTo(g);
+    }
+    setCount('hfmap', `${data.fresh_stations} sondes`); done('hfmap');
+  }
+  const trackGroup = L.layerGroup().addTo(map);
+  async function showSatTrack(norad) {
+    trackGroup.clearLayers();
+    try {
+      const t = await api(`/api/sat/${norad}/track?minutes=100`);
+      const segs = []; let cur = [];
+      for (const [lat, lon] of t.points) { if (cur.length && Math.abs(lon - cur[cur.length - 1][1]) > 180) { segs.push(cur); cur = []; } cur.push([lat, lon]); }
+      if (cur.length) segs.push(cur);
+      for (const seg of segs) L.polyline(seg, { color: '#9ad7ff', weight: 1.2, opacity: 0.8, dashArray: '4 4', interactive: false }).addTo(trackGroup);
+      const p0 = t.points.find((p) => p[2] === 0) || t.points[0];
+      L.circleMarker([p0[0], p0[1]], { radius: 3, color: '#fff', weight: 1, fillOpacity: 0 }).addTo(trackGroup);
+    } catch (e) { console.warn('track', e); }
+  }
+  map.on('popupclose', () => trackGroup.clearLayers());
+
+  async function loadGpsjam() {
+    const g = groups.gpsjam; g.clearLayers();
+    const { data } = await api('/api/layers/gpsjam');
+    if (!data || !data.hexes) { setCount('gpsjam', 0); return; }
+    for (const h of data.hexes) {
+      const hi = h.level === 'high';
+      L.polygon(h.boundary, { color: hi ? '#ff5c5c' : '#f3b23e', weight: 0.6, opacity: 0.6, fillOpacity: hi ? 0.45 : 0.25, interactive: true })
+        .bindPopup(`<h4>GNSS interference: ${esc(h.level)}</h4>${kv([['Region', esc(h.region)], ['Degraded aircraft', `${h.bad} of ${h.aircraft} (${h.pct}%)`], ['Date', esc(data.date)], ['H3', `<span class="mono">${esc(h.h3)}</span>`]])}<p class="dim" style="margin:6px 0 0">${esc(data.attribution || '')}</p>`)
+        .addTo(g);
+    }
+    setCount('gpsjam', `${data.high}/${data.medium}`); done('gpsjam');
+  }
+  const ROLE_COL = { isr: '#f3b23e', ew: '#ff5c5c', aew: '#ffd166', c2: '#ff8c42', mpa: '#2bb9a8', tanker: '#3cc7ff', transport: '#8593a6', strike: '#ff6fb1', fighter: '#6f7f93', heli: '#5d6b7d', trainer: '#4d5b6b', other: '#6f7f93' };
+  const ROLE_NAME = { isr: 'ISR / SIGINT', ew: 'Electronic warfare', aew: 'AEW&C', c2: 'Airborne C2 / relay', mpa: 'Maritime patrol', tanker: 'Tanker', transport: 'Transport', strike: 'Bomber / strike', fighter: 'Fighter', heli: 'Helicopter', trainer: 'Trainer', other: 'Other military' };
+  const HI_ROLES = new Set(['isr', 'ew', 'aew', 'c2', 'mpa']);
+  async function loadMilair() {
+    const g = groups.milair; g.clearLayers();
+    const { data, updated } = await api('/api/layers/milair');
+    if (!data) { setCount('milair', '–'); return; }
+    const only = optOn('milair_isr');
+    let n = 0;
+    for (const a of data.aircraft || []) {
+      if (only && !HI_ROLES.has(a.role)) continue;
+      n++;
+      const col = ROLE_COL[a.role] || '#8593a6';
+      const hi = HI_ROLES.has(a.role);
+      const icon = L.divIcon({ className: '', iconSize: [hi ? 16 : 11, hi ? 16 : 11], html: `<div class="ac ${hi ? 'hi' : ''}" style="color:${col};transform:rotate(${(a.track || 0) - 90}deg)">➤</div>` });
+      L.marker([a.lat, a.lon], { icon, zIndexOffset: hi ? 500 : 0 })
+        .bindPopup(`<h4>${esc(a.flight || a.reg || a.hex)} <span class="muted">${esc(a.type || '')}</span></h4>${kv([['Role', esc(ROLE_NAME[a.role] || a.role)], ['Aircraft', esc(a.desc || '')], ['Registration', esc(a.reg || '')], ['Altitude', a.alt != null ? `${a.alt.toLocaleString()} ft` : (a.alt_txt || '')], ['Ground speed', a.gs != null ? `${Math.round(a.gs)} kt` : ''], ['Track', a.track != null ? `${Math.round(a.track)}°` : ''], ['Squawk', esc(a.squawk || '')], ['Hex', `<span class="mono">${esc(a.hex)}</span>`]])}<p style="margin:6px 0 0"><a href="https://globe.adsb.fi/?icao=${esc(a.hex)}" target="_blank" rel="noopener">Track on adsb.fi ↗</a></p><p class="dim" style="margin:4px 0 0">${esc(data.source || '')} · ${fmtZ(updated)}</p>`)
+        .addTo(g);
+    }
+    setCount('milair', `${n}/${data.count}`); done('milair');
+  }
+  const SAT_COL = { gnss: '#9ad7ff', military: '#ff6fb1', sbas: '#2bb9a8' };
+  async function loadSats() {
+    const g = groups.sats; g.clearLayers();
+    const { data, updated } = await api('/api/layers/sats');
+    if (!data) { setCount('sats', '–'); return; }
+    let n = 0;
+    for (const s of data.sats || []) {
+      if (!optOn('sats_' + s.group)) continue;
+      n++;
+      const col = SAT_COL[s.group] || '#fff';
+      const icon = L.divIcon({ className: '', iconSize: [7, 7], html: `<div class="sat" style="background:${col}"></div>` });
+      L.marker([s.lat, s.lon], { icon }).bindPopup(`<h4>${esc(s.name)}</h4>${kv([['Group', esc(s.group)], ['NORAD', s.norad], ['Altitude', `${s.alt_km.toLocaleString()} km`], ['Period', s.period_min ? `${s.period_min} min` : ''], ['Sub-point', `${s.lat.toFixed(1)}, ${s.lon.toFixed(1)}`]])}<p class="dim" style="margin:4px 0 0">Dashed line = ground track −33 / +66 min · SGP4 from Celestrak TLEs · ${fmtZ(data.computed_at)}</p>`).on('popupopen', () => showSatTrack(s.norad)).addTo(g);
+    }
+    setCount('sats', n); done('sats');
+  }
+  const EMIT_COL = { 'ew-radar': '#ff5c5c', 'abm-radar': '#ff8c42', 'oth-radar': '#ffd166', 'space-surveillance': '#c8d3e0', 'air-defence-radar': '#f3b23e', sigint: '#ff6fb1', satcom: '#3cc7ff', vlf: '#b48cff', hf: '#b48cff', 'gnss-ground': '#9ad7ff', ionospheric: '#45d38a', 'deep-space': '#2bb9a8', 'ew-range': '#ff5c5c', historic: '#5d6b7d' };
+  const EMIT_GLYPH = { 'ew-radar': '▲', 'abm-radar': '▲', 'oth-radar': '△', 'space-surveillance': '◬', 'air-defence-radar': '▴', sigint: '◆', satcom: '●', vlf: '▼', hf: '▽', 'gnss-ground': '✦', ionospheric: '✧', 'deep-space': '◉', 'ew-range': '✕', historic: '○' };
+  async function loadEmitters() {
+    const g = groups.emitters; g.clearLayers();
+    const { emitters } = await api('/api/layers/emitters');
+    for (const e of emitters) {
+      const col = EMIT_COL[e.type] || '#ff6fb1';
+      const icon = L.divIcon({ className: '', iconSize: [14, 14], html: `<div class="emit" style="color:${col}">${EMIT_GLYPH[e.type] || '◆'}</div>` });
+      L.marker([e.lat, e.lon], { icon, title: e.name }).bindPopup(`<h4>${flag(e.country)} ${esc(e.name)}</h4>${kv([['Type', esc(e.type)], ['Operator', esc(e.operator || '')], ['Country', esc(e.country_name || e.country)]])}<p style="margin:6px 0 0">${esc(e.note || '')}</p><p class="dim" style="margin:4px 0 0">Reference layer from public reporting; positions approximate.</p>`).addTo(g);
+    }
+    setCount('emitters', emitters.length); done('emitters');
+  }
+  const RADAR_COL = { military: '#e0e6ee', space: '#3cc7ff', aviation: '#f3b23e', weather: '#45d38a', maritime: '#2bb9a8', other: '#6f7f93' };
+  async function loadRadars() {
+    const g = groups.radars; g.clearLayers();
+    const { data } = await api('/api/layers/radars');
+    if (!data) { setCount('radars', '–'); return; }
+    const milOnly = optOn('radars_mil');
+    let n = 0;
+    for (const s of data.sites || []) {
+      if (milOnly && s.cls !== 'military' && s.cls !== 'space') continue;
+      n++;
+      L.circleMarker([s.lat, s.lon], { radius: s.cls === 'military' || s.cls === 'space' ? 3 : 2.5, color: '#000', weight: 0.8, fillColor: RADAR_COL[s.cls] || '#6f7f93', fillOpacity: 0.85 })
+        .bindPopup(`<h4>${esc(s.name || 'Unnamed radar')}</h4>${kv([['Class', esc(s.cls)], ['Kind', esc(s.kind || '')], ['Operator', esc(s.operator || '')], ['Height', esc(s.height || '')], ['Note', esc(s.desc || '')]])}<p style="margin:6px 0 0"><a href="https://www.openstreetmap.org/${s.id[0] === 'n' ? 'node' : s.id[0] === 'w' ? 'way' : 'relation'}/${esc(s.id.slice(1))}" target="_blank" rel="noopener">OpenStreetMap ↗</a></p><p class="dim" style="margin:4px 0 0">${esc(data.attribution || '')}</p>`)
+        .addTo(g);
+    }
+    setCount('radars', `${n}/${data.count}`); done('radars');
+  }
+  async function loadIoda() {
+    const g = groups.ioda; g.clearLayers();
+    const { data } = await api('/api/layers/ioda');
+    if (!data) { setCount('ioda', 0); return; }
+    let n = 0;
+    for (const e of data.entities || []) {
+      if (e.lat == null || e.type !== 'country') continue;
+      const crit = e.critical > 0;
+      if (!crit && e.alerts < 3) continue;
+      n++;
+      const r = Math.min(22, 6 + Math.sqrt(e.alerts) * 2.5);
+      L.circleMarker([e.lat, e.lon], { radius: r, color: crit ? '#ff8c42' : '#8a5a2b', weight: 1.5, fillColor: crit ? '#ff8c42' : '#8a5a2b', fillOpacity: crit ? 0.35 : 0.15 })
+        .bindPopup(`<h4>${esc(e.name)} — internet outage signal</h4>${kv([['Alerts 24h', `${e.alerts} (${e.critical} critical, ${e.warning} warning)`], ['Sources', esc((e.sources || []).map((s) => `${s[0]} ${s[1]}`).join(', '))], ['Window', `${fmtZ(e.first)} → ${fmtZ(e.last)}`]])}<p style="margin:6px 0 0"><a href="https://ioda.inetintel.cc.gatech.edu/country/${esc(e.code)}" target="_blank" rel="noopener">Open in IODA ↗</a></p>`)
+        .addTo(g);
+    }
+    setCount('ioda', n); done('ioda');
+  }
+  async function loadRansomware() {
+    const g = groups.ransomware; g.clearLayers();
+    const { points } = await api('/api/layers/ransomware?hours=720');
+    for (const p of points) {
+      const r = Math.min(26, 4 + Math.sqrt(p.count) * 3);
+      L.circleMarker([p.lat, p.lon], { radius: r, color: '#b48cff', weight: 1, fillColor: '#b48cff', fillOpacity: 0.28 })
+        .bindPopup(`<h4>${flag(p.country)} ${esc(p.name)}</h4><div>${p.count} ransomware victims claimed in 30 days (ransomware.live)</div><p style="margin:6px 0 0"><a href="#" data-country="${esc(p.country)}" class="filter-country">Show victims in feed</a></p>`)
+        .addTo(g);
+    }
+    setCount('ransomware', points.reduce((a, p) => a + p.count, 0)); done('ransomware');
+  }
+  async function loadC2() {
+    const g = groups.c2; g.clearLayers();
+    const { data } = await api('/api/layers/c2');
+    if (!data) { setCount('c2', 0); return; }
+    for (const p of data.countries || []) {
+      const r = Math.min(24, 3 + Math.sqrt(p.count) * 2.2);
+      L.circleMarker([p.lat, p.lon], { radius: r, color: '#3cc7ff', weight: 1, fillColor: '#3cc7ff', fillOpacity: 0.2, dashArray: '2 3' })
+        .bindPopup(`<h4>${flag(p.country)} ${esc(p.name)} — botnet C2</h4>${kv([['Tracked servers', `${p.count} (${p.online} online)`], ['Families', esc((p.malware || []).map((m) => `${m[0]} ${m[1]}`).join(', '))]])}<p class="dim" style="margin:6px 0 0">abuse.ch Feodo Tracker</p>`)
+        .addTo(g);
+    }
+    setCount('c2', data.total); done('c2');
+  }
+  const GD_COL = { cyber: '#3cc7ff', gnss: '#f3b23e', infra: '#2bb9a8', satcom: '#ff6fb1' };
+  async function loadGdelt() {
+    const g = groups.gdelt; g.clearLayers();
+    const { data } = await api('/api/layers/gdelt');
+    if (!data) { setCount('gdelt', 0); return; }
+    let n = 0;
+    for (const t of data.themes || []) {
+      for (const p of t.points || []) {
+        n++;
+        const r = Math.min(10, 3 + Math.sqrt(p.count) * 1.4);
+        const links = (p.links || []).map((l) => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.title)}</a> <span class="dim">${esc(l.domain || '')}</span></li>`).join('');
+        L.circleMarker([p.lat + (t.key === 'gnss' ? 0.8 : t.key === 'infra' ? -0.8 : 0), p.lon + (t.key === 'satcom' ? 1.2 : 0)], { radius: r, color: GD_COL[t.key] || '#45d38a', weight: 1, fillColor: GD_COL[t.key] || '#45d38a', fillOpacity: 0.5 })
+          .bindPopup(`<h4>${esc(t.label)}: ${flag(p.country)} ${esc(p.name)}</h4><div class="muted">${p.count} articles in 24h (GDELT)${p.inferred ? `, ${p.inferred} placed by publisher country` : ''}</div><ul>${links}</ul>`)
+          .addTo(g);
+      }
+    }
+    setCount('gdelt', n); done('gdelt');
+  }
+  async function loadCloudflare() {
+    const g = groups.cloudflare; g.clearLayers();
+    const { data } = await api('/api/layers/cloudflare');
+    if (!data) { setCount('cloudflare', 'key'); return; }
+    let n = 0;
+    for (const o of data.outages_7d || []) {
+      if (o.lat == null) continue;
+      n++;
+      L.circleMarker([o.lat + 0.6, o.lon + 0.6], { radius: 7, color: '#ffd166', weight: 1.5, fillColor: '#ffd166', fillOpacity: 0.3 })
+        .bindPopup(`<h4>${esc(o.description || 'Outage')}</h4>${kv([['Type', esc(o.type || '?')], ['Cause', esc(o.cause || '?')], ['Start', esc(o.start || '')], ['End', esc(o.end || 'ongoing')]])}${o.url ? `<p style="margin:6px 0 0"><a href="${esc(o.url)}" target="_blank" rel="noopener">Source ↗</a></p>` : ''}`)
+        .addTo(g);
+    }
+    setCount('cloudflare', n); done('cloudflare');
+  }
+  async function loadItemsLayer() {
+    const g = groups.items; g.clearLayers();
+    const { points } = await api('/api/layers/items?hours=168');
+    const seen = {};
+    for (const p of points) {
+      const key = `${p.lat},${p.lon}`; seen[key] = (seen[key] || 0) + 1;
+      const k = seen[key];
+      const jitter = [(k % 5 - 2) * 0.35, (Math.floor(k / 5) % 5 - 2) * 0.45];
+      L.circleMarker([p.lat + jitter[0], p.lon + jitter[1]], { radius: 3 + (p.severity - 2) * 0.8, color: COLOURS[p.domain] || '#8593a6', weight: 1, fillColor: COLOURS[p.domain] || '#8593a6', fillOpacity: 0.7 })
+        .bindPopup(`<h4>${esc(p.title)}</h4><div class="muted">${esc(p.source)} · ${fmtZ(p.published_at)} · sev ${p.severity}</div>${p.summary ? `<p>${esc(p.summary.slice(0, 260))}</p>` : ''}<p style="margin:6px 0 0"><a href="${esc(p.url)}" target="_blank" rel="noopener">Open ↗</a></p>`)
+        .addTo(g);
+    }
+    setCount('items', points.length); done('items');
+  }
+  async function loadApt() {
+    const g = groups.apt; g.clearLayers();
+    const { groups: gs } = await api('/api/layers/apt');
+    for (const a of gs) {
+      const icon = L.divIcon({ className: '', html: `<div style="width:11px;height:11px;transform:rotate(45deg);background:${a.type === 'criminal' ? '#ffd166' : '#ff8c42'};border:1px solid #000"></div>`, iconSize: [11, 11] });
+      L.marker([a.lat, a.lon], { icon })
+        .bindPopup(`<h4>${esc(a.name)} <span class="muted">${esc(a.aka || '')}</span></h4>${kv([['Sponsor', `${flag(a.country)} ${esc(a.sponsor)}`], ['Type', esc(a.type)], ['Targets', esc((a.sectors || []).join(', '))], ['MITRE', a.mitre ? `<a href="https://attack.mitre.org/groups/${esc(a.mitre)}/" target="_blank" rel="noopener">${esc(a.mitre)} ↗</a>` : '']])}<p style="margin:6px 0 0">${esc(a.note)}</p><p class="dim" style="margin:6px 0 0">Reference layer; attributions as publicly reported.</p>`)
+        .addTo(g);
+    }
+    setCount('apt', gs.length); done('apt');
+  }
+  async function loadCables() {
+    const g = groups.cables; g.clearLayers();
+    const { data } = await api('/api/layers/cables');
+    if (!data) { setCount('cables', '–'); return; }
+    L.geoJSON(data, { style: (f) => ({ color: f.properties.color || '#2bb9a8', weight: 1, opacity: 0.35 }), onEachFeature: (f, l) => l.bindPopup(`<h4>${esc(f.properties.name)}</h4><div class="dim">TeleGeography Submarine Cable Map</div>`) }).addTo(g);
+    setCount('cables', (data.features || []).length); done('cables');
+  }
+  async function loadLaunches() {
+    const g = groups.launches; g.clearLayers();
+    const { data } = await api('/api/layers/launches');
+    if (!data) { setCount('launches', '–'); return; }
+    for (const l of data.launches || []) {
+      if (l.lat == null) continue;
+      const icon = L.divIcon({ className: '', html: `<div style="color:#fff;font-size:13px;line-height:13px;text-shadow:0 0 3px #000">▲</div>`, iconSize: [13, 13] });
+      L.marker([l.lat, l.lon], { icon }).bindPopup(`<h4>${esc(l.name)}</h4>${kv([['NET', fmtZ(l.net)], ['Provider', esc(l.provider || '')], ['Mission', `${esc(l.mission || '?')} (${esc(l.mission_type || '')}${l.orbit ? ', ' + esc(l.orbit) : ''})`], ['Pad', `${esc(l.pad || '')}, ${esc(l.location || '')}`]])}`).addTo(g);
+    }
+    setCount('launches', (data.launches || []).length); done('launches');
+  }
+  function loadLayers(minutes) {
+    for (const L_ of LAYERS) {
+      if (!map.hasLayer(groups[L_.id])) continue;
+      if (minutes != null && (L_.every === 0 || minutes % L_.every !== 0) && L_.loaded) continue;
+      L_.load().catch((e) => console.warn(L_.id, e));
+    }
+  }
+  map.on('popupopen', (e) => {
+    e.popup.getElement()?.querySelectorAll('a.filter-country').forEach((a) => a.addEventListener('click', (ev) => {
+      ev.preventDefault(); state.country = a.dataset.country; state.dom = 'cyber'; setTab('cyber'); loadFeed(); map.closePopup(); showRail(true);
+    }));
+  });
+
+  // ---------------------------------------------------------------- status pills
+  function pill(id, lbl, val, cls, title) { return `<div class="pill ${cls || ''}" data-p="${id}" title="${esc(title || '')}"><span class="lbl">${esc(lbl)}</span><b>${esc(val)}</b></div>`; }
+  function renderPills(s) {
+    const sw = s.spaceweather || {};
+    const kp = sw.kp;
+    const kpCls = kp == null ? '' : kp >= 6 ? 'bad' : kp >= 4 ? 'warn' : 'ok';
+    const sc = sw.scales || {};
+    const lvl = (c) => (sc[c] && sc[c].level != null) ? String(sc[c].level) : '?';
+    const maxLvl = Math.max(...['R', 'S', 'G'].map((c) => parseInt(lvl(c)) || 0));
+    const scCls = maxLvl >= 3 ? 'bad' : maxLvl >= 1 ? 'warn' : 'ok';
+    const hf = s.hf || {};
+    const gn = s.gnss || {};
+    const out = s.outages || {};
+    const nCrit = (out.countries_critical || []).length;
+    const kev = s.kev || {};
+    const rw = s.ransomware || {};
+    const br = s.brief || {};
+    const briefVal = br.generating ? 'generating…' : (br.latest_at ? ago(br.latest_at) + ' ago' : 'none');
+    const html = [
+      pill('sw', 'Kp', kp == null ? '–' : kp.toFixed(1), kpCls, 'Planetary K-index (NOAA SWPC). Click for space weather detail'),
+      pill('sw', 'R/S/G', `${lvl('R')}/${lvl('S')}/${lvl('G')}`, scCls, 'NOAA scales now: radio blackout / solar radiation / geomagnetic storm'),
+      pill('sw', 'Flare', sw.max_flare_24h || '–', (sw.max_flare_24h || '').startsWith('X') ? 'bad' : (sw.max_flare_24h || '').startsWith('M') ? 'warn' : '', 'Largest GOES X-ray flare in 24h'),
+      pill('hf', 'HF', hf.solarflux ? `SFI ${hf.solarflux} · geomag ${(hf.geomagfield || '?').toLowerCase()}` : '–', hf.geomagfield && /storm|unsettled|^active/i.test(hf.geomagfield) ? 'warn' : hf.geomagfield ? 'ok' : '', 'SFI = 10.7 cm solar flux (higher = better HF propagation on the high bands). Geomag = geomagnetic field state from hamqsl: inactive / quiet = calm (good), unsettled / active / storm = disturbed HF and GNSS. Click for band conditions'),
+      ...(s.aurora ? [pill('sw', 'Aurora', `N ${s.aurora.max_north ?? 0}% · S ${s.aurora.max_south ?? 0}%`, Math.max(s.aurora.max_north || 0, s.aurora.max_south || 0) >= 50 ? 'bad' : Math.max(s.aurora.max_north || 0, s.aurora.max_south || 0) >= 25 ? 'warn' : 'ok', `OVATION aurora probability maxima, forecast ${s.aurora.forecast_time || ''}`)] : []),
+      ...(s.drap ? [pill('sw', 'D-RAP', s.drap.max_mhz > 0 ? `${s.drap.max_mhz} MHz` : 'clear', s.drap.max_mhz >= 15 ? 'bad' : s.drap.max_mhz > 0 ? 'warn' : 'ok', `Highest HF frequency affected by D-region absorption (NOAA D-RAP, valid ${s.drap.valid_at || ''})`)] : []),
+      pill('gnss', 'GNSS', gn.date ? `${gn.high} high` : '–', gn.high >= 40 ? 'bad' : gn.high >= 15 ? 'warn' : gn.date ? 'ok' : '', `GNSS interference hexes for ${gn.date || '?'} (gpsjam)`),
+      pill('out', 'Outages', out.alerts_24h != null ? `${nCrit} critical` : '–', nCrit >= 3 ? 'bad' : nCrit >= 1 ? 'warn' : out.alerts_24h != null ? 'ok' : '', 'Countries with critical IODA outage alerts in 24h'),
+      pill('kev', 'KEV 7d', kev.added_7d != null ? kev.added_7d : '–', kev.added_7d >= 8 ? 'warn' : 'info', 'CISA KEV entries added in 7 days'),
+      pill('rw', 'Ransom 7d', rw.victims_7d != null ? rw.victims_7d : '–', 'info', 'Victims claimed on leak sites in 7 days (ransomware.live)'),
+      ...(s.opencti ? [pill('octi', 'OpenCTI', `${s.opencti.reports_24h ?? 0} rep · ${s.opencti.indicators_24h ?? 0} ind`, (s.opencti.errors || []).length ? 'warn' : 'info', `OpenCTI ${s.opencti.version || ''}: reports and new indicators in 24h. Click for detail`)] : []),
+      pill('items', 'Sev4+ 24h', (s.counts || {}).high_24h ?? '–', ((s.counts || {}).high_24h || 0) >= 10 ? 'warn' : 'info', 'Items with severity 4 or 5 in 24h'),
+      pill('brief', 'Brief', briefVal, br.generating ? 'warn' : br.last_error ? 'bad' : 'info', br.last_error || `Scheduled at ${(br.hours || []).map((h) => String(h).padStart(2, '0') + ':00').join(', ')} ${s.tz || ''}`),
+    ].join('');
+    $('#pills').innerHTML = html;
+    $$('#pills .pill').forEach((p) => p.addEventListener('click', () => onPill(p.dataset.p)));
+  }
+  function onPill(id) {
+    const s = state.status || {};
+    if (id === 'sw') return showSpaceWeather(s);
+    if (id === 'hf') return showHF(s.hf);
+    if (id === 'gnss') { map.setView([45, 30], 4); const cb = $$('#layers input')[0]; if (!cb.checked) cb.click(); return; }
+    if (id === 'out') { state.dom = 'infra'; setTab('infra'); state.q = ''; $('#q').value = ''; loadFeed(); showRail(true); return; }
+    if (id === 'kev') { state.dom = 'cyber'; setTab('cyber'); state.q = 'KEV'; $('#q').value = 'KEV'; loadFeed(); showRail(true); return; }
+    if (id === 'rw') { state.dom = 'cyber'; setTab('cyber'); state.q = 'ransomware'; $('#q').value = 'ransomware'; loadFeed(); showRail(true); return; }
+    if (id === 'items') { $('#hi-only').checked = true; state.hiOnly = true; state.hours = 24; $('#hours').value = '24'; loadFeed(); showRail(true); return; }
+    if (id === 'brief') { showSide(true); return; }
+    if (id === 'octi') { showOpenCTI(); return; }
+  }
+  async function showOpenCTI() {
+    let data;
+    try { ({ data } = await api('/api/layers/opencti')); } catch (e) { return openModal('OpenCTI', `<p class="bad">${esc(e.message)}</p>`); }
+    if (!data) return openModal('OpenCTI', '<p class="muted">Not configured. Set OPENCTI_URL and OPENCTI_TOKEN in ~/cyem/.env.</p>');
+    const reps = (data.reports || []).map((r) => `<tr><td class="mono">${fmtZ(r.published)}</td><td><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a></td><td>${esc((r.types || []).join(', '))}</td><td>${esc((r.labels || []).join(', '))}</td></tr>`).join('');
+    const inds = (data.top_indicators || []).map((i) => `<tr><td class="mono">${i.score ?? ''}</td><td>${esc(i.type)}</td><td><a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name || i.pattern)}</a></td><td>${esc((i.labels || []).join(', '))}</td><td class="mono">${fmtZ(i.valid_until)}</td></tr>`).join('');
+    const sets = (data.intrusion_sets || []).map((x) => `<tr><td><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a><div class="dim">${esc((x.aliases || []).join(', '))}</div></td><td class="mono">${fmtZ(x.modified)}</td><td>${esc(x.description || '')}</td></tr>`).join('');
+    openModal(`OpenCTI ${esc(data.version || '')} — ${esc(data.url || '')}`, `
+      ${(data.errors || []).length ? `<div class="notice err">${esc(data.errors.join(' · '))}</div>` : ''}
+      <div class="kv"><span class="k">Reports 24h</span><span>${data.reports_24h ?? 0}</span><span class="k">New indicators 24h</span><span>${data.indicators_24h ?? 0} — ${esc((data.indicator_types || []).map((t) => `${t[0]} ${t[1]}`).join(', '))}</span><span class="k">Top labels</span><span>${esc((data.indicator_labels || []).map((t) => `${t[0]} ${t[1]}`).join(', '))}</span><span class="k">Fetched</span><span class="mono">${fmtZ(data.fetched_at)}</span></div>
+      <h3 class="sec">Recent reports</h3><table class="grid"><tr><th>Published</th><th>Report</th><th>Type</th><th>Labels</th></tr>${reps || '<tr><td colspan=4 class="muted">none</td></tr>'}</table>
+      <h3 class="sec">Highest-scored new indicators (24h)</h3><table class="grid"><tr><th>Score</th><th>Type</th><th>Indicator</th><th>Labels</th><th>Valid until</th></tr>${inds || '<tr><td colspan=5 class="muted">none</td></tr>'}</table>
+      <h3 class="sec">Recently modified intrusion sets</h3><table class="grid"><tr><th>Set</th><th>Modified</th><th>Description</th></tr>${sets || '<tr><td colspan=3 class="muted">none</td></tr>'}</table>`);
+  }
+  function showSpaceWeather(s) {
+    const sw = s.spaceweather || {};
+    const series = sw.kp_series || [];
+    const bars = series.map((k) => `<i class="${k.kp >= 7 ? 'k7' : k.kp >= 6 ? 'k6' : k.kp >= 5 ? 'k5' : ''}" style="height:${Math.max(4, k.kp / 9 * 100)}%" title="${esc(k.t)} Kp ${k.kp}"></i>`).join('');
+    const sc = sw.scales || {}, p24 = sw.past24h || {}, pred = sw.predicted || {};
+    const scaleRow = (c, name) => `<tr><td>${name}</td><td class="mono">${esc(sc[c]?.level ?? '?')} ${esc(sc[c]?.text || '')}</td><td class="mono">${esc(p24[c]?.level ?? '?')} ${esc(p24[c]?.text || '')}</td></tr>`;
+    const predRows = Object.values(pred).map((v) => `<tr><td>${esc(v.date)}</td><td class="mono">G${esc(v.G)}</td><td class="mono">${esc(v.R_minor_prob)}% / ${esc(v.R_major_prob)}%</td><td class="mono">${esc(v.S_prob)}%</td></tr>`).join('');
+    const flares = (sw.flares || []).map((f) => `<tr><td class="mono">${esc(f.class)}</td><td>${fmtZ(f.begin)}</td><td>${esc(f.max_time || '')}</td><td>${esc(f.region || '')}</td></tr>`).join('');
+    const alerts = (sw.alerts || []).map((a) => `<tr><td class="mono">${fmtZ(a.issued)}</td><td>${esc(a.headline)}</td></tr>`).join('');
+    const w = sw.solar_wind || {};
+    openModal('Space weather (NOAA SWPC)', `
+      <div class="kv"><span class="k">Kp now</span><span class="mono">${sw.kp ?? '–'} (24h max ${sw.kp_max_24h ?? '–'})</span><span class="k">F10.7</span><span class="mono">${sw.f107 ?? '–'} sfu</span><span class="k">Solar wind</span><span class="mono">${w.speed_kms ?? '–'} km/s, Bt ${w.bt ?? '–'} nT, Bz ${w.bz ?? '–'} nT</span><span class="k">Updated</span><span class="mono">${fmtZ(sw.updated)}</span></div>
+      <h3 class="sec">Kp, last ${series.length * 3} hours</h3><div class="kpbars">${bars || '<span class="muted">no data</span>'}</div>
+      <h3 class="sec">NOAA scales</h3><table class="grid"><tr><th>Scale</th><th>Now</th><th>Max 24h</th></tr>${scaleRow('R', 'R radio blackout')}${scaleRow('S', 'S solar radiation')}${scaleRow('G', 'G geomagnetic')}</table>
+      <h3 class="sec">3-day outlook</h3><table class="grid"><tr><th>Day</th><th>G</th><th>R1-2 / R3+ prob</th><th>S1+ prob</th></tr>${predRows || '<tr><td colspan=4 class="muted">no forecast</td></tr>'}</table>
+      <h3 class="sec">X-ray flares, 3 days</h3><table class="grid"><tr><th>Class</th><th>Begin</th><th>Peak</th><th>Region</th></tr>${flares || '<tr><td colspan=4 class="muted">none recorded</td></tr>'}</table>
+      <h3 class="sec">Alerts, watches, warnings</h3><table class="grid">${alerts || '<tr><td class="muted">none in 3 days</td></tr>'}</table>
+      <p class="dim">Operational reading: R scale = HF absorption on the sunlit hemisphere; G scale = GNSS accuracy, HF auroral absorption and geomagnetically induced currents; S scale = SATCOM and polar HF.</p>`);
+  }
+  function showHF(hf) {
+    if (!hf) return openModal('HF conditions', '<p class="muted">No data yet.</p>');
+    const bands = Object.entries(hf.bands || {}).map(([b, v]) => `<div class="band"><b>${esc(b)}</b>day <span class="cond-${esc(v.day)}">${esc(v.day)}</span> · night <span class="cond-${esc(v.night)}">${esc(v.night)}</span></div>`).join('');
+    const vhf = (hf.vhf || []).map((v) => `<tr><td>${esc(v.name)}</td><td>${esc(v.location || '')}</td><td>${esc(v.value)}</td></tr>`).join('');
+    openModal('HF and VHF conditions (hamqsl.com, N0NBH)', `
+      <div class="kv"><span class="k">Solar flux</span><span class="mono">${esc(hf.solarflux)}</span><span class="k">Sunspots</span><span class="mono">${esc(hf.sunspots)}</span><span class="k">A / K index</span><span class="mono">${esc(hf.aindex)} / ${esc(hf.kindex)}</span><span class="k">X-ray</span><span class="mono">${esc(hf.xray)}</span><span class="k">Geomagnetic field</span><span>${esc(hf.geomagfield)}</span><span class="k">Signal noise</span><span>${esc(hf.signalnoise)}</span><span class="k">MUF</span><span class="mono">${esc(hf.muf || '–')}</span><span class="k">Aurora</span><span class="mono">${esc(hf.aurora)} (lat ${esc(hf.latdegree)})</span><span class="k">Updated</span><span>${esc(hf.updated)}</span></div>
+      <h3 class="sec">Band conditions</h3><div class="bands">${bands}</div>
+      <h3 class="sec">VHF</h3><table class="grid"><tr><th>Phenomenon</th><th>Location</th><th>State</th></tr>${vhf}</table>`);
+  }
+
+  // ---------------------------------------------------------------- feed
+  function setTab(dom) { $$('#dom-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.dom === dom)); }
+  $$('#dom-tabs button').forEach((b) => b.addEventListener('click', () => { state.dom = b.dataset.dom; state.country = null; setTab(state.dom); loadFeed(); }));
+  let qTimer;
+  $('#q').addEventListener('input', (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.q = e.target.value.trim(); loadFeed(); }, 300); });
+  $('#hi-only').addEventListener('change', (e) => { state.hiOnly = e.target.checked; loadFeed(); });
+  $('#hours').addEventListener('change', (e) => { state.hours = parseInt(e.target.value); loadFeed(); });
+  const HOT = new Set(['zero-day', 'kev', 'ransomware', 'apt', 'ics', 'gnss', 'ew', 'satcom', 'cable', 'outage', 'bgp', 'uk']);
+  async function loadFeed() {
+    const p = new URLSearchParams({ hours: state.hours, limit: 200 });
+    if (state.dom !== 'all') p.set('domain', state.dom);
+    if (state.q) p.set('q', state.q);
+    if (state.hiOnly) p.set('min_severity', 3);
+    if (state.country) p.set('country', state.country);
+    let data;
+    try { data = await api('/api/items?' + p); } catch (e) { $('#feed').innerHTML = `<div class="empty">Feed unavailable: ${esc(e.message)}</div>`; return; }
+    const rows = data.items || [];
+    if (!rows.length) { $('#feed').innerHTML = `<div class="empty">Nothing matches.${state.country ? ` <a href="#" id="clear-country">Clear country filter</a>` : ''}</div>`; $('#clear-country')?.addEventListener('click', (e) => { e.preventDefault(); state.country = null; loadFeed(); }); return; }
+    const head = state.country ? `<div class="notice">Filtered to ${flag(state.country)} ${esc(rows[0].country_name || state.country)} · <a href="#" id="clear-country">clear</a></div>` : '';
+    $('#feed').innerHTML = head + rows.map((it) => `
+      <div class="item s${it.severity}" data-id="${esc(it.id)}" data-lat="${it.lat ?? ''}" data-lon="${it.lon ?? ''}">
+        <div class="sev" title="severity ${it.severity}"></div>
+        <div>
+          <div class="meta"><span class="dom ${esc(it.domain)}">${esc(it.domain)}</span><span>${esc(it.source)}</span><span>·</span><span title="${esc(it.published_at)}">${ago(it.published_at)}</span>${it.country ? `<span title="${esc(it.country_name || it.country)}">${flag(it.country)}</span>` : ''}${it.kind !== 'news' ? `<span class="dim">${esc(it.kind)}</span>` : ''}</div>
+          <div class="title"><a href="${esc(it.url || '#')}" target="_blank" rel="noopener">${esc(it.title)}</a></div>
+          <div class="summary">${esc(it.summary || '')}${it.extra && it.extra.epss != null ? ` <span class="mono">EPSS ${Number(it.extra.epss).toFixed(2)}</span>` : ''}</div>
+          <div class="tags">${(it.tags || []).slice(0, 6).map((t) => `<span class="tag ${HOT.has(t) ? 'hot' : ''}">${esc(t)}</span>`).join('')}${it.lat != null ? '<span class="tag locate" style="cursor:pointer">◎ locate</span>' : ''}</div>
+        </div>
+      </div>`).join('');
+    $('#clear-country')?.addEventListener('click', (e) => { e.preventDefault(); state.country = null; loadFeed(); });
+    $$('#feed .item').forEach((el) => {
+      el.addEventListener('click', (e) => { if (e.target.closest('a') || e.target.classList.contains('locate')) return; el.classList.toggle('open'); });
+      el.querySelector('.locate')?.addEventListener('click', () => {
+        const lat = parseFloat(el.dataset.lat), lon = parseFloat(el.dataset.lon);
+        if (isFinite(lat)) { map.flyTo([lat, lon], Math.max(map.getZoom(), 4), { duration: .6 }); const t = el.querySelector('.title').textContent; L.popup().setLatLng([lat, lon]).setContent(`<h4>${esc(t)}</h4>`).openOn(map); }
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- brief
+  function sanitize(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach((n) => n.remove());
+    doc.querySelectorAll('*').forEach((n) => { for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name) || (a.name === 'href' && /^javascript:/i.test(a.value))) n.removeAttribute(a.name); });
+    return doc.body.innerHTML;
+  }
+  function renderMd(md) {
+    let html = marked.parse(md || '', { gfm: true, breaks: false });
+    html = sanitize(html).replace(/\[(\d{1,3})\]/g, '<span class="cite" title="source item in the brief context">[$1]</span>');
+    return html;
+  }
+  async function loadBrief(id) {
+    try {
+      const { brief } = await api(id ? `/api/briefs/${id}` : '/api/briefs/latest');
+      if (!brief) { $('#brief').innerHTML = '<div class="empty">No brief yet. Press Regenerate once collectors have run.</div>'; return; }
+      state.briefId = brief.id;
+      $('#brief').innerHTML = renderMd(brief.content);
+      const { briefs } = await api('/api/briefs?limit=30');
+      const opts = briefs.map((b) => `<option value="${b.id}" ${b.id === brief.id ? 'selected' : ''}>${fmtZ(b.created_at)} · ${esc(b.kind)}</option>`).join('');
+      $('#brief-meta').innerHTML = `<span>${esc(brief.model)}</span><span>·</span><span>${brief.item_count} items</span><span>·</span><span>${Math.round(brief.duration_s)}s</span><select id="brief-hist">${opts}</select>`;
+      $('#brief-hist').addEventListener('change', (e) => loadBrief(parseInt(e.target.value)));
+    } catch (e) { $('#brief-notice').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+  }
+  let pollTimer;
+  async function pollBrief() {
+    try {
+      const st = await api('/api/briefs/state');
+      if (st.generating) {
+        $('#brief-notice').innerHTML = `<div class="notice"><span class="spinner"></span> Generating brief with ${esc((state.status?.brief || {}).model || 'Ollama')} on CPU — typically 2–5 minutes. Started ${ago(st.started_at)} ago.</div>`;
+        $('#btn-gen').disabled = true;
+        clearTimeout(pollTimer); pollTimer = setTimeout(pollBrief, 5000);
+      } else {
+        $('#btn-gen').disabled = false;
+        $('#brief-notice').innerHTML = st.last_error ? `<div class="notice err">Last generation failed: ${esc(st.last_error)}</div>` : '';
+        if (state.wasGenerating) { await loadBrief(); refreshStatus(); }
+        state.wasGenerating = false;
+      }
+      state.wasGenerating = st.generating;
+    } catch (e) { /* ignore */ }
+  }
+  $('#btn-gen').addEventListener('click', async () => {
+    try { await api('/api/briefs/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hours: 24 }) }); state.wasGenerating = true; pollBrief(); }
+    catch (e) { $('#brief-notice').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+  });
+
+  // ---------------------------------------------------------------- ask
+  $('#ask-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = $('#ask-q').value.trim();
+    if (!q) return;
+    const out = $('#answer');
+    out.textContent = '';
+    $('#ask-btn').disabled = true;
+    out.innerHTML = '<span class="spinner"></span> thinking…';
+    let text = '';
+    try {
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) });
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let first = true;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n'); buf = parts.pop();
+        for (const p of parts) {
+          const line = p.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          const d = JSON.parse(line.slice(6));
+          if (d.t) { if (first) { out.textContent = ''; first = false; } text += d.t; out.textContent = text; out.scrollTop = out.scrollHeight; }
+          if (d.error) { out.textContent = `Error: ${d.error}`; }
+        }
+      }
+      if (text) out.innerHTML = renderMd(`**Q: ${q.replace(/\*/g, '')}**\n\n` + text);
+    } catch (err) { out.textContent = `Error: ${err.message}`; }
+    finally { $('#ask-btn').disabled = false; }
+  });
+
+  // ---------------------------------------------------------------- health modal
+  function openModal(title, html) { $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show'); }
+  $('#modal-close').addEventListener('click', () => $('#modal').classList.remove('show'));
+  $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('#modal').classList.remove('show'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#modal').classList.remove('show'); });
+  $('#btn-health').addEventListener('click', async () => {
+    try {
+      const [{ collectors, feeds }, ol, cfg] = await Promise.all([api('/api/collectors'), api('/api/ollama'), api('/api/config')]);
+      const rows = collectors.map((c) => `<tr><td><b>${esc(c.name)}</b><div class="dim">${esc(c.description)}</div></td><td>${esc(c.domain)}</td><td class="mono">${Math.round(c.interval_s / 60)}m</td><td class="${c.running ? 'warn' : c.ok === 1 ? 'ok' : c.ok === 0 ? 'bad' : ''}">${c.running ? 'running' : c.ok === 1 ? 'ok' : c.ok === 0 ? 'FAIL' : c.enabled ? 'pending' : 'off'}</td><td class="mono" title="${esc(c.last_finished)}">${c.last_finished ? ago(c.last_finished) + ' ago' : '–'}</td><td class="mono">${c.count ?? ''}</td><td>${esc(c.message || '')}</td></tr>`).join('');
+      const bad = feeds.filter((f) => f.fail_count > 0).map((f) => `<tr><td class="mono" style="word-break:break-all">${esc(f.url)}</td><td class="bad">${f.fail_count}</td><td>${esc(f.last_error || '')}</td></tr>`).join('');
+      const olTxt = ol.reachable ? `<span class="ok">reachable</span> at ${esc(ol.url)} · model ${esc(ol.model)} ${ol.model_present ? '<span class="ok">present</span>' : '<span class="bad">NOT FOUND</span>'} · loaded: ${esc((ol.loaded || []).map((m) => m.name).join(', ') || 'none')}` : `<span class="bad">unreachable</span> ${esc(ol.error || '')}`;
+      const keysTxt = Object.entries(cfg.keys || {}).map(([k, v]) => `<span class="${v ? 'ok' : 'dim'}">${esc(k)} ${v ? '✓' : '—'}</span>`).join(' · ');
+      openModal('Collector health', `<p><b>Ollama:</b> ${olTxt}</p><p><b>Optional keys:</b> ${keysTxt} <span class="dim">(set in ~/cyem/.env, then docker compose up -d)</span></p><table class="grid"><tr><th>Collector</th><th>Domain</th><th>Every</th><th>State</th><th>Last</th><th>Count</th><th>Message</th></tr>${rows}</table>
+        <h3 class="sec">Failing feeds (${feeds.filter((f) => f.fail_count > 0).length} of ${feeds.length})</h3><table class="grid"><tr><th>Feed</th><th>Fails</th><th>Error</th></tr>${bad || '<tr><td colspan=3 class="ok">all feeds healthy</td></tr>'}</table>
+        <p style="margin-top:10px"><button id="run-all">Run all collectors now</button></p>`);
+      $('#run-all').addEventListener('click', async () => { await api('/api/collect/all', { method: 'POST' }); $('#run-all').textContent = 'started'; setTimeout(() => { refreshStatus(); loadLayers(); loadFeed(); }, 20000); });
+    } catch (e) { openModal('Collector health', `<p class="bad">${esc(e.message)}</p>`); }
+  });
+
+  // ---------------------------------------------------------------- panels / mobile
+  function showRail(on) { $('#rail').classList.toggle('hidden', !on); $('#btn-rail').classList.toggle('active', on); setTimeout(() => map.invalidateSize(), 50); }
+  function showSide(on) { $('#side').classList.toggle('hidden', !on); $('#btn-side').classList.toggle('active', on); setTimeout(() => map.invalidateSize(), 50); }
+  $('#btn-rail').addEventListener('click', () => showRail($('#rail').classList.contains('hidden')));
+  $('#btn-side').addEventListener('click', () => showSide($('#side').classList.contains('hidden')));
+  const mobile = () => window.matchMedia('(max-width: 900px)').matches;
+  $$('#mobnav button').forEach((b) => b.addEventListener('click', () => {
+    $$('#mobnav button').forEach((x) => x.classList.toggle('active', x === b));
+    showRail(b.dataset.view === 'rail'); showSide(b.dataset.view === 'side');
+    if (b.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 250);
+  }));
+  if (mobile()) { showRail(false); showSide(false); }
+
+  // ---------------------------------------------------------------- refresh loops
+  async function refreshStatus() {
+    try { state.status = await api('/api/status'); renderPills(state.status); } catch (e) { console.warn(e); }
+  }
+  function tickClock() { const d = new Date(); $('#clock').textContent = d.toISOString().slice(11, 16) + 'Z · ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' local'; }
+  tickClock(); setInterval(tickClock, 15000);
+  refreshStatus(); loadFeed(); loadBrief(); pollBrief(); loadLayers();
+  let minute = 0;
+  setInterval(refreshStatus, 60000);
+  setInterval(loadFeed, 150000);
+  setInterval(() => { minute += 1; loadLayers(minute); }, 60000);
+})();

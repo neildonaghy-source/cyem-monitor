@@ -1,0 +1,545 @@
+[
+ {
+  "id": "apt28",
+  "name": "APT28",
+  "aka": "Fancy Bear, Forest Blizzard, Sofacy",
+  "country": "RU",
+  "sponsor": "Russia (GRU, publicly attributed)",
+  "mitre": "G0007",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "Defence",
+   "NATO",
+   "Elections",
+   "Media"
+  ],
+  "note": "GRU-linked. Credential phishing and network-edge exploitation against NATO governments, defence and political targets; router and mail-server abuse.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "apt29",
+  "name": "APT29",
+  "aka": "Cozy Bear, Midnight Blizzard, NOBELIUM",
+  "country": "RU",
+  "sponsor": "Russia (SVR, publicly attributed)",
+  "mitre": "G0016",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "Diplomatic",
+   "Cloud/identity",
+   "Think tanks",
+   "Technology"
+  ],
+  "note": "SVR-linked. Long-dwell espionage against diplomatic and government networks; identity and cloud tenancy abuse; supply-chain compromise.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "sandworm",
+  "name": "Sandworm",
+  "aka": "APT44, Seashell Blizzard, Voodoo Bear",
+  "country": "RU",
+  "sponsor": "Russia (GRU, publicly attributed)",
+  "mitre": "G0034",
+  "type": "state",
+  "sectors": [
+   "Energy",
+   "ICS/OT",
+   "Government",
+   "Telecoms",
+   "Ukraine"
+  ],
+  "note": "GRU-linked. Destructive and disruptive operations: power-grid attacks, wipers, telecoms disruption; heavy focus on Ukraine and its supporters.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "turla",
+  "name": "Turla",
+  "aka": "Venomous Bear, Secret Blizzard, Snake",
+  "country": "RU",
+  "sponsor": "Russia (FSB, publicly attributed)",
+  "mitre": "G0010",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "Diplomatic",
+   "Defence",
+   "Research"
+  ],
+  "note": "FSB-linked. Stealthy long-term espionage; known for hijacking other actors' infrastructure and unusual C2 channels.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "gamaredon",
+  "name": "Gamaredon",
+  "aka": "Primitive Bear, Aqua Blizzard, Armageddon",
+  "country": "RU",
+  "sponsor": "Russia (FSB, publicly attributed)",
+  "mitre": "G0047",
+  "type": "state",
+  "sectors": [
+   "Ukraine government",
+   "Defence",
+   "Law enforcement"
+  ],
+  "note": "High-volume spear-phishing against Ukrainian government and security services.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "dragonfly",
+  "name": "Dragonfly",
+  "aka": "Energetic Bear, Berserk Bear, Ghost Blizzard",
+  "country": "RU",
+  "sponsor": "Russia (FSB, publicly attributed)",
+  "mitre": "G0035",
+  "type": "state",
+  "sectors": [
+   "Energy",
+   "ICS/OT",
+   "Water",
+   "Aviation"
+  ],
+  "note": "Pre-positioning in energy and utility networks in Europe and North America.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "starblizzard",
+  "name": "Star Blizzard",
+  "aka": "Callisto, ColdRiver, SEABORGIUM",
+  "country": "RU",
+  "sponsor": "Russia (FSB, publicly attributed)",
+  "mitre": null,
+  "type": "state",
+  "sectors": [
+   "Politicians",
+   "Think tanks",
+   "Journalists",
+   "Academia",
+   "UK"
+  ],
+  "note": "Spear-phishing of UK and allied political figures, NGOs and academics; hack-and-leak operations.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "apt41",
+  "name": "APT41",
+  "aka": "Winnti, Double Dragon, Brass Typhoon",
+  "country": "CN",
+  "sponsor": "China (MSS-linked contractor, publicly attributed)",
+  "mitre": "G0096",
+  "type": "state",
+  "sectors": [
+   "Technology",
+   "Healthcare",
+   "Telecoms",
+   "Gaming",
+   "Government"
+  ],
+  "note": "Espionage and financially motivated activity from the same operators; supply-chain and software-signing abuse.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "apt10",
+  "name": "APT10",
+  "aka": "Stone Panda, MenuPass, Cicada",
+  "country": "CN",
+  "sponsor": "China (MSS, publicly attributed)",
+  "mitre": "G0045",
+  "type": "state",
+  "sectors": [
+   "Managed service providers",
+   "Defence industry",
+   "Aerospace",
+   "Government"
+  ],
+  "note": "Managed-service-provider compromise (Cloud Hopper) to reach many downstream victims.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "apt40",
+  "name": "APT40",
+  "aka": "Leviathan, Gingham Typhoon, TEMP.Periscope",
+  "country": "CN",
+  "sponsor": "China (MSS Hainan, publicly attributed)",
+  "mitre": "G0065",
+  "type": "state",
+  "sectors": [
+   "Maritime",
+   "Defence",
+   "Research",
+   "Government"
+  ],
+  "note": "Rapid exploitation of newly disclosed edge-device vulnerabilities; maritime and defence research focus.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "apt31",
+  "name": "APT31",
+  "aka": "Zirconium, Judgment Panda, Violet Typhoon",
+  "country": "CN",
+  "sponsor": "China (MSS, publicly attributed)",
+  "mitre": "G0128",
+  "type": "state",
+  "sectors": [
+   "Parliamentarians",
+   "Government",
+   "Defence",
+   "Dissidents"
+  ],
+  "note": "Targeted parliamentarians in the UK, US and Europe; sanctioned by UK and US in 2024.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "volttyphoon",
+  "name": "Volt Typhoon",
+  "aka": "Vanguard Panda, Bronze Silhouette",
+  "country": "CN",
+  "sponsor": "China (state, publicly attributed)",
+  "mitre": "G1017",
+  "type": "state",
+  "sectors": [
+   "Critical infrastructure",
+   "Water",
+   "Energy",
+   "Telecoms",
+   "Transport"
+  ],
+  "note": "Living-off-the-land pre-positioning in US and allied critical infrastructure, assessed as preparation for disruption in a crisis.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "salttyphoon",
+  "name": "Salt Typhoon",
+  "aka": "GhostEmperor, FamousSparrow, Earth Estries",
+  "country": "CN",
+  "sponsor": "China (state, publicly attributed)",
+  "mitre": null,
+  "type": "state",
+  "sectors": [
+   "Telecoms",
+   "ISPs",
+   "Lawful intercept",
+   "Government"
+  ],
+  "note": "Deep compromise of telecoms carriers and network infrastructure in the US and allies; router and core-network access.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "mustangpanda",
+  "name": "Mustang Panda",
+  "aka": "Bronze President, TA416, Twill Typhoon",
+  "country": "CN",
+  "sponsor": "China (state, publicly attributed)",
+  "mitre": "G0129",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "NGOs",
+   "Europe",
+   "South-East Asia"
+  ],
+  "note": "Espionage against governments and NGOs in Europe and Asia, often via USB and phishing lures; PlugX malware.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "apt1",
+  "name": "APT1",
+  "aka": "Comment Crew, PLA Unit 61398",
+  "country": "CN",
+  "sponsor": "China (PLA, publicly attributed)",
+  "mitre": "G0006",
+  "type": "state",
+  "sectors": [
+   "Industrial",
+   "Defence industry",
+   "Technology"
+  ],
+  "note": "Historic large-scale industrial espionage; the 2013 report that set the attribution template.",
+  "lat": 39.9,
+  "lon": 116.4
+ },
+ {
+  "id": "lazarus",
+  "name": "Lazarus Group",
+  "aka": "Hidden Cobra, Diamond Sleet, TEMP.Hermit",
+  "country": "KP",
+  "sponsor": "North Korea (RGB, publicly attributed)",
+  "mitre": "G0032",
+  "type": "state",
+  "sectors": [
+   "Crypto exchanges",
+   "Finance",
+   "Defence",
+   "Aerospace",
+   "Developers"
+  ],
+  "note": "Revenue generation and espionage: cryptocurrency theft, supply-chain attacks, fake job lures against defence and IT staff.",
+  "lat": 39.02,
+  "lon": 125.75
+ },
+ {
+  "id": "apt38",
+  "name": "APT38",
+  "aka": "BlueNoroff, Sapphire Sleet, Stardust Chollima",
+  "country": "KP",
+  "sponsor": "North Korea (RGB, publicly attributed)",
+  "mitre": "G0082",
+  "type": "state",
+  "sectors": [
+   "Banks",
+   "SWIFT",
+   "Crypto"
+  ],
+  "note": "Financially motivated bank and crypto heists funding the state.",
+  "lat": 39.02,
+  "lon": 125.75
+ },
+ {
+  "id": "kimsuky",
+  "name": "Kimsuky",
+  "aka": "Velvet Chollima, Emerald Sleet, APT43",
+  "country": "KP",
+  "sponsor": "North Korea (RGB, publicly attributed)",
+  "mitre": "G0094",
+  "type": "state",
+  "sectors": [
+   "Think tanks",
+   "Academia",
+   "Government",
+   "Nuclear policy"
+  ],
+  "note": "Credential phishing and espionage against Korea-policy experts, media and government.",
+  "lat": 39.02,
+  "lon": 125.75
+ },
+ {
+  "id": "apt37",
+  "name": "APT37",
+  "aka": "ScarCruft, Reaper, Ricochet Chollima",
+  "country": "KP",
+  "sponsor": "North Korea (MSS, publicly attributed)",
+  "mitre": "G0067",
+  "type": "state",
+  "sectors": [
+   "South Korea",
+   "Defectors",
+   "Media",
+   "Government"
+  ],
+  "note": "Espionage focused on South Korea and Korea-related targets; mobile and zero-day usage.",
+  "lat": 39.02,
+  "lon": 125.75
+ },
+ {
+  "id": "apt33",
+  "name": "APT33",
+  "aka": "Elfin, Peach Sandstorm, Refined Kitten",
+  "country": "IR",
+  "sponsor": "Iran (state, publicly attributed)",
+  "mitre": "G0064",
+  "type": "state",
+  "sectors": [
+   "Aerospace",
+   "Energy",
+   "Defence",
+   "Gulf states"
+  ],
+  "note": "Password spraying and espionage against aviation, energy and defence organisations in the US, Gulf and Europe.",
+  "lat": 35.69,
+  "lon": 51.39
+ },
+ {
+  "id": "apt34",
+  "name": "APT34",
+  "aka": "OilRig, Helix Kitten, Hazel Sandstorm",
+  "country": "IR",
+  "sponsor": "Iran (MOIS, publicly attributed)",
+  "mitre": "G0049",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "Telecoms",
+   "Finance",
+   "Middle East"
+  ],
+  "note": "Regional espionage with custom backdoors and DNS-based C2.",
+  "lat": 35.69,
+  "lon": 51.39
+ },
+ {
+  "id": "apt35",
+  "name": "APT35",
+  "aka": "Charming Kitten, Mint Sandstorm, Phosphorus",
+  "country": "IR",
+  "sponsor": "Iran (IRGC, publicly attributed)",
+  "mitre": "G0059",
+  "type": "state",
+  "sectors": [
+   "Journalists",
+   "Academics",
+   "Policy",
+   "Dissidents",
+   "Defence"
+  ],
+  "note": "Persistent social-engineering campaigns with fake personas; targets researchers and policy figures in the UK, US and Israel.",
+  "lat": 35.69,
+  "lon": 51.39
+ },
+ {
+  "id": "muddywater",
+  "name": "MuddyWater",
+  "aka": "Mango Sandstorm, TEMP.Zagros, Static Kitten",
+  "country": "IR",
+  "sponsor": "Iran (MOIS, publicly attributed)",
+  "mitre": "G0069",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "Telecoms",
+   "Middle East",
+   "Turkey"
+  ],
+  "note": "Regional espionage using legitimate remote-management tools and phishing.",
+  "lat": 35.69,
+  "lon": 51.39
+ },
+ {
+  "id": "cyberav3ngers",
+  "name": "CyberAv3ngers",
+  "aka": "IRGC-CEC affiliated persona",
+  "country": "IR",
+  "sponsor": "Iran (IRGC-CEC, publicly attributed)",
+  "mitre": null,
+  "type": "state",
+  "sectors": [
+   "Water",
+   "ICS/OT",
+   "PLCs",
+   "Israel-made equipment"
+  ],
+  "note": "Defacement and disruption of exposed Israeli-made PLCs in water and other utilities, including in the UK and US.",
+  "lat": 35.69,
+  "lon": 51.39
+ },
+ {
+  "id": "apt32",
+  "name": "APT32",
+  "aka": "OceanLotus, Canvas Cyclone",
+  "country": "VN",
+  "sponsor": "Vietnam (publicly attributed)",
+  "mitre": "G0050",
+  "type": "state",
+  "sectors": [
+   "Foreign companies in Vietnam",
+   "Dissidents",
+   "ASEAN governments"
+  ],
+  "note": "Espionage against foreign firms, journalists and regional governments.",
+  "lat": 21.03,
+  "lon": 105.85
+ },
+ {
+  "id": "sidewinder",
+  "name": "SideWinder",
+  "aka": "Rattlesnake, T-APT-04",
+  "country": "IN",
+  "sponsor": "India-linked (publicly reported)",
+  "mitre": "G0121",
+  "type": "state",
+  "sectors": [
+   "Pakistan",
+   "China",
+   "Military",
+   "Government",
+   "Maritime"
+  ],
+  "note": "Regional espionage focused on South Asian military and government targets.",
+  "lat": 28.61,
+  "lon": 77.21
+ },
+ {
+  "id": "transparenttribe",
+  "name": "Transparent Tribe",
+  "aka": "APT36, Mythic Leopard",
+  "country": "PK",
+  "sponsor": "Pakistan-linked (publicly reported)",
+  "mitre": "G0134",
+  "type": "state",
+  "sectors": [
+   "Indian military",
+   "Government",
+   "Education"
+  ],
+  "note": "Espionage against Indian defence and government with CrimsonRAT and mobile implants.",
+  "lat": 33.69,
+  "lon": 73.04
+ },
+ {
+  "id": "scatteredspider",
+  "name": "Scattered Spider",
+  "aka": "UNC3944, Octo Tempest, 0ktapus",
+  "country": "GB",
+  "sponsor": "Criminal, English-speaking (UK/US-based members arrested)",
+  "mitre": "G1015",
+  "type": "criminal",
+  "sectors": [
+   "Retail",
+   "Insurance",
+   "Aviation",
+   "Hospitality",
+   "Help desks"
+  ],
+  "note": "Social engineering of help desks and MFA, then ransomware deployment; linked to major UK retail incidents in 2025.",
+  "lat": 51.5,
+  "lon": -0.12
+ },
+ {
+  "id": "fin7",
+  "name": "FIN7",
+  "aka": "Carbanak, Sangria Tempest",
+  "country": "RU",
+  "sponsor": "Criminal",
+  "mitre": "G0046",
+  "type": "criminal",
+  "sectors": [
+   "Retail",
+   "Hospitality",
+   "Finance"
+  ],
+  "note": "Long-running financially motivated group; tooling later reused by ransomware affiliates.",
+  "lat": 55.75,
+  "lon": 37.62
+ },
+ {
+  "id": "equation",
+  "name": "Equation Group",
+  "aka": "Tailored Access Operations (publicly reported link)",
+  "country": "US",
+  "sponsor": "United States (publicly reported)",
+  "mitre": "G0020",
+  "type": "state",
+  "sectors": [
+   "Government",
+   "Telecoms",
+   "Research"
+  ],
+  "note": "Highly capable espionage tooling documented in 2015; firmware-level implants.",
+  "lat": 38.9,
+  "lon": -77.04
+ }
+]

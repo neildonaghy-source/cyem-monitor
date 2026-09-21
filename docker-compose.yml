@@ -1,0 +1,41 @@
+# CyEM Monitor — cyber and electromagnetic situational awareness, self-hosted.
+# Ollama is shared with trading-bot (service "ollama" on network trading-bot_default).
+services:
+  cyem:
+    build: .
+    image: cyem-monitor:latest
+    container_name: cyem
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3020:8080"      # Tailscale serve proxies 8443/8444 -> 3020
+    environment:
+      TZ: "Europe/London"
+      CYEM_DATA_DIR: "/data"
+      OLLAMA_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.5:4b}"
+      OLLAMA_THINK: "false"
+      OLLAMA_NUM_CTX: "8192"
+      BRIEF_HOURS: "${BRIEF_HOURS:-06,12,18,00}"
+      BRIEF_ENABLED: "true"
+      COLLECT_ON_START: "true"
+      RETENTION_DAYS: "120"
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"   # optional: Radar outages/attacks/BGP
+      NVD_API_KEY: "${NVD_API_KEY:-}"                     # optional: higher NVD rate limit
+      ABUSECH_AUTH_KEY: "${ABUSECH_AUTH_KEY:-}"           # optional: ThreatFox IOCs
+      OPENCTI_URL: "${OPENCTI_URL:-}"                     # optional: OpenCTI GraphQL (reports, indicators, intrusion sets)
+      OPENCTI_TOKEN: "${OPENCTI_TOKEN:-}"
+    volumes:
+      - ./data-store:/data
+    networks:
+      - default
+      - trading-bot
+    mem_limit: 768m
+    cpus: 2.0
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  trading-bot:
+    external: true
+    name: trading-bot_default

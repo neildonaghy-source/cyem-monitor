@@ -219,3 +219,44 @@ on demand; HF skywave planning using the existing MUF layer.
   (code only: no `.env`, database, Ofcom CSV or DEM tiles). v13 was the 21 Sep initial import.
 - **Version control:** local git on the trade box only (no remote). Off-box copies are the OneDrive home backup
   and the Mac deploy bundles. Work on branches; merge to `main` with fast-forward.
+
+## Added 2026-09-23 (second pass)
+
+**Home-screen search and Ask AI** (top bar, `/` to focus). Search covers feed items, Ofcom licences (name, licence
+number or frequency), planned emitters, links, coverage sites, UKFAT allocations and satellite downlinks; "near
+<place>" geocodes via OpenStreetMap Nominatim (cached) and filters licences to 30 km. Ask AI answers under fixed
+headings: From CyEM data; From web search (unverified), only when Web is ticked; General knowledge (not from CyEM
+data). Model: shared qwen3.5:4b on CPU, about 2 minutes per answer. Code: `app/omni.py`, `/api/search`, `/api/ask`.
+
+**Web search** uses a self-hosted SearXNG container (`cyem-searxng`, internal Docker network only, no published
+port, 256 MB). Settings with the secret key: `searxng/settings.yml` (git-ignored, mode 600). Web results are
+cited [W1] and labelled unverified. Code: `app/websearch.py`.
+
+**Plan export**: Spectrum panel, Export plan (Word): emitters, conflicts, links, coverage, sources and limits.
+Code: `app/export.py` (python-docx).
+
+**Ships (AIS)**: aisstream.io websocket sampled 45 s every 5 min, UK waters; static data cached across runs.
+Key `AISSTREAM_KEY` in `.env`. **All aircraft (ADS-B)**: adsb.fi (adsb.lol fallback), 250 nm of UK, every 2 min;
+degraded GNSS flagged at NIC 1 to 6 (NACp was too noisy), emergency squawks flagged. **Mobile cells**:
+OpenCelliD MCC 234 weekly bulk download (free tier allows 2 downloads per file per day; a fresh local copy is
+reused), separate DB `data-store/cells/cells.sqlite3` (not backed up). Key `OPENCELLID_KEY` in `.env`; errors never
+echo the URL (it carries the key).
+
+**UKFAT**: Ofcom UK Frequency Allocation Table parsed from the PDF's tables (text extraction scrambled footnotes and
+was rejected) into `data-store/ofcom/ukfat.json`: about 574 bands and 334 UK footnotes; monthly check, re-parsed only
+when the PDF changes. Used by search and Ask AI. Code: `app/ukfat.py`, collector `ukfat`.
+
+**Satellites**: SatNOGS DB active downlinks (weekly, about 2,900) in search and Ask AI within +/-50 kHz; pass
+prediction over the map centre from CelesTrak TLEs and SGP4 (`/api/sat/passes`). Code: `app/satnogs.py`.
+
+**HF skywave now-cast** (HF button): hops, control points, foF2 / MUF(3000) / hmF2 by inverse-distance weighting of
+fresh ionosondes (KC2G/GIRO), hop MUF by secant-law scaling of each station's MUF(3000), FOT = 0.85 x MUF, lower
+limit from NOAA D-RAP (space weather only; normal daytime absorption not modelled). Checked: Chichester to Berlin
+994 km MUF 14.3 MHz; NVIS 102 km MUF 7.1 MHz (about foF2). Code: `app/hf_core.py` (tested), `app/hf_api.py`.
+
+**Coverage fine sampling**: optional 1,000 samples per radial (about 3x slower).
+
+**Git remote**: private `neildonaghy-source/cyem-monitor`, pushed from the box with deploy key `~/.ssh/cyem_github`
+(host alias `github-cyem`). `.env`, all `.env.*` except the example, data and SearXNG settings are git-ignored.
+Release routine: branch, test (`pytest tests`), merge fast-forward to `main`, `git push origin main`, bump BUILD in
+`static/app.js` with the `?v=` in `index.html` and the cache name in `sw.js`, refresh the Mac bundle.

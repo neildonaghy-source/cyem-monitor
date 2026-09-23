@@ -199,3 +199,6 @@ h3.sec:first-child { margin-top: 0; }
 .specset input { width: 72px; }
 table.grid tr.sel td { background: rgba(60, 199, 255, .08); }
 #modal-body svg text { pointer-events: none; }
+
+/* layer panel scrolls on its own (wheel and touch) instead of panning the map */
+#layers { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }

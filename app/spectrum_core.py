@@ -16,6 +16,7 @@ terrain or power. See harmonics() / intermod3() stubs.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -60,6 +61,52 @@ def _txt(v: str | None) -> str | None:
         return None
     v = v.strip()
     return None if not v or v == "-" else v
+
+
+# ---- privacy: suppress licensee names that look like private individuals ----------------
+# The register's surname/first-name fields are dropped outright. Some sole traders' names
+# are typed into the company field instead; mask anything that looks like a personal name.
+# Deliberately errs towards masking: hiding a small organisation's name costs little.
+ORG_WORDS = set("""LTD LIMITED PLC LLP LLC INC CORP CO COMPANY COUNCIL TRUST NHS UNIVERSITY COLLEGE SCHOOL SCHOOLS ACADEMY
+AUTHORITY POLICE FIRE RESCUE SERVICE SERVICES CLUB ASSOCIATION SOCIETY GROUP PARTNERSHIP PARTNERS AIRPORT AIRPORTS PORT PORTS
+HARBOUR RAILWAY RAILWAYS NETWORK NETWORKS COMMUNICATIONS COMMS TELECOM TELECOMS RADIO RADIOS ENERGY WATER ELECTRIC
+ELECTRICITY POWER HOSPITAL HOSPITALS CHURCH CIC FOUNDATION BOARD AGENCY DEPARTMENT MINISTRY GOVERNMENT SECRETARY
+OFFICE COMMISSION TRAM TRAMS BUS BUSES COACH COACHES TAXI TAXIS CARS SECURITY HOLDINGS ENTERPRISE ENTERPRISES
+INDUSTRIES SYSTEMS SOLUTIONS TECHNOLOGIES TECHNOLOGY INTERNATIONAL UK BRITISH NATIONAL ROYAL ESTATE ESTATES FARM FARMS
+HOTEL HOTELS MARINA MARINE YACHT YACHTS LIFEBOAT RNLI CITY COUNTY BOROUGH DISTRICT PARISH SONS BROS BROTHERS AND
+EDUCATION TRANSPORT LOGISTICS CONSTRUCTION ENGINEERING MOTORS GARAGE HAULAGE PLANT HIRE EVENTS MEDIA STUDIO STUDIOS
+PRODUCTIONS CLEANING SUPPLIES FARMING LEISURE SPORTS SPORT CENTRE CENTER UNIT YSGOL MBC DC CC BC CENTRAL NORTH SOUTH
+EAST WEST FISHERIES FISHING SHIPPING FERRIES FERRY BOATS BOAT TOURS TRAVEL CARE HOME HOMES HEALTH MEDICAL AMBULANCE
+MUSEUM THEATRE ARENA STADIUM RACECOURSE GOLF RACING MOTORSPORT CIRCUIT QUARRY QUARRIES MINING AGGREGATES CONCRETE
+STEEL WORKS MILLS DOCK DOCKS TERMINAL TERMINALS WHARF MARITIME NAVAL ARMY RAF DEFENCE HM HMS MOD REGIMENT BATTALION
+COMMUNITY VOLUNTARY CHARITY CHARITABLE MISSION SCOUTS GUIDES CADETS FESTIVAL EXHIBITION SHOW SHOWS AGRICULTURAL
+TV TELEVISION BROADCAST BROADCASTING WIRELESS MOBILE TELECOMMUNICATIONS SATELLITE DATA DIGITAL CONSULTING CONSULTANTS
+ASSOCIATES CONTRACTORS CONTRACTING ELECTRICAL MECHANICAL SUPPLY TRADING TRADERS STORES SHOP RETAIL PARK PARKS GARDENS
+""".split())
+ORG_WORDS |= set("""MOSQUE MASJID JAMIA JAMIAT ISLAM ISLAMIC ISLAMIYYAH MADINA MADRASSA MUSLIM IDARA CENTRE GURDWARA TEMPLE
+SYNAGOGUE CHAPEL CATHEDRAL ABBEY MINSTER INSTITUTE LABORATORY LABORATORIES BANK CORPORATION FUND FUNDS MANAGEMENT HALL
+MEMORIAL PRIMARY SECONDARY INFANT JUNIOR NURSERY UNION FORT CASTLE PALACE MANOR COTTAGE LODGE HOUSE CHEMICALS SALADS FOODS
+FOOD LEARNING RESOURCES WALES SCOTLAND ENGLAND IRELAND LONDON VENUE CYMRU HILTON RIVERSIDE CANAL WATERWAYS BRITISHWATERWAYS
+LIBRARY GALLERY ZOO AQUARIUM RESERVE NATURE WILDLIFE FOREST FORESTRY PORTAKABIN WAVE REBEL AS AB SA GMBH BV NV SPA AG
+""".split())
+TITLES = {"MR", "MRS", "MS", "MISS", "DR", "REV", "SIR", "DAME", "LORD", "LADY"}
+_NAME_WORD = re.compile(r"^[A-Za-z][A-Za-z'\-]*\.?$")
+
+
+def looks_personal(company: str | None) -> bool:
+    if not company:
+        return False
+    words = company.replace(",", " ").split()
+    up = [w.strip(".").upper() for w in words]
+    if up and up[0] in TITLES:
+        return True
+    if not 2 <= len(words) <= 3 or not all(_NAME_WORD.match(w) for w in words):
+        return False
+    if up[0] == "THE" or any(u in ORG_WORDS for u in up):
+        return False
+    if company.upper() != company and any(2 <= len(w) <= 4 and w.isupper() for w in words):
+        return False   # acronym in a mixed-case name, e.g. 'Roadphone NRB'
+    return True
 
 
 _EMISSION_MULT = {"H": 1.0, "K": 1e3, "M": 1e6, "G": 1e9}
@@ -110,7 +157,7 @@ def parse_wtr_row(row: dict) -> dict | None:
         "height_asl_m": _num(g["height_asl_m"]),
         "azimuth": _num(g["azimuth"]),
         "emission": _txt(g["emission"]),
-        "company": _txt(g["company"]),
+        "company": None if looks_personal(_txt(g["company"])) else _txt(g["company"]),
         "product": _txt(g["product"]) or "Unknown",
         "lat": round(lat, 6) if lat is not None else None,
         "lon": round(lon, 6) if lon is not None else None,

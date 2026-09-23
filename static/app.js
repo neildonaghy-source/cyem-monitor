@@ -100,6 +100,12 @@
   function optOn(id) { const o = LAYERS.flatMap((l) => l.opts || []).find((x) => x.id === id); return optState[id] ?? (o ? o.on : false); }
   function isOn(L_) { return saved[L_.id] ?? L_.on; }
 
+  function setLayerOn(L_, on) {
+    if (!L_) return;
+    if (on) { groups[L_.id].addTo(map); if (!L_.loaded || L_.id === 'wtr') L_.load().catch(console.warn); }
+    else map.removeLayer(groups[L_.id]);
+    saved[L_.id] = on; saveLs('cyem.layers', saved);
+  }
   function buildLayerPanel() {
     layerCtl.innerHTML = '<h3><span>Layers</span><a href="#" id="layers-toggle">hide</a></h3>';
     for (const g of GROUPS) {
@@ -127,15 +133,16 @@
       sec.querySelectorAll('a[data-all]').forEach((a) => a.addEventListener('click', (e) => {
         e.preventDefault();
         const on = a.dataset.all === 'on';
-        sec.querySelectorAll('label[data-layer] input').forEach((cb) => { if (cb.checked !== on) cb.click(); });
+        sec.querySelectorAll('label[data-layer]').forEach((lab) => {
+          const cb = lab.querySelector('input');
+          if (cb.checked === on) return;
+          cb.checked = on;
+          setLayerOn(LAYERS.find((l) => l.id === lab.dataset.layer), on);
+        });
       }));
       sec.querySelectorAll('label[data-layer]').forEach((lab) => {
         const L_ = LAYERS.find((l) => l.id === lab.dataset.layer);
-        lab.querySelector('input').addEventListener('change', (e) => {
-          if (e.target.checked) { groups[L_.id].addTo(map); if (!L_.loaded) L_.load().catch(console.warn); }
-          else map.removeLayer(groups[L_.id]);
-          saved[L_.id] = e.target.checked; saveLs('cyem.layers', saved);
-        });
+        lab.querySelector('input').addEventListener('change', (e) => setLayerOn(L_, e.target.checked));
       });
       sec.querySelectorAll('label[data-opt]').forEach((lab) => {
         lab.querySelector('input').addEventListener('change', (e) => {
@@ -148,6 +155,8 @@
   }
   for (const L_ of LAYERS) { groups[L_.id] = L.layerGroup(); if (isOn(L_)) groups[L_.id].addTo(map); }
   buildLayerPanel();
+  L.DomEvent.disableScrollPropagation(layerCtl);
+  L.DomEvent.disableClickPropagation(layerCtl);
   setBasemap((() => { try { return localStorage.getItem('cyem.basemap') || 'esri_dark'; } catch { return 'esri_dark'; } })());
   $('#legend').innerHTML = `<span><i style="background:#ff5c5c"></i>GNSS high</span><span><i style="background:#f3b23e"></i>GNSS medium / ISR aircraft</span><span><i style="background:#ff6fb1"></i>emitter</span><span><i style="background:#ff8c42"></i>outage</span><span><i style="background:#b48cff"></i>ransomware</span><span><i style="background:#3cc7ff"></i>C2</span><span><i style="background:#45d38a"></i>GDELT</span>`;
 
@@ -937,17 +946,18 @@
   }
   $('#btn-spec').addEventListener('click', () => openSpectrum());
   // ---------------------------------------------------------------- panels / mobile
-  function showRail(on) { $('#rail').classList.toggle('hidden', !on); $('#btn-rail').classList.toggle('active', on); setTimeout(() => map.invalidateSize(), 50); }
-  function showSide(on) { $('#side').classList.toggle('hidden', !on); $('#btn-side').classList.toggle('active', on); setTimeout(() => map.invalidateSize(), 50); }
+  const mobile = () => window.matchMedia('(max-width: 900px)').matches;
+  const panels = (() => { try { return { rail: false, side: false, ...JSON.parse(localStorage.getItem('cyem.panels') || '{}') }; } catch { return { rail: false, side: false }; } })();
+  function showRail(on, remember = true) { $('#rail').classList.toggle('hidden', !on); $('#btn-rail').classList.toggle('active', on); if (remember && !mobile()) { panels.rail = on; saveLs('cyem.panels', panels); } setTimeout(() => map.invalidateSize(), 50); }
+  function showSide(on, remember = true) { $('#side').classList.toggle('hidden', !on); $('#btn-side').classList.toggle('active', on); if (remember && !mobile()) { panels.side = on; saveLs('cyem.panels', panels); } setTimeout(() => map.invalidateSize(), 50); }
   $('#btn-rail').addEventListener('click', () => showRail($('#rail').classList.contains('hidden')));
   $('#btn-side').addEventListener('click', () => showSide($('#side').classList.contains('hidden')));
-  const mobile = () => window.matchMedia('(max-width: 900px)').matches;
   $$('#mobnav button').forEach((b) => b.addEventListener('click', () => {
     $$('#mobnav button').forEach((x) => x.classList.toggle('active', x === b));
     showRail(b.dataset.view === 'rail'); showSide(b.dataset.view === 'side');
     if (b.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 250);
   }));
-  if (mobile()) { showRail(false); showSide(false); }
+  if (mobile()) { showRail(false, false); showSide(false, false); } else { showRail(panels.rail, false); showSide(panels.side, false); }
 
   // ---------------------------------------------------------------- refresh loops
   async function refreshStatus() {

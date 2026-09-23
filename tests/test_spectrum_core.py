@@ -2,7 +2,7 @@
 import math
 
 from app.spectrum_core import (Emitter, bbox_for_radius, bw_from_emission, find_conflicts, freq_overlap_hz,
-                               freq_overlaps, haversine_km, parse_wtr_row, severity, windows_intersect)
+                               freq_overlaps, haversine_km, looks_personal, parse_wtr_row, severity, windows_intersect)
 
 ROW = {
     "Licence Number": "1418767/1", "Frequency (Hz)": "163037500", "Station Type": "T", "Channel Width (Hz)": "12500",
@@ -107,3 +107,16 @@ def test_planned_vs_planned_time_and_dedupe():
     out = find_conflicts([a, b, c], [a, b, c], radius_km=50)
     pairs = {tuple(sorted((r["a"], r["b"]))) for r in out}
     assert pairs == {("A", "B")} and len(out) == 1
+
+
+def test_looks_personal_masks_individuals_not_organisations():
+    for name in ["Daniel James", "DANIEL JAMES", "Mr Iftikhar Hussain", "A P Sheardown", "Mohammed Amin Pandor"]:
+        assert looks_personal(name), name
+    for org in ["Roadphone NRB", "Sefton MBC", "RADIO LINKS COMMUNICATIONS LIMITED", "Portsmouth City Council",
+                "Standard Chartered Bank", "The Pirbright Institute", "Jamia Ghosia Mosque", "Edinburgh Trams Limited",
+                "Rutherford Appleton Laboratory", "Brunel Education", None, ""]:
+        assert not looks_personal(org), org
+
+
+def test_parse_row_masks_personal_company():
+    assert parse_wtr_row({**ROW, "Licencee Company": "Daniel James"})["company"] is None

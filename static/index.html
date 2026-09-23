@@ -23,15 +23,15 @@
   <div id="clock">--:--Z</div>
   <div id="pills"></div>
   <div id="topbtns">
-    <button id="btn-rail" class="active" title="Toggle feed rail">Feed</button>
-    <button id="btn-side" class="active" title="Toggle brief panel">Brief</button>
+    <button id="btn-rail" title="Toggle feed rail">Feed</button>
+    <button id="btn-side" title="Toggle brief panel">Brief</button>
     <button id="btn-spec" title="Spectrum deconfliction: planned emitters vs Ofcom licences">Spectrum</button>
     <button id="btn-health" title="Collector health">Health</button>
   </div>
 </div>
 
 <div id="app">
-<aside id="rail">
+<aside id="rail" class="hidden">
   <div class="tabs" id="dom-tabs">
     <button data-dom="all" class="active">All</button>
     <button data-dom="cyber">Cyber</button>
@@ -59,7 +59,7 @@
   <div id="legend"></div>
 </div>
 
-<aside id="side">
+<aside id="side" class="hidden">
   <div class="panel-head">
     <h2>Intelligence brief</h2>
     <button id="btn-gen" class="primary" title="Generate a fresh brief with Ollama">Regenerate</button>

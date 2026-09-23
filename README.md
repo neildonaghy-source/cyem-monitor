@@ -134,8 +134,10 @@ window) and they are checked against the Ofcom licensed baseline and against eac
 - **Not loaded:** rows with no frequency (about 3,700, mainly AIS).
 - **Area-defined licences** (mostly BR Area Defined, about 3,400) have no position. They are checked on
   frequency only and reported as "area".
-- **Privacy:** licensee surname and first-name columns are dropped at ingest. The company field can still
-  hold a sole trader's name; it is Ofcom-published data but treat it with care.
+- **Privacy:** licensee surname and first-name columns are dropped at ingest, and a company field that looks
+  like a personal name (title, or two or three plain words with no organisation term) is withheld
+  (`spectrum_core.looks_personal`, about 6,400 assignments). It errs towards masking, so a few small
+  organisations show as "Licensee withheld".
 - **Conflict rule:** guarded overlap `|f1-f2| < (bw1+bw2)/2 + guard` within the radius (default 50 km);
   planned/planned pairs also need overlapping time windows. Severity: high = occupied bands overlap and
   within a third of the radius; medium = other overlap in radius or area licence; low = guard band only.

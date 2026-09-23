@@ -41,6 +41,51 @@ def _mhz(h):
     return round(h / 1e6, 6)
 
 
+# ---- place names: "near Chichester" -> lat/lon via OpenStreetMap Nominatim (cached) ----
+_PLACE = re.compile(r"\b(?:near|around|at|in|by|close to)\s+([A-Z][\w'\-]+(?:\s+(?:[A-Z][\w'\-]+|upon|on|le|de))*)")
+_GEO_CACHE: dict = {}
+NEAR_KM = 30.0
+_STOP = {"GNSS", "UK", "HF", "VHF", "UHF", "SHF", "EHF", "MHz", "GHz", "The"}
+
+
+def find_place(q):
+    """First place name after near/around/at/in, geocoded within Great Britain via
+    Nominatim (one request per new name, cached). None if offline or not found."""
+    import httpx
+    for m in _PLACE.finditer(q):
+        name = m.group(1).strip()
+        if name.split()[0] in _STOP or len(name) < 3:
+            continue
+        if name not in _GEO_CACHE:
+            try:
+                r = httpx.get("https://nominatim.openstreetmap.org/search",
+                              params={"q": name, "format": "json", "limit": 1, "countrycodes": "gb"},
+                              headers={"User-Agent": "CyEM-Monitor/1.0 (personal, self-hosted)"}, timeout=8)
+                j = r.json() if r.status_code == 200 else []
+                _GEO_CACHE[name] = (float(j[0]["lat"]), float(j[0]["lon"]), name) if j else None
+            except Exception:  # noqa: BLE001
+                return None
+        if _GEO_CACHE[name]:
+            return _GEO_CACHE[name]
+    return None
+
+
+def licences_near(db, f, place, limit):
+    from .spectrum_core import bbox_for_radius, haversine_km
+    w = _win(f)
+    if not place:
+        return db.query("SELECT licence, company, product, freq_hz, bw_hz, lat, lon FROM wtr WHERE freq_hz BETWEEN ? AND ? "
+                        "ORDER BY ABS(freq_hz - ?) LIMIT ?", (f - w, f + w, f, limit))
+    la, lo, _ = place
+    s_, n_, w_, e_ = bbox_for_radius(la, lo, NEAR_KM)
+    rows = db.query("SELECT licence, company, product, freq_hz, bw_hz, lat, lon FROM wtr WHERE freq_hz BETWEEN ? AND ? "
+                    "AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? GROUP BY licence, freq_hz, lat, lon", (f - w, f + w, s_, n_, w_, e_))
+    for r in rows:
+        r["dist_km"] = round(haversine_km(la, lo, r["lat"], r["lon"]), 1)
+    rows = sorted((r for r in rows if r["dist_km"] <= NEAR_KM), key=lambda r: r["dist_km"])
+    return rows[:limit]
+
+
 def search_all(db: Database, q: str, limit: int = 12) -> dict:
     q = q.strip()
     res: dict[str, list] = {"items": [], "licences": [], "planned": [], "links": [], "sites": []}
@@ -48,7 +93,8 @@ def search_all(db: Database, q: str, limit: int = 12) -> dict:
         return res
     freqs = parse_freqs(q)
     words = re.sub(r"[^\w\s\-/.]", " ", q).strip()
-    only_freq = bool(freqs) and not re.sub(r"(\d+(\.\d+)?)|\b(ghz|mhz|khz)\b|\s", "", q, flags=re.I)
+    rest = _PLACE.sub(" ", q) if freqs else q
+    only_freq = bool(freqs) and not re.sub(r"(\d+(\.\d+)?)|\b(ghz|mhz|khz|near|around|at|in|by|on|who|is|licensed|licences?)\b|[\s?.,]", "", rest, flags=re.I)
     try:
         for it in ([] if only_freq else db.list_items(q=q, since_hours=24 * 30, limit=limit)):
             res["items"].append({"id": it["id"], "title": it["title"], "source": it.get("source"), "domain": it.get("domain"),
@@ -58,10 +104,10 @@ def search_all(db: Database, q: str, limit: int = 12) -> dict:
         pass
     try:
         if freqs:
+            place = find_place(q)
+            res["place"] = {"name": place[2], "lat": place[0], "lon": place[1], "radius_km": NEAR_KM} if place else None
             for f in freqs:
-                w = _win(f)
-                for r in db.query("SELECT licence, company, product, freq_hz, bw_hz, lat, lon FROM wtr WHERE freq_hz BETWEEN ? AND ? "
-                                  "ORDER BY ABS(freq_hz - ?) LIMIT ?", (f - w, f + w, f, limit * 2)):
+                for r in licences_near(db, f, place, limit * 2):
                     res["licences"].append({**r, "freq_mhz": _mhz(r["freq_hz"])})
         elif len(words) >= 3:
             like = f"%{words}%"
@@ -93,7 +139,7 @@ async def search(q: str = Query(min_length=1, max_length=200), limit: int = Quer
 
 ASK_WIDE_SYSTEM = """You are the analyst for CyEM Monitor, a self-hosted cyber and electromagnetic situational awareness tool used by a senior UK signals and spectrum practitioner. British English, plain and concise, for an expert.
 Structure every answer under exactly two headings, in this order:
-**From CyEM data** - only what the supplied data shows: status, latest brief, numbered items, Ofcom licence list, the user's plan. Cite numbered items as [4]. The Ofcom licence list and the plan are NOT numbered items: refer to them by name ("the Ofcom register", "your plan") and never give them a number. The Ofcom list is UK-wide and not filtered by location unless it says otherwise, so do not describe licensees as near any place. Ofcom entries are licensed assignments, not measured activity. If the data does not answer part of the question, say so in one line.
+**From CyEM data** - only what the supplied data shows: status, latest brief, numbered items, Ofcom licence list, the user's plan. Cite numbered items as [4]. The Ofcom licence list and the plan are NOT numbered items: refer to them by name ("the Ofcom register", "your plan") and never give them a number. The Ofcom list is UK-wide unless its heading gives a place and radius; only then describe licensees as near that place, with their distances. Ofcom entries are licensed assignments, not measured activity. If the data does not answer part of the question, say so in one line.
 **General knowledge (not from CyEM data)** - background from your training only where it helps. Mark uncertainty. Never present it as current events or as confirmed facts about specific organisations or states. Write "None needed." if nothing is useful.
 Never invent incidents, numbers, frequencies, licensees or attributions. Under 300 words unless a list is needed."""
 
@@ -144,8 +190,15 @@ def build_wide_ask(db: Database, question: str) -> tuple[list[dict], dict]:
             items.append(it)
     body = "\n".join(llm._fmt_item(i + 1, it) for i, it in enumerate(items[:26]))
     lic_lines = []
+    place = find_place(question) if parse_freqs(question) else None
     for f in parse_freqs(question):
         w = _win(f)
+        if place:
+            near = licences_near(db, f, place, 25)
+            lic_lines.append(f"{_mhz(f)} MHz +/-{w / 1e3:g} kHz within {NEAR_KM:g} km of {place[2]}: {len(near)} licensed assignments, nearest first")
+            lic_lines += [f"  - {(r['company'] or 'withheld')} | {r['product']} | {_mhz(r['freq_hz'])} MHz | {r['bw_hz'] / 1e3:g} kHz | {r['dist_km']} km"
+                          for r in near]
+            continue
         rows = db.query("SELECT company, product, freq_hz, bw_hz, COUNT(*) AS n FROM wtr WHERE freq_hz BETWEEN ? AND ? "
                         "GROUP BY company, product, freq_hz ORDER BY n DESC LIMIT 12", (f - w, f + w))
         total = db.one("SELECT COUNT(*) AS n FROM wtr WHERE freq_hz BETWEEN ? AND ?", (f - w, f + w))["n"]
@@ -159,6 +212,7 @@ def build_wide_ask(db: Database, question: str) -> tuple[list[dict], dict]:
             + ("OFCOM REGISTER, UK-WIDE, FREQUENCIES IN THE QUESTION (not a numbered item)\n" + "\n".join(lic_lines) + "\n\n" if lic_lines else "")
             + f"RELEVANT ITEMS\n{body or '(no matching items)'}\n\nQUESTION: {question}")
     meta = {"items": len(items[:26]), "freqs_mhz": [_mhz(f) for f in parse_freqs(question)],
+            "place": place[2] if place else None,
             "sources": [{"n": i + 1, "title": it["title"], "url": it.get("url"), "source": it.get("source")}
                         for i, it in enumerate(items[:26])]}
     return [{"role": "system", "content": ASK_WIDE_SYSTEM}, {"role": "user", "content": user}], meta

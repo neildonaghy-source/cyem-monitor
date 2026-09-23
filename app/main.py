@@ -311,7 +311,7 @@ class AskReq(BaseModel):
 
 @app.post("/api/ask")
 async def ask(req: AskReq):
-    messages, meta = build_wide_ask(get_db(), req.question.strip())
+    messages, meta = await asyncio.to_thread(build_wide_ask, get_db(), req.question.strip())
 
     async def gen():
         try:

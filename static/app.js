@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23h';
+  const BUILD = '2026-09-23i';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1261,8 +1261,8 @@
     parts.push(sec('Planned emitters', R.planned.map((p) => omniRow(esc(p.name), `${p.freq_mhz} MHz`, `data-act="spec" data-id="${esc(p.id)}"`))));
     parts.push(sec('Links', R.links.map((l) => omniRow(esc(l.name), `${l.freq_mhz} MHz · ${esc(l.last_verdict || '')}`, `data-act="link" data-id="${esc(l.id)}"`))));
     parts.push(sec('Coverage sites', R.sites.map((s) => omniRow(esc(s.name), `${s.freq_mhz} MHz`, `data-act="site" data-id="${esc(s.id)}"`))));
-    parts.push(sec(r.freqs_mhz.length ? `Ofcom licences near ${r.freqs_mhz.join(', ')} MHz` : 'Ofcom licences', R.licences.map((x) =>
-      omniRow(`${esc(x.company || 'Licensee withheld')} <span class="dim">${esc(x.licence)}</span>`, `${x.freq_mhz} MHz · ${khz(x.bw_hz)} kHz · ${esc(x.product)}`,
+    parts.push(sec(r.freqs_mhz.length ? `Ofcom licences on ${r.freqs_mhz.join(', ')} MHz${R.place ? ` within ${R.place.radius_km} km of ${esc(R.place.name)}` : ' (UK-wide)'}` : 'Ofcom licences', R.licences.map((x) =>
+      omniRow(`${esc(x.company || 'Licensee withheld')} <span class="dim">${esc(x.licence)}</span>`, `${x.freq_mhz} MHz · ${khz(x.bw_hz)} kHz · ${esc(x.product)}${x.dist_km != null ? ` · ${x.dist_km} km` : ''}`,
         `data-act="fly" data-lat="${x.lat ?? ''}" data-lon="${x.lon ?? ''}" data-label="${esc(x.company || x.licence)}"`))));
     parts.push(sec('Feed items (30 days)', R.items.map((it) => omniRow(`${it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : esc(it.title)}`,
       `${esc(it.source || '')} · ${esc(it.domain || '')} · ${it.when ? ago(it.when) + ' ago' : ''}`,
@@ -1306,7 +1306,7 @@
       if (text) out.innerHTML = renderMd(text);
       const srcs = (meta?.sources || []).filter((s) => new RegExp(`\\[${s.n}\\]`).test(text));
       $('#omni-src').innerHTML = (srcs.length ? `<h3 class="sec">Cited items</h3>${srcs.map((s) => `<div>[${s.n}] ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)} <span class="dim">${esc(s.source || '')}</span></div>`).join('')}` : '')
-        + `<p class="dim">Answer draws on CyEM status, the latest brief, ${meta?.items ?? 0} matching items${meta?.freqs_mhz?.length ? `, Ofcom licences near ${meta.freqs_mhz.join(', ')} MHz` : ''} and your plan. Anything under "General knowledge" is the model's background, not CyEM data.</p>`;
+        + `<p class="dim">Answer draws on CyEM status, the latest brief, ${meta?.items ?? 0} matching items${meta?.freqs_mhz?.length ? `, Ofcom licences on ${meta.freqs_mhz.join(', ')} MHz${meta.place ? ` within 30 km of ${esc(meta.place)}` : ' (UK-wide)'}` : ''} and your plan. Anything under "General knowledge" is the model's background, not CyEM data.</p>`;
     } catch (e) { if (e.name !== 'AbortError') out.innerHTML = `<p class="bad">Error: ${esc(e.message)}</p>`; }
   }
   $('#omni-form').addEventListener('submit', (e) => { e.preventDefault(); const q = omniIn.value.trim(); if (q.length >= 2) (q.startsWith('?') ? omniAsk(q.slice(1).trim()) : omniSearch(q)); });

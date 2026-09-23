@@ -215,3 +215,5 @@ table.grid tr.sel td { background: rgba(60, 199, 255, .08); }
 .omni-row { padding: 6px 8px; border-radius: 5px; cursor: pointer; }
 .omni-row:hover { background: rgba(60,199,255,.08); }
 @media (max-width: 900px) { #omni-form { order: 5; flex: 1 1 100%; margin: 4px 0 0; } #omni-out { top: 96px; } }
+
+a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--border, #243040); border-radius: 5px; text-decoration: none; }

@@ -21,6 +21,7 @@ from .spectrum_api import router as spectrum_router
 from .link_api import ensure_link_schema, router as link_router
 from .coverage_api import ensure_coverage_schema, router as coverage_router
 from .omni import build_wide_ask, router as omni_router
+from .export import router as export_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -51,6 +52,7 @@ app.include_router(spectrum_router)
 app.include_router(link_router)
 app.include_router(coverage_router)
 app.include_router(omni_router)
+app.include_router(export_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

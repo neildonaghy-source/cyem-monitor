@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23i';
+  const BUILD = '2026-09-23j';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -902,7 +902,7 @@
       return `<tr class="${p.id === specSel ? 'sel' : ''}"><td><a href="#" data-sel="${esc(p.id)}">${esc(p.name)}</a></td><td class="mono">${mhz(p.freq_hz)}</td><td class="mono">${khz(p.bw_hz)}</td><td class="mono dim">${p.start ? fmtZ(p.start) : 'open'} → ${p.end ? fmtZ(p.end) : 'open'}</td><td><span style="color:#ff5c5c">${c.high}H</span> <span style="color:#f3b23e">${c.medium}M ${c.low}L</span></td><td style="white-space:nowrap"><button data-edit="${esc(p.id)}">Edit</button> <button data-del="${esc(p.id)}">Delete</button></td></tr>`;
     }).join('')}</table><p class="dim">Totals: ${tot.vs_licensed} against licences, ${tot.planned_pairs} planned/planned pairs, ${tot.harmonic} harmonic and ${tot.im3} IM3 product hits; ${tot.high} high, ${tot.medium} medium, ${tot.low} low. Harmonic and IM3 results are screening only: power and filtering are not modelled.</p>` : '<p class="dim">No planned emitters yet. Add one below.</p>';
     const sel = res.planned.find((p) => p.id === specSel);
-    openModal('Spectrum deconfliction', `${head}${settingsRow}<h3 class="sec">Planned emitters</h3>${list}
+    openModal('Spectrum deconfliction', `${head}<p><a href="/api/export/plan.docx" class="btnlink" download>Export plan (Word)</a> <span class="dim">planned emitters, conflicts, links and coverage in one document</span></p>${settingsRow}<h3 class="sec">Planned emitters</h3>${list}
       <h3 class="sec">${draft?.id ? 'Edit' : 'Add'} planned emitter</h3>${specForm(draft)}
       ${sel ? `<h3 class="sec">Spectral view: ${esc(sel.name)}</h3><div id="sp-svg" class="dim">Loading…</div><h3 class="sec">Conflicts: ${esc(sel.name)}</h3>${conflictRows(sel.conflicts, 30)}` : ''}
       ${res.planned.length ? `<h3 class="sec">Deconfliction note (Ollama)</h3><p><button id="sp-brief" class="primary">Generate note</button> <span class="dim">Narrates the computed results above; takes 1–3 min on CPU.</span></p><div id="sp-brief-out" class="md"></div>` : ''}`);

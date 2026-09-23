@@ -164,3 +164,23 @@ docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q
 ```
 
 Next increment: propagation-aware distance (terrain and power) or fifth-order IM; the GNSS interference layer already exists (gpsjam method).
+
+## Link planner, point-to-point (added 2026-09-23)
+
+Top-bar **Links** button. Two ends (pick on map), mast heights, band preset or your own equipment data.
+Returns a terrain profile, first Fresnel zone clearance, diffraction, link budget, fade margin and, from
+5 GHz, rain fade and annual availability. Verdict: go / marginal / no-go. Saved links create planned emitters
+at both ends (go and optional return frequency), so they are deconflicted automatically; deleting a link
+removes them.
+
+- **Terrain:** Copernicus GLO-30 surface model (30 m, AWS open data), tiles downloaded on first use to
+  `data-store/dem/` (excluded from OneDrive). Surface model, so some tree and building canopy is included.
+- **Models:** effective earth radius k (default 4/3); Deygout diffraction with ITU-R P.526 J(v); free-space
+  loss; coarse sea-level gas table; ITU-R P.838-3 rain coefficients (tabulated from memory, verify for
+  design use) with ITU-R P.530 path reduction and percentage scaling, valid 99.0 to 99.999%.
+- **Not modelled:** clutter, multipath and ducting fades, antenna patterns and alignment, interference.
+  Presets are typical values, not equipment data.
+- Code: `app/link_core.py` (pure maths, tested in `tests/test_link_core.py`), `app/dem.py`, `app/link_api.py`
+  (router `/api/links/*`, table `planned_links`, `planned_emitters.link_id`). Needs `rasterio` and `libexpat1`.
+
+Next: point-to-multipoint and omni coverage overlays, which will also replace the fixed radius in deconfliction.

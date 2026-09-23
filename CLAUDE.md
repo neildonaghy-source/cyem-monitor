@@ -41,3 +41,4 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Work on branches; `main` is what is deployed once merged. A pre-change DB copy is at `data-store/backup/cyem-pre-spectrum.sqlite3`.
 - Box-level changes (backup excludes, `~/bin/runbook_gen.py`) must be kept in step with this file and the README.
 - Harmonic and IM3 screening live in `spectrum_core` (`harmonic_emitters`, `im3_emitters`, `check_products`); `run_conflicts` takes `harm_order` and `cosite_km`. Keep product severities below fundamental ones except IM3 on own nets.
+- Link planner: `link_core.py` stays stdlib-only and tested; terrain via `dem.heights()` (rasterio, lazy import, run in a thread). Saved links own their planned emitters via `link_id`; keep create/delete in step.

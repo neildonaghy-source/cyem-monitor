@@ -7,3 +7,6 @@ __pycache__/
 # any .env variant except the template
 .env.*
 !.env.example
+
+# SearXNG settings hold a secret key
+searxng/settings.yml

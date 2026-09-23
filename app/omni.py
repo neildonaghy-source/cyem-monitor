@@ -152,8 +152,9 @@ async def search(q: str = Query(min_length=1, max_length=200), limit: int = Quer
 
 
 ASK_WIDE_SYSTEM = """You are the analyst for CyEM Monitor, a self-hosted cyber and electromagnetic situational awareness tool used by a senior UK signals and spectrum practitioner. British English, plain and concise, for an expert.
-Structure every answer under exactly two headings, in this order:
+Structure every answer under these headings, in this order (include the web heading only when web results are supplied):
 **From CyEM data** - only what the supplied data shows: status, latest brief, numbered items, Ofcom licence list, the user's plan. Cite numbered items as [4]. The UKFAT extract, the Ofcom licence list and the plan are NOT numbered items: refer to them by name ("the Ofcom register", "your plan") and never give them a number. The Ofcom list is UK-wide unless its heading gives a place and radius; only then describe licensees as near that place, with their distances. Ofcom entries are licensed assignments, not measured activity. If the data does not answer part of the question, say so in one line.
+**From web search (unverified)** - only what the supplied web results say, each point cited [W1], [W2]; say that these are open-source reports, not confirmed. Never cite a web result for something it does not say.
 **General knowledge (not from CyEM data)** - background from your training only where it helps. Mark uncertainty. Never present it as current events or as confirmed facts about specific organisations or states. Write "None needed." if nothing is useful.
 Never invent incidents, numbers, frequencies, licensees or attributions. Under 300 words unless a list is needed."""
 
@@ -189,7 +190,7 @@ def plan_summary(db: Database) -> str:
     return "\n".join(lines) or "(no plan entered)"
 
 
-def build_wide_ask(db: Database, question: str) -> tuple[list[dict], dict]:
+def build_wide_ask(db: Database, question: str, web: list[dict] | None = None) -> tuple[list[dict], dict]:
     from . import llm
     hits = []
     try:
@@ -243,9 +244,11 @@ def build_wide_ask(db: Database, question: str) -> tuple[list[dict], dict]:
             + ("SATELLITE DOWNLINKS NEAR THE FREQUENCIES (SatNOGS DB, +/-50 kHz for Doppler; not a numbered item)\n" + "\n".join(sat_lines) + "\n\n" if sat_lines else "")
             + ("UK FREQUENCY ALLOCATION TABLE (Ofcom UKFAT, authoritative; not a numbered item)\n" + "\n".join(uk_lines) + "\n\n" if uk_lines else "")
             + ("OFCOM REGISTER, UK-WIDE, FREQUENCIES IN THE QUESTION (not a numbered item)\n" + "\n".join(lic_lines) + "\n\n" if lic_lines else "")
+            + ("WEB SEARCH RESULTS (unverified open-source reporting; cite as [W1], [W2])\n"
+               + "\n".join(f"[W{i + 1}] {w['title']} | {w['url']} | {w['snippet']}" for i, w in enumerate(web)) + "\n\n" if web else "")
             + f"RELEVANT ITEMS\n{body or '(no matching items)'}\n\nQUESTION: {question}")
     meta = {"items": len(items[:26]), "freqs_mhz": [_mhz(f) for f in parse_freqs(question)],
-            "place": place[2] if place else None,
+            "place": place[2] if place else None, "web": [{"n": i + 1, "title": w["title"], "url": w["url"]} for i, w in enumerate(web or [])],
             "sources": [{"n": i + 1, "title": it["title"], "url": it.get("url"), "source": it.get("source")}
                         for i, it in enumerate(items[:26])]}
     return [{"role": "system", "content": ASK_WIDE_SYSTEM}, {"role": "user", "content": user}], meta

@@ -15,6 +15,7 @@ services:
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.5:4b}"
       AISSTREAM_KEY: "${AISSTREAM_KEY:-}"
       OPENCELLID_KEY: "${OPENCELLID_KEY:-}"
+      SEARXNG_URL: "http://searxng:8080"
       OLLAMA_THINK: "false"
       OLLAMA_NUM_CTX: "8192"
       BRIEF_HOURS: "${BRIEF_HOURS:-06,12,18,00}"
@@ -36,6 +37,20 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: cyem-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_BASE_URL: "http://searxng:8080/"
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "2" }
 
 networks:
   trading-bot:

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23p';
+  const BUILD = '2026-09-23q';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1307,7 +1307,7 @@
     const out = $('#omni-ans');
     let text = '', first = true, meta = null;
     try {
-      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }), signal: omniAbort.signal });
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, web: !!$('#omni-web')?.checked }), signal: omniAbort.signal });
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '';
       while (true) {
@@ -1326,7 +1326,8 @@
       }
       if (text) out.innerHTML = renderMd(text);
       const srcs = (meta?.sources || []).filter((s) => new RegExp(`\\[${s.n}\\]`).test(text));
-      $('#omni-src').innerHTML = (srcs.length ? `<h3 class="sec">Cited items</h3>${srcs.map((s) => `<div>[${s.n}] ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)} <span class="dim">${esc(s.source || '')}</span></div>`).join('')}` : '')
+      const webs = (meta?.web || []).filter((w) => new RegExp(`\\[W${w.n}\\]`).test(text));
+      $('#omni-src').innerHTML = (webs.length ? `<h3 class="sec">Web sources (unverified)</h3>${webs.map((w) => `<div>[W${w.n}] <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a></div>`).join('')}` : '') + (srcs.length ? `<h3 class="sec">Cited items</h3>${srcs.map((s) => `<div>[${s.n}] ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)} <span class="dim">${esc(s.source || '')}</span></div>`).join('')}` : '')
         + `<p class="dim">Answer draws on CyEM status, the latest brief, ${meta?.items ?? 0} matching items${meta?.freqs_mhz?.length ? `, Ofcom licences on ${meta.freqs_mhz.join(', ')} MHz${meta.place ? ` within 30 km of ${esc(meta.place)}` : ' (UK-wide)'}` : ''} and your plan. Anything under "General knowledge" is the model's background, not CyEM data.</p>`;
     } catch (e) { if (e.name !== 'AbortError') out.innerHTML = `<p class="bad">Error: ${esc(e.message)}</p>`; }
   }

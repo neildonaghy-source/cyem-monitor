@@ -315,11 +315,16 @@ async def brief_generate(req: GenerateReq | None = None):
 # ---- ask --------------------------------------------------------------------------
 class AskReq(BaseModel):
     question: str = Field(min_length=2, max_length=1000)
+    web: bool = False
 
 
 @app.post("/api/ask")
 async def ask(req: AskReq):
-    messages, meta = await asyncio.to_thread(build_wide_ask, get_db(), req.question.strip())
+    web = None
+    if req.web:
+        from .websearch import search as web_search
+        web = await web_search(req.question.strip(), 6)
+    messages, meta = await asyncio.to_thread(build_wide_ask, get_db(), req.question.strip(), web)
 
     async def gen():
         try:

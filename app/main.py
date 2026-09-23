@@ -47,6 +47,17 @@ async def index():
     return FileResponse(settings.static_dir / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(settings.static_dir / "sw.js", media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse(settings.static_dir / "manifest.webmanifest", media_type="application/manifest+json")
+
+
 @app.get("/healthz")
 async def healthz():
     return {"ok": True, "time": iso(datetime.now(timezone.utc))}

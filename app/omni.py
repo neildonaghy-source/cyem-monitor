@@ -88,12 +88,20 @@ def licences_near(db, f, place, limit):
 
 def search_all(db: Database, q: str, limit: int = 12) -> dict:
     q = q.strip()
-    res: dict[str, list] = {"items": [], "licences": [], "planned": [], "links": [], "sites": []}
+    res: dict[str, list] = {"items": [], "licences": [], "planned": [], "links": [], "sites": [], "ukfat": []}
     if len(q) < 2:
         return res
     freqs = parse_freqs(q)
     words = re.sub(r"[^\w\s\-/.]", " ", q).strip()
     rest = _PLACE.sub(" ", q) if freqs else q
+    try:
+        from .ukfat import lookup as _uk
+        for f in freqs:
+            for e in _uk(f, 1):
+                res["ukfat"].append({"freq_mhz": _mhz(f), "band": e["band"], "page": e["page"], "rows": e["rows"],
+                                     "footnotes": {k: v[:300] for k, v in e["footnote_text"].items() if v}})
+    except Exception:  # noqa: BLE001
+        pass
     only_freq = bool(freqs) and not re.sub(r"(\d+(\.\d+)?)|\b(ghz|mhz|khz|near|around|at|in|by|on|who|is|licensed|licences?)\b|[\s?.,]", "", rest, flags=re.I)
     try:
         for it in ([] if only_freq else db.list_items(q=q, since_hours=24 * 30, limit=limit)):
@@ -139,7 +147,7 @@ async def search(q: str = Query(min_length=1, max_length=200), limit: int = Quer
 
 ASK_WIDE_SYSTEM = """You are the analyst for CyEM Monitor, a self-hosted cyber and electromagnetic situational awareness tool used by a senior UK signals and spectrum practitioner. British English, plain and concise, for an expert.
 Structure every answer under exactly two headings, in this order:
-**From CyEM data** - only what the supplied data shows: status, latest brief, numbered items, Ofcom licence list, the user's plan. Cite numbered items as [4]. The Ofcom licence list and the plan are NOT numbered items: refer to them by name ("the Ofcom register", "your plan") and never give them a number. The Ofcom list is UK-wide unless its heading gives a place and radius; only then describe licensees as near that place, with their distances. Ofcom entries are licensed assignments, not measured activity. If the data does not answer part of the question, say so in one line.
+**From CyEM data** - only what the supplied data shows: status, latest brief, numbered items, Ofcom licence list, the user's plan. Cite numbered items as [4]. The UKFAT extract, the Ofcom licence list and the plan are NOT numbered items: refer to them by name ("the Ofcom register", "your plan") and never give them a number. The Ofcom list is UK-wide unless its heading gives a place and radius; only then describe licensees as near that place, with their distances. Ofcom entries are licensed assignments, not measured activity. If the data does not answer part of the question, say so in one line.
 **General knowledge (not from CyEM data)** - background from your training only where it helps. Mark uncertainty. Never present it as current events or as confirmed facts about specific organisations or states. Write "None needed." if nothing is useful.
 Never invent incidents, numbers, frequencies, licensees or attributions. Under 300 words unless a list is needed."""
 
@@ -205,10 +213,20 @@ def build_wide_ask(db: Database, question: str) -> tuple[list[dict], dict]:
         lic_lines.append(f"{_mhz(f)} MHz +/-{w / 1e3:g} kHz: {total} licensed assignments UK-wide, no location filter (withheld names shown as 'withheld')")
         lic_lines += [f"  - {(r['company'] or 'withheld')} | {r['product']} | {_mhz(r['freq_hz'])} MHz | {r['bw_hz'] / 1e3:g} kHz | {r['n']} sites"
                       for r in rows]
+    uk_lines = []
+    try:
+        from .ukfat import describe
+        for f in parse_freqs(question):
+            t = describe(f)
+            if t:
+                uk_lines.append(t)
+    except Exception:  # noqa: BLE001
+        pass
     latest = db.brief()
     brief_txt = f"LATEST BRIEF ({latest['created_at']}):\n{latest['content'][:2200]}" if latest else "LATEST BRIEF: none"
     user = (f"Current time: {iso(datetime.now(timezone.utc))}.\n\nSTATUS\n{llm.status_block(db)}\n\n{brief_txt}\n\n"
             f"USER'S PLAN\n{plan_summary(db)}\n\n"
+            + ("UK FREQUENCY ALLOCATION TABLE (Ofcom UKFAT, authoritative; not a numbered item)\n" + "\n".join(uk_lines) + "\n\n" if uk_lines else "")
             + ("OFCOM REGISTER, UK-WIDE, FREQUENCIES IN THE QUESTION (not a numbered item)\n" + "\n".join(lic_lines) + "\n\n" if lic_lines else "")
             + f"RELEVANT ITEMS\n{body or '(no matching items)'}\n\nQUESTION: {question}")
     meta = {"items": len(items[:26]), "freqs_mhz": [_mhz(f) for f in parse_freqs(question)],

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23l';
+  const BUILD = '2026-09-23m';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1266,6 +1266,9 @@
     try { r = await api(`/api/search?q=${encodeURIComponent(q)}&limit=12`); } catch (e) { return omniShow(`<p class="bad">${esc(e.message)}</p>`); }
     const R = r.results, parts = [];
     const sec = (title, rows) => rows.length ? `<h3 class="sec">${title} <span class="dim">${rows.length}</span></h3>${rows.join('')}` : '';
+    parts.push(sec('UK allocation (UKFAT)', (R.ukfat || []).map((u) => `<div class="omni-row"><div><b>${esc(u.band)}</b> <span class="dim">UKFAT p.${u.page}</span></div>`
+      + u.rows.map((r) => `<div class="dim">${esc(r.service)}${r.service_name ? ' · ' + esc(r.service_name) : ''} · ${esc(r.status)} · ${esc(r.footnotes)}</div>`).join('')
+      + Object.entries(u.footnotes).map(([k, v]) => `<div style="margin-top:3px"><b>${esc(k)}</b> ${esc(v)}</div>`).join('') + '</div>')));
     parts.push(sec('Planned emitters', R.planned.map((p) => omniRow(esc(p.name), `${p.freq_mhz} MHz`, `data-act="spec" data-id="${esc(p.id)}"`))));
     parts.push(sec('Links', R.links.map((l) => omniRow(esc(l.name), `${l.freq_mhz} MHz · ${esc(l.last_verdict || '')}`, `data-act="link" data-id="${esc(l.id)}"`))));
     parts.push(sec('Coverage sites', R.sites.map((s) => omniRow(esc(s.name), `${s.freq_mhz} MHz`, `data-act="site" data-id="${esc(s.id)}"`))));

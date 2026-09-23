@@ -16,7 +16,7 @@ log = logging.getLogger("cyem.sched")
 
 # Initial run order: cheap structured sources first so the map fills quickly.
 BOOT_ORDER = ["spaceweather", "hf", "drap", "aurora", "hfmap", "sat_tle", "sats", "milair", "kev", "ransomware", "c2", "ioda", "gpsjam", "rss", "hibp",
-              "nvd", "cables", "gdelt", "launches", "cloudflare", "threatfox", "opencti", "radars"]
+              "nvd", "cables", "gdelt", "launches", "cloudflare", "threatfox", "opencti", "radars", "wtr"]
 
 
 class Scheduler:

@@ -17,6 +17,8 @@ from .collectors import REGISTRY
 from .config import settings
 from .db import get_db, iso
 from .scheduler import Scheduler
+from .spectrum_api import router as spectrum_router
+from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -29,6 +31,7 @@ scheduler: Scheduler | None = None
 async def lifespan(app: FastAPI):
     global scheduler
     db = get_db()
+    ensure_schema(db)
     scheduler = Scheduler(db)
     scheduler.start()
     log.info("CyEM Monitor up; data dir %s; model %s at %s", settings.data_dir, settings.ollama_model, settings.ollama_url)
@@ -39,6 +42,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="CyEM Monitor", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", redoc_url=None)
+app.include_router(spectrum_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

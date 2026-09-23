@@ -11,7 +11,8 @@ senior practitioner, British English, no marketing tone.
 - `app/feeds.py` curated RSS list; `app/tagging.py` keyword tags + severity heuristics; `app/geo.py` country detection (`data/countries.json`).
 - `app/llm.py` Ollama client (`/api/chat`, `think:false`), brief context builder, ask context.
 - `static/` vanilla JS UI (`app.js`), Leaflet + marked vendored under `static/vendor/`. No build step.
-- `data/` reference JSON (emitters, APT groups, countries). `data-store/` bind mount with the SQLite DB (git-ignore worthy, not in the tarball).
+- Spectrum deconfliction: `app/spectrum_core.py` (pure, stdlib, unit-tested in `tests/`), `app/spectrum_store.py` (tables `wtr`, `planned_emitters`; bulk load on its own connection into `wtr_new` then swap), `app/spectrum_api.py` (router `/api/spectrum/*`), `app/collectors/wtr.py` (Ofcom WTR, daily, ETag). UI is the Spectrum button + `planned` and `wtr` layers in `static/app.js`.
+- `data/` reference JSON (emitters, APT groups, countries, `uk_bandplan.json`). `data-store/` bind mount with the SQLite DB (git-ignore worthy, not in the tarball).
 
 ## Run / test
 ```
@@ -34,3 +35,9 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Country/lat-lon on news items are heuristics for map placement, not attribution. Say so in UI text.
 - Reference data in `data/emitters.json` is hand-curated with approximate positions; keep the "approx." notes when editing.
 - Backups: `~/bin/onedrive-backup.sh` snapshots the DB to `data-store/backup/cyem-backup.sqlite3` nightly; the live WAL DB is excluded from the sync.
+- Spectrum: open data only; never add MOD/unit/role data. Keep licensee surname/first name out of the WTR load.
+  Area-defined WTR rows have NULL lat/lon by design. Conflict logic changes go in `spectrum_core.py` with tests.
+- Tests: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q pytest && python -m pytest -q tests"`
+- Work on branches; `main` is what is deployed once merged. A pre-change DB copy is at `data-store/backup/cyem-pre-spectrum.sqlite3`.
+- Box-level changes (backup excludes, `~/bin/runbook_gen.py`) must be kept in step with this file and the README.
+

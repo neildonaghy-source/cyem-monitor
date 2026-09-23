@@ -188,3 +188,14 @@ h3.sec:first-child { margin-top: 0; }
   #layers { width: 170px; }
   #legend { display: none; }
 }
+
+/* ---- spectrum panel ---- */
+.specform { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 10px; margin: 6px 0 4px; }
+.specform label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); font-size: 11px; }
+.specform label input { width: 100%; box-sizing: border-box; }
+.specform .wide { grid-column: 1 / -1; }
+.specform .btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.specset { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); margin: 6px 0; }
+.specset input { width: 72px; }
+table.grid tr.sel td { background: rgba(60, 199, 255, .08); }
+#modal-body svg text { pointer-events: none; }

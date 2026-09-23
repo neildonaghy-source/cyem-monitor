@@ -1,0 +1,30 @@
+{
+  "note": "Simplified UK band plan for display context only. Edges are approximate and many bands are shared or subdivided. The UK Frequency Allocation Table (UKFAT, Ofcom) is authoritative.",
+  "bands": [
+    {"lo_mhz": 87.5, "hi_mhz": 108.0, "label": "FM broadcast", "cls": "broadcast"},
+    {"lo_mhz": 108.0, "hi_mhz": 117.975, "label": "Aero radionav (ILS/VOR)", "cls": "aero"},
+    {"lo_mhz": 117.975, "hi_mhz": 137.0, "label": "Aero mobile (VHF air band)", "cls": "aero"},
+    {"lo_mhz": 144.0, "hi_mhz": 146.0, "label": "Amateur 2 m", "cls": "amateur"},
+    {"lo_mhz": 156.0, "hi_mhz": 162.05, "label": "Maritime VHF (approx.)", "cls": "maritime"},
+    {"lo_mhz": 174.0, "hi_mhz": 240.0, "label": "Band III incl. T-DAB (approx.)", "cls": "broadcast"},
+    {"lo_mhz": 225.0, "hi_mhz": 400.0, "label": "Military aeronautical UHF (NATO band)", "cls": "military"},
+    {"lo_mhz": 430.0, "hi_mhz": 440.0, "label": "Amateur 70 cm (secondary)", "cls": "amateur"},
+    {"lo_mhz": 446.0, "hi_mhz": 446.2, "label": "PMR446 (licence-exempt)", "cls": "exempt"},
+    {"lo_mhz": 470.0, "hi_mhz": 694.0, "label": "Digital terrestrial TV", "cls": "broadcast"},
+    {"lo_mhz": 703.0, "hi_mhz": 788.0, "label": "Mobile 700 MHz (approx.)", "cls": "mobile"},
+    {"lo_mhz": 791.0, "hi_mhz": 862.0, "label": "Mobile 800 MHz", "cls": "mobile"},
+    {"lo_mhz": 863.0, "hi_mhz": 870.0, "label": "SRD (licence-exempt)", "cls": "exempt"},
+    {"lo_mhz": 880.0, "hi_mhz": 960.0, "label": "Mobile 900 MHz", "cls": "mobile"},
+    {"lo_mhz": 1164.0, "hi_mhz": 1215.0, "label": "GNSS L5/E5", "cls": "gnss"},
+    {"lo_mhz": 1215.0, "hi_mhz": 1300.0, "label": "GNSS L2/E6 + radiolocation", "cls": "gnss"},
+    {"lo_mhz": 1559.0, "hi_mhz": 1610.0, "label": "GNSS L1/E1", "cls": "gnss"},
+    {"lo_mhz": 1710.0, "hi_mhz": 1880.0, "label": "Mobile 1800 MHz", "cls": "mobile"},
+    {"lo_mhz": 1920.0, "hi_mhz": 2170.0, "label": "Mobile 2100 MHz", "cls": "mobile"},
+    {"lo_mhz": 2400.0, "hi_mhz": 2483.5, "label": "ISM / Wi-Fi 2.4 GHz", "cls": "exempt"},
+    {"lo_mhz": 2500.0, "hi_mhz": 2690.0, "label": "Mobile 2.6 GHz", "cls": "mobile"},
+    {"lo_mhz": 3410.0, "hi_mhz": 3800.0, "label": "Mobile 3.4-3.8 GHz (5G)", "cls": "mobile"},
+    {"lo_mhz": 5150.0, "hi_mhz": 5350.0, "label": "RLAN / Wi-Fi 5 GHz", "cls": "exempt"},
+    {"lo_mhz": 5470.0, "hi_mhz": 5725.0, "label": "RLAN / Wi-Fi 5 GHz (DFS)", "cls": "exempt"},
+    {"lo_mhz": 5725.0, "hi_mhz": 5875.0, "label": "ISM / SRD 5.8 GHz", "cls": "exempt"}
+  ]
+}

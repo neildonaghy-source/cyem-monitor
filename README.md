@@ -120,3 +120,39 @@ the four cron entries (seeders, fast/slow lanes, gpsjam refresh; crontab backup 
 Map tiles © OpenStreetMap contributors © CARTO. GNSS data derived from ADS-B via gpsjam.org.
 Cable geometry © TeleGeography (CC BY-SA 4.0). Space weather: NOAA SWPC. HF: hamqsl.com (N0NBH).
 Outages: IODA, Georgia Tech. Threat data: CISA, NVD, FIRST, abuse.ch, ransomware.live, HIBP, GDELT.
+
+## Spectrum deconfliction (added 2026-09-23)
+
+Top-bar **Spectrum** button. Enter planned emitters (frequency, bandwidth, power, position, optional UTC
+window) and they are checked against the Ofcom licensed baseline and against each other.
+
+- **Baseline:** Ofcom Wireless Telegraphy Register, `WTR.csv` from the spectrum information portal
+  (https://www.ofcom.org.uk/spectrum/frequencies/spectrum-information-portal). Collector `wtr`, daily,
+  conditional GET. Around 206k rows collapse to about 183k unique assignments. Cached CSV in
+  `data-store/ofcom/` (excluded from OneDrive; re-downloadable). Published by Ofcom under s.31 Wireless
+  Telegraphy Act 2006 and the EIR 2004; check re-use terms before sharing anything derived from it.
+- **Not loaded:** rows with no frequency (about 3,700, mainly AIS).
+- **Area-defined licences** (mostly BR Area Defined, about 3,400) have no position. They are checked on
+  frequency only and reported as "area".
+- **Privacy:** licensee surname and first-name columns are dropped at ingest. The company field can still
+  hold a sole trader's name; it is Ofcom-published data but treat it with care.
+- **Conflict rule:** guarded overlap `|f1-f2| < (bw1+bw2)/2 + guard` within the radius (default 50 km);
+  planned/planned pairs also need overlapping time windows. Severity: high = occupied bands overlap and
+  within a third of the radius; medium = other overlap in radius or area licence; low = guard band only.
+  T and R rows of one licence/frequency/site count once.
+- **Not modelled yet:** harmonics, intermodulation, adjacent-channel selectivity, power, terrain.
+  `spectrum_core.harmonics()` and `intermod3()` are stubs.
+- **Band plan:** `data/uk_bandplan.json`, simplified display context only; UKFAT is authoritative.
+- **Ollama note:** narrates the computed conflict set only (qwen3.5:4b, 1-2 min). Always check it
+  against the table; small models still paraphrase loosely.
+- **Scope:** open data only. No MOD, unit or role data is to be entered.
+
+API: `/api/spectrum/{status,products,bandplan,wtr,planned,conflicts,view/<id>,brief}`; see `/api/docs`.
+Code: `app/spectrum_core.py` (pure logic, tested), `app/spectrum_store.py` (SQLite, shadow-table load),
+`app/spectrum_api.py` (routes, brief), `app/collectors/wtr.py`. Tests:
+
+```
+docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q pytest && python -m pytest -q tests"
+```
+
+Next increment: ADS-B-derived GNSS interference layer, then harmonics and third-order intermodulation.

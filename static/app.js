@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23j';
+  const BUILD = '2026-09-23k';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -80,6 +80,11 @@
     { id: 'radars', group: 'em', label: 'Radar sites (OSM)', colour: '#c8d3e0', on: false, load: loadRadars, every: 0,
       legend: `${DOT('#e0e6ee', 7)} military ${DOT('#3cc7ff', 7)} space ${DOT('#f3b23e', 6)} aviation ${DOT('#45d38a', 6)} weather ${DOT('#2bb9a8', 6)} maritime ${DOT('#6f7f93', 6)} other`,
       opts: [{ id: 'radars_mil', label: 'military / space only', on: true }] },
+    { id: 'ais', group: 'em', label: 'Ships (AIS, UK waters)', colour: '#3cc7ff', on: false, load: loadAis, every: 5,
+      legend: `${DOT('#ff5c5c', 7)} military ${DOT('#ff6fb1', 7)} law enf. ${DOT('#f3b23e', 7)} SAR ${DOT('#3cc7ff', 7)} cargo ${DOT('#c07b3a', 7)} tanker ${DOT('#45d38a', 7)} passenger ${DOT('#2bb9a8', 7)} fishing ${DOT('#8593a6', 7)} other`,
+      opts: [{ id: 'ais_gov', label: 'Military / law enforcement / SAR only', on: false }] },
+    { id: 'cells', group: 'em', label: 'Mobile cells (OpenCelliD, zoom 11+)', colour: '#45d38a', on: false, load: loadCells, every: 0,
+      legend: `${DOT('#8593a6', 7)} 2G ${DOT('#3cc7ff', 7)} 3G ${DOT('#45d38a', 7)} 4G ${DOT('#ff6fb1', 7)} 5G · estimated positions` },
     { id: 'coverage', group: 'em', label: 'Coverage sites', colour: '#2bb9a8', on: true, load: loadCoverage, every: 0,
       legend: `${DOT('rgba(43,185,168,.7)', 9)} strong ${DOT('rgba(69,211,138,.6)', 9)} adequate ${DOT('rgba(243,178,62,.6)', 9)} marginal · open Coverage to plan` },
     { id: 'links', group: 'em', label: 'Planned links (P2P)', colour: '#45d38a', on: true, load: loadLinks, every: 0,
@@ -1315,6 +1320,46 @@
     if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) { e.preventDefault(); omniIn.focus(); omniIn.select(); }
     if (e.key === 'Escape') omniHide();
   });
+  // ---------------------------------------------------------------- AIS vessels + OpenCelliD cells
+  const AIS_COL = { military: '#ff5c5c', law: '#ff6fb1', sar: '#f3b23e', tanker: '#c07b3a', cargo: '#3cc7ff', passenger: '#45d38a',
+                    fishing: '#2bb9a8', service: '#b48cff', leisure: '#8fb3d9', other: '#8593a6', unknown: '#5d6b7d' };
+  const AIS_NAME = { military: 'Military', law: 'Law enforcement', sar: 'Search and rescue', tanker: 'Tanker', cargo: 'Cargo', passenger: 'Passenger',
+                     fishing: 'Fishing', service: 'Tug / pilot / service', leisure: 'Sailing / pleasure', other: 'Other', unknown: 'Type not yet received' };
+  const aisCanvas = L.canvas({ padding: 0.3 });
+  async function loadAis() {
+    const g = groups.ais; g.clearLayers();
+    const { data, updated } = await api('/api/layers/ais');
+    if (!data) { setCount('ais', '–'); done('ais'); return; }
+    const only = optOn('ais_gov');
+    let n = 0;
+    for (const v of data.vessels || []) {
+      if (only && !['military', 'law', 'sar'].includes(v.cat)) continue;
+      n++;
+      const col = AIS_COL[v.cat] || '#8593a6', hi = ['military', 'law', 'sar'].includes(v.cat);
+      L.circleMarker([v.lat, v.lon], { renderer: aisCanvas, radius: hi ? 5 : 3, color: hi ? '#fff' : col, weight: hi ? 1 : 0, fillColor: col, fillOpacity: 0.85 })
+        .bindPopup(() => `<h4>${esc(v.name || 'MMSI ' + v.mmsi)}</h4>${kv([['Type', esc(AIS_NAME[v.cat] || v.cat) + (v.type != null ? ` (${v.type})` : '')], ['MMSI', `<span class="mono">${v.mmsi}</span>`], ['Call sign', esc(v.callsign || '')], ['Speed', v.sog != null ? `${v.sog} kn` : ''], ['Course', v.cog != null ? `${Math.round(v.cog)}°` : ''], ['Destination', esc(v.dest || '')], ['Class', v.cls], ['Last seen', fmtZ(v.seen)]])}<p class="dim" style="margin:4px 0 0">AIS via aisstream.io, sampled every 5 min · ${fmtZ(updated)}</p>`)
+        .addTo(g);
+    }
+    setCount('ais', `${n}/${data.count}`); done('ais');
+  }
+  const CELL_COL = { GSM: '#8593a6', UMTS: '#3cc7ff', LTE: '#45d38a', NR: '#ff6fb1', CDMA: '#f3b23e' };
+  let cellSeq = 0;
+  async function loadCells() {
+    const g = groups.cells; const seq = ++cellSeq;
+    if (map.getZoom() < 11) { g.clearLayers(); setCount('cells', 'zoom in'); done('cells'); return; }
+    const b = map.getBounds().pad(0.05);
+    const res = await api(`/api/cells?s=${b.getSouth().toFixed(4)}&w=${b.getWest().toFixed(4)}&n=${b.getNorth().toFixed(4)}&e=${b.getEast().toFixed(4)}`);
+    if (seq !== cellSeq) return;
+    g.clearLayers();
+    if (!res.loaded) { setCount('cells', 'not loaded'); done('cells'); return; }
+    for (const c of res.rows) {
+      L.circleMarker([c.lat, c.lon], { renderer: aisCanvas, radius: 3, weight: 0, fillColor: CELL_COL[c.radio] || '#c8d3e0', fillOpacity: 0.8 })
+        .bindPopup(() => `<h4>${esc(c.operator)} ${esc(c.radio)}</h4>${kv([['Cell', `<span class="mono">${c.mcc}-${c.net}-${c.area}-${c.cell}</span>`], ['Est. range', c.range_m ? `${c.range_m} m` : ''], ['Samples', c.samples], ['Updated', c.updated ? new Date(c.updated * 1000).toISOString().slice(0, 10) : '']])}<p class="dim" style="margin:4px 0 0">OpenCelliD (CC BY-SA 4.0): crowd-sourced estimate of where the cell was heard, not a surveyed mast.</p>`)
+        .addTo(g);
+    }
+    setCount('cells', res.total > res.returned ? `${res.returned}/${res.total}` : res.total); done('cells');
+  }
+  map.on('moveend', () => { if (map.hasLayer(groups.cells)) loadCells().catch((e) => console.warn('cells', e)); });
   // ---------------------------------------------------------------- panels / mobile
   const mobile = () => window.matchMedia('(max-width: 900px)').matches;
   const panels = (() => { try { return { rail: false, side: false, ...JSON.parse(localStorage.getItem('cyem.panels') || '{}') }; } catch { return { rail: false, side: false }; } })();

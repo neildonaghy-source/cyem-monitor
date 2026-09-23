@@ -22,6 +22,7 @@ from .link_api import ensure_link_schema, router as link_router
 from .coverage_api import ensure_coverage_schema, router as coverage_router
 from .omni import build_wide_ask, router as omni_router
 from .export import router as export_router
+from .cells import router as cells_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -53,6 +54,7 @@ app.include_router(link_router)
 app.include_router(coverage_router)
 app.include_router(omni_router)
 app.include_router(export_router)
+app.include_router(cells_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 
@@ -172,7 +174,7 @@ async def layer(name: str, hours: int = Query(default=24 * 30, ge=1, le=24 * 120
             if c:
                 out.append({"country": r["key"], "name": geo.name_of(r["key"]), "lat": c[0], "lon": c[1], "count": r["n"]})
         return {"points": out, "hours": hours}
-    if name in ("c2", "gpsjam", "ioda", "cables", "gdelt", "launches", "cloudflare", "spaceweather", "radars", "milair", "sats", "opencti", "drap", "aurora", "hfmap"):
+    if name in ("c2", "gpsjam", "ioda", "cables", "gdelt", "launches", "cloudflare", "spaceweather", "radars", "milair", "sats", "opencti", "drap", "aurora", "hfmap", "ais"):
         data, updated = db.get_snapshot(name)
         if data is None:
             return {"updated": None, "data": None}

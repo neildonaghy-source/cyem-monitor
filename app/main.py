@@ -174,7 +174,7 @@ async def layer(name: str, hours: int = Query(default=24 * 30, ge=1, le=24 * 120
             if c:
                 out.append({"country": r["key"], "name": geo.name_of(r["key"]), "lat": c[0], "lon": c[1], "count": r["n"]})
         return {"points": out, "hours": hours}
-    if name in ("c2", "gpsjam", "ioda", "cables", "gdelt", "launches", "cloudflare", "spaceweather", "radars", "milair", "sats", "opencti", "drap", "aurora", "hfmap", "ais"):
+    if name in ("c2", "gpsjam", "ioda", "cables", "gdelt", "launches", "cloudflare", "spaceweather", "radars", "milair", "sats", "opencti", "drap", "aurora", "hfmap", "ais", "air"):
         data, updated = db.get_snapshot(name)
         if data is None:
             return {"updated": None, "data": None}

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23k';
+  const BUILD = '2026-09-23l';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -80,6 +80,9 @@
     { id: 'radars', group: 'em', label: 'Radar sites (OSM)', colour: '#c8d3e0', on: false, load: loadRadars, every: 0,
       legend: `${DOT('#e0e6ee', 7)} military ${DOT('#3cc7ff', 7)} space ${DOT('#f3b23e', 6)} aviation ${DOT('#45d38a', 6)} weather ${DOT('#2bb9a8', 6)} maritime ${DOT('#6f7f93', 6)} other`,
       opts: [{ id: 'radars_mil', label: 'military / space only', on: true }] },
+    { id: 'air', group: 'em', label: 'All aircraft (ADS-B, UK)', colour: '#8fb3d9', on: false, load: loadAir, every: 2,
+      legend: `${DOT('#8fb3d9', 7)} normal ${DOT('#ff6fb1', 7)} military ${DOT('#f3b23e', 8)} degraded GNSS (NIC 1–6) ${DOT('#ff5c5c', 8)} emergency squawk`,
+      opts: [{ id: 'air_flags', label: 'Degraded GNSS / emergency only', on: false }] },
     { id: 'ais', group: 'em', label: 'Ships (AIS, UK waters)', colour: '#3cc7ff', on: false, load: loadAis, every: 5,
       legend: `${DOT('#ff5c5c', 7)} military ${DOT('#ff6fb1', 7)} law enf. ${DOT('#f3b23e', 7)} SAR ${DOT('#3cc7ff', 7)} cargo ${DOT('#c07b3a', 7)} tanker ${DOT('#45d38a', 7)} passenger ${DOT('#2bb9a8', 7)} fishing ${DOT('#8593a6', 7)} other`,
       opts: [{ id: 'ais_gov', label: 'Military / law enforcement / SAR only', on: false }] },
@@ -1360,6 +1363,24 @@
     setCount('cells', res.total > res.returned ? `${res.returned}/${res.total}` : res.total); done('cells');
   }
   map.on('moveend', () => { if (map.hasLayer(groups.cells)) loadCells().catch((e) => console.warn('cells', e)); });
+  // ---------------------------------------------------------------- all aircraft (ADS-B)
+  async function loadAir() {
+    const g = groups.air; g.clearLayers();
+    const { data, updated } = await api('/api/layers/air');
+    if (!data) { setCount('air', '–'); done('air'); return; }
+    const only = optOn('air_flags');
+    let n = 0;
+    for (const a of data.aircraft || []) {
+      if (only && !a.gnss_bad && !a.emerg) continue;
+      n++;
+      const col = a.emerg ? '#ff5c5c' : a.gnss_bad ? '#f3b23e' : a.mil ? '#ff6fb1' : '#8fb3d9';
+      const big = a.emerg || a.gnss_bad;
+      L.circleMarker([a.lat, a.lon], { renderer: aisCanvas, radius: big ? 4.5 : 2.5, color: big ? '#fff' : col, weight: big ? 1 : 0, fillColor: col, fillOpacity: 0.85 })
+        .bindPopup(() => `<h4>${esc(a.flight || a.reg || a.hex)} <span class="muted">${esc(a.type || '')}</span></h4>${kv([['Status', a.emerg ? `<b style="color:#ff5c5c">Squawk ${a.squawk}: ${esc(a.emerg)}</b>` : a.gnss_bad ? '<b style="color:#f3b23e">Degraded position integrity</b>' : 'normal'], ['NIC / NACp', `${a.nic ?? '–'} / ${a.nacp ?? '–'}`], ['Altitude', a.ground ? 'on ground' : a.alt != null ? `${a.alt.toLocaleString()} ft` : ''], ['Ground speed', a.gs != null ? `${Math.round(a.gs)} kt` : ''], ['Track', a.track != null ? `${Math.round(a.track)}°` : ''], ['Squawk', esc(a.squawk || '')], ['Registration', esc(a.reg || '')], ['Hex', `<span class="mono">${esc(a.hex)}</span>`]])}<p style="margin:6px 0 0"><a href="https://globe.adsb.fi/?icao=${esc(a.hex)}" target="_blank" rel="noopener">Track on adsb.fi ↗</a></p><p class="dim" style="margin:4px 0 0">NIC 1 to 6 suggests degraded GNSS (jamming, spoofing or equipment). ${esc(data.source || '')} · ${fmtZ(updated)}</p>`)
+        .addTo(g);
+    }
+    setCount('air', `${n}/${data.count} · ${data.degraded} GNSS`); done('air');
+  }
   // ---------------------------------------------------------------- panels / mobile
   const mobile = () => window.matchMedia('(max-width: 900px)').matches;
   const panels = (() => { try { return { rail: false, side: false, ...JSON.parse(localStorage.getItem('cyem.panels') || '{}') }; } catch { return { rail: false, side: false }; } })();

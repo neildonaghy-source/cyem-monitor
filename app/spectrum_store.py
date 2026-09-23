@@ -185,6 +185,13 @@ def wtr_area_conflicts(db: Database, p: Emitter, *, guard_hz: float) -> list[dic
     return out
 
 
+def wtr_area_emitters(db: Database, e: Emitter, *, guard_hz: float) -> list[Emitter]:
+    lo_f, hi_f = e.freq_hz - e.bw_hz / 2 - guard_hz, e.freq_hz + e.bw_hz / 2 + guard_hz
+    rows = db.query(f"SELECT {_WTR_GROUPED} FROM wtr WHERE lat IS NULL AND freq_hz + bw_hz/2 > ? AND freq_hz - bw_hz/2 < ? "
+                    "GROUP BY licence, freq_hz LIMIT 500", (lo_f, hi_f))
+    return [wtr_to_emitter(r) for r in rows]
+
+
 def wtr_to_emitter(r: dict) -> Emitter:
     return Emitter(id=f"wtr:{r['id']}", name=r.get("company") or r["licence"], freq_hz=r["freq_hz"], bw_hz=r["bw_hz"],
                    lat=r["lat"], lon=r["lon"], kind="wtr",
@@ -233,7 +240,7 @@ def planned_to_emitter(r: dict) -> Emitter:
                    meta={"power_w": r.get("power_w"), "notes": r.get("notes")})
 
 
-def run_conflicts(db: Database, *, guard_hz: float, radius_km: float) -> dict:
+def run_conflicts(db: Database, *, guard_hz: float, radius_km: float, harm_order: int = 3, cosite_km: float = 1.0) -> dict:
     """Planned vs WTR baseline and planned vs planned. Returns results grouped by
     planned emitter plus a flat summary for the brief."""
     from .spectrum_core import find_conflicts
@@ -250,20 +257,48 @@ def run_conflicts(db: Database, *, guard_hz: float, radius_km: float) -> dict:
         a = pmap[r["a"]]   # mirror so both planned emitters show the clash
         by_id[r["b"]].append({**r, "a": r["b"], "b": a.id, "b_name": a.name, "b_freq_hz": a.freq_hz,
                               "b_bw_hz": a.bw_hz, "b_lat": a.lat, "b_lon": a.lon, "b_meta": a.meta or {}})
+    for lst in by_id.values():
+        for r in lst:
+            r.setdefault("mechanism", "fundamental")
+    # ---- spurious products: harmonics per emitter, IM3 per co-sited pair
+    from .spectrum_core import check_products, harmonic_emitters, im3_emitters
+    products = []
+    if harm_order >= 2:
+        for p in planned:
+            products.extend(harmonic_emitters(p, min(harm_order, 5)))
+    if cosite_km > 0:
+        products.extend(im3_emitters(planned, cosite_km))
+    product_hits: list[dict] = []
+    for pr in products:
+        victims = wtr_candidates(db, pr, guard_hz=guard_hz, radius_km=radius_km) + wtr_area_emitters(db, pr, guard_hz=guard_hz) + planned
+        product_hits.extend(check_products([pr], victims, guard_hz=guard_hz, radius_km=radius_km))
+    for h in product_hits:
+        for src in h["sources"]:
+            by_id[src].append({**h, "a": src})
+        if h["b_kind"] == "planned" and h["b"] in by_id:
+            # show the hit on the victim too, with the product as the thing it clashes with
+            by_id[h["b"]].append({**h, "a": h["b"], "b": h["product_id"], "b_kind": "product", "b_name": h["label"],
+                                  "b_freq_hz": h["product_hz"], "b_bw_hz": h["product_bw_hz"], "b_meta": {"sources": h["sources"]},
+                                  "victim_view": True})
     rank = {"high": 0, "medium": 1, "low": 2}
     sev_count: Counter = Counter()
     vs_wtr = 0
     for lst in by_id.values():
         lst.sort(key=lambda r: (rank[r["severity"]], r["dist_km"] if r["dist_km"] is not None else 1e9))
         for r in lst:
-            if r["b_kind"] in ("wtr", "wtr_area"):
+            if r["b_kind"] in ("wtr", "wtr_area") and r["mechanism"] == "fundamental":
                 vs_wtr += 1
                 sev_count[r["severity"]] += 1
     for r in pp:   # planned/planned pairs counted once for the totals
         sev_count[r["severity"]] += 1
+    for h in product_hits:   # each product hit counted once, however many sources it has
+        sev_count[h["severity"]] += 1
+    mech = Counter(h["mechanism"] for h in product_hits)
     return {"generated_at": now_iso(), "guard_hz": guard_hz, "radius_km": radius_km,
             "planned": [{"id": p.id, "name": p.name, "freq_hz": p.freq_hz, "bw_hz": p.bw_hz, "lat": p.lat, "lon": p.lon,
                          "start": p.start, "end": p.end, "power_w": (p.meta or {}).get("power_w"),
                          "conflicts": by_id[p.id]} for p in planned],
+            "harm_order": harm_order, "cosite_km": cosite_km,
             "totals": {"planned": len(planned), "vs_licensed": vs_wtr, "planned_pairs": len(pp),
+                       "harmonic": mech["harmonic"], "im3": mech["im3"],
                        "high": sev_count["high"], "medium": sev_count["medium"], "low": sev_count["low"]}}

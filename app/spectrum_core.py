@@ -280,3 +280,96 @@ def intermod3(f1_hz: float, f2_hz: float) -> list[float]:
     """Third-order intermodulation products 2f1-f2 and 2f2-f1. Stub for a later
     co-site analysis increment; not yet used."""
     return [2 * f1_hz - f2_hz, 2 * f2_hz - f1_hz]
+
+
+# ---- harmonics and third-order intermodulation (increment 2) ------------------------
+# Screening model only: no power, filtering or receiver selectivity is modelled.
+#   Harmonic n of (f, bw) occupies n*f with width n*bw.
+#   IM3 of a co-sited pair: 2f1 - f2 with width 2*bw1 + bw2 (and the mirror product),
+#   radiated from the pair's midpoint during the intersection of their windows.
+
+def harmonic_emitters(p: Emitter, max_order: int) -> list[Emitter]:
+    out = []
+    for n in range(2, max(1, max_order) + 1):
+        out.append(Emitter(id=f"{p.id}:H{n}", name=f"{p.name} H{n}", freq_hz=p.freq_hz * n, bw_hz=p.bw_hz * n,
+                           lat=p.lat, lon=p.lon, start=p.start, end=p.end, kind="product",
+                           meta={"mechanism": "harmonic", "order": n, "sources": [p.id], "label": f"H{n}"}))
+    return out
+
+
+def _window_intersection(a: Emitter, b: Emitter) -> tuple[str | None, str | None]:
+    starts = [s for s in (a.start, b.start) if s]
+    ends = [e for e in (a.end, b.end) if e]
+    return (max(starts) if starts else None, min(ends) if ends else None)
+
+
+def im3_emitters(planned: list[Emitter], cosite_km: float) -> list[Emitter]:
+    """Third-order products for every co-sited pair whose time windows intersect.
+    Pairs on the same centre frequency produce no new product and are skipped."""
+    out = []
+    for i, a in enumerate(planned):
+        for b in planned[i + 1:]:
+            if a.freq_hz == b.freq_hz:
+                continue
+            if haversine_km(a.lat, a.lon, b.lat, b.lon) > cosite_km:
+                continue
+            if not windows_intersect(a.start, a.end, b.start, b.end):
+                continue
+            s, e = _window_intersection(a, b)
+            lat, lon = (a.lat + b.lat) / 2, (a.lon + b.lon) / 2
+            for (x, y) in ((a, b), (b, a)):
+                f = 2 * x.freq_hz - y.freq_hz
+                if f <= 0:
+                    continue
+                out.append(Emitter(id=f"IM3:{x.id}:{y.id}", name=f"IM3 2x{x.name} - {y.name}", freq_hz=f,
+                                   bw_hz=2 * x.bw_hz + y.bw_hz, lat=lat, lon=lon, start=s, end=e, kind="product",
+                                   meta={"mechanism": "im3", "order": 3, "sources": [x.id, y.id],
+                                         "label": f"IM3 2f({x.name})-f({y.name})"}))
+    return out
+
+
+def product_severity(mechanism: str, order: int, victim_kind: str, dist_km: float | None, radius_km: float,
+                     occupied_overlap: bool) -> str:
+    """Triage for spurious products. Harmonics are normally well suppressed, so they
+    never rate high. IM3 landing on one of our own nets nearby is the classic co-site
+    problem and rates high."""
+    near = dist_km is not None and dist_km <= radius_km / 3
+    if not occupied_overlap:
+        return "low"
+    if mechanism == "im3" and victim_kind == "planned" and near:
+        return "high"
+    if near and (mechanism == "im3" or order == 2):
+        return "medium"
+    return "low"
+
+
+def check_products(products: list[Emitter], victims: list[Emitter], *, guard_hz: float, radius_km: float) -> list[dict]:
+    """Products against victims (WTR rows or planned emitters). A product never
+    counts against one of its own sources."""
+    out = []
+    for pr in products:
+        m = pr.meta or {}
+        for v in victims:
+            if v.id in m.get("sources", []):
+                continue
+            ov = freq_overlap_hz(pr.freq_hz, pr.bw_hz, v.freq_hz, v.bw_hz, guard_hz)
+            if ov <= 0:
+                continue
+            d = haversine_km(pr.lat, pr.lon, v.lat, v.lon) if v.lat is not None else None
+            if d is not None and d > radius_km:
+                continue
+            if v.kind == "planned" and not windows_intersect(pr.start, pr.end, v.start, v.end):
+                continue
+            spacing = abs(pr.freq_hz - v.freq_hz)
+            occ = spacing - (pr.bw_hz + v.bw_hz) / 2 <= 0
+            out.append({
+                "product_id": pr.id, "mechanism": m.get("mechanism"), "order": m.get("order"), "label": m.get("label"),
+                "sources": m.get("sources", []), "product_hz": pr.freq_hz, "product_bw_hz": pr.bw_hz,
+                "b": v.id, "b_kind": v.kind if v.lat is not None or v.kind == "planned" else "wtr_area", "b_name": v.name,
+                "b_freq_hz": v.freq_hz, "b_bw_hz": v.bw_hz, "b_lat": v.lat, "b_lon": v.lon,
+                "spacing_hz": round(spacing, 1), "overlap_hz": round(ov, 1), "co_channel": occ,
+                "dist_km": round(d, 2) if d is not None else None,
+                "severity": product_severity(m.get("mechanism", ""), m.get("order", 0), v.kind, d, radius_km, occ),
+                "b_meta": v.meta or {},
+            })
+    return out

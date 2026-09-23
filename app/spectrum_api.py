@@ -114,10 +114,11 @@ async def planned_remove(pid: str):
 # ---- conflicts + spectral view ---------------------------------------------------
 @router.get("/conflicts")
 async def conflicts(guard_khz: float = Query(default=DEFAULT_GUARD_KHZ, ge=0, le=100_000),
-                    radius_km: float = Query(default=DEFAULT_RADIUS_KM, gt=0, le=500)):
+                    radius_km: float = Query(default=DEFAULT_RADIUS_KM, gt=0, le=500),
+                    harm_order: int = Query(default=3, ge=0, le=5), cosite_km: float = Query(default=1.0, ge=0, le=50)):
     db = get_db()
     g, r = _guard_radius(guard_khz, radius_km)
-    res = run_conflicts(db, guard_hz=g, radius_km=r)
+    res = run_conflicts(db, guard_hz=g, radius_km=r, harm_order=harm_order, cosite_km=cosite_km)
     res["baseline_rows"] = wtr_count(db)
     return res
 
@@ -154,6 +155,9 @@ BRIEF_SYSTEM = (
     "not measured on-air activity; say so once if relevant. "
     "Structure: one-line BLUF; then the planned emitters with high or medium conflicts, most serious first, "
     "each with the clashing assignment, spacing and distance; then a short line on low (guard-band only) items; "
+    "Items marked 'via H2/H3' are harmonics and 'via IM3' are third-order intermodulation products of co-sited "
+    "planned emitters; say which mechanism applies, and that these are screening results (power and filtering "
+    "are not modelled). "
     "then one or two practical deconfliction options such as moving frequency outside the listed clashes or "
     "changing site. Under 250 words. Do not state deadlines or dates other than the time windows given; "
     "the check-run time is not a transmission date. Only planned emitters can be moved or retuned: "
@@ -170,9 +174,12 @@ def _brief_context(res: dict, per_emitter: int = 8) -> str:
                      f"{len(p['conflicts'])} conflicts")
         for c in p["conflicts"][:per_emitter]:
             m = c.get("b_meta") or {}
-            who = f"{c['b_name']} ({m.get('product', 'planned')}, licence {m.get('licence', '-')})" if c["b_kind"] != "planned" \
+            who = f"incoming {c['b_name']} from own co-sited emitters" if c["b_kind"] == "product" else \
+                f"{c['b_name']} ({m.get('product', 'planned')}, licence {m.get('licence', '-')})" if c["b_kind"] != "planned" \
                 else f"planned emitter {c['b_name']}"
-            lines.append(f"  - {c['severity'].upper()}: {who} at {c['b_freq_hz'] / 1e6:.6f} MHz BW {c['b_bw_hz'] / 1e3:g} kHz; "
+            via = "" if c.get("mechanism", "fundamental") == "fundamental" else \
+                f"via {c.get('label')} product at {c['product_hz'] / 1e6:.6f} MHz (BW {c['product_bw_hz'] / 1e3:g} kHz); "
+            lines.append(f"  - {c['severity'].upper()}: {via}{who} at {c['b_freq_hz'] / 1e6:.6f} MHz BW {c['b_bw_hz'] / 1e3:g} kHz; "
                          f"spacing {c['spacing_hz'] / 1e3:g} kHz; occupied bands {'overlap' if c['co_channel'] else 'clear (guard only)'}; "
                          + (f"{c['dist_km']:g} km" if c["dist_km"] is not None else "area licence, location not published"))
         if len(p["conflicts"]) > per_emitter:
@@ -183,13 +190,15 @@ def _brief_context(res: dict, per_emitter: int = 8) -> str:
 class BriefReq(BaseModel):
     guard_khz: float = Field(default=DEFAULT_GUARD_KHZ, ge=0, le=100_000)
     radius_km: float = Field(default=DEFAULT_RADIUS_KM, gt=0, le=500)
+    harm_order: int = Field(default=3, ge=0, le=5)
+    cosite_km: float = Field(default=1.0, ge=0, le=50)
 
 
 @router.post("/brief")
 async def brief(req: BriefReq | None = None):
     req = req or BriefReq()
     db = get_db()
-    res = run_conflicts(db, guard_hz=req.guard_khz * 1e3, radius_km=req.radius_km)
+    res = run_conflicts(db, guard_hz=req.guard_khz * 1e3, radius_km=req.radius_km, harm_order=req.harm_order, cosite_km=req.cosite_km)
     res["baseline_rows"] = wtr_count(db)
     if not res["planned"]:
         return {"content": "No planned emitters entered, so there is nothing to deconflict.", "totals": res["totals"]}

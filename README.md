@@ -142,8 +142,14 @@ window) and they are checked against the Ofcom licensed baseline and against eac
   planned/planned pairs also need overlapping time windows. Severity: high = occupied bands overlap and
   within a third of the radius; medium = other overlap in radius or area licence; low = guard band only.
   T and R rows of one licence/frequency/site count once.
-- **Not modelled yet:** harmonics, intermodulation, adjacent-channel selectivity, power, terrain.
-  `spectrum_core.harmonics()` and `intermod3()` are stubs.
+- **Harmonics and IM3 (screening, added 2026-09-23):** each planned emitter's harmonics up to order N
+  (default 3; set 0 to disable) occupy n*f with width n*bw and are checked against licences, area licences
+  and other planned emitters within the radius. Co-sited planned pairs (default within 1 km; 0 disables) with
+  intersecting windows produce IM3 at 2f1-f2 and 2f2-f1, width 2*bw1+bw2, from their midpoint. Severity:
+  IM3 on one of our own nets within a third of the radius = high; H2 or IM3 on a nearby licence = medium;
+  everything else = low; a product never counts against its own sources. The victim net also lists the hit.
+- **Not modelled yet:** transmit power, filtering and suppression levels, receiver selectivity, fifth-order
+  and higher intermodulation, terrain. Treat product results as a list to check, not a prediction.
 - **Band plan:** `data/uk_bandplan.json`, simplified display context only; UKFAT is authoritative.
 - **Ollama note:** narrates the computed conflict set only (qwen3.5:4b, 1-2 min). Always check it
   against the table; small models still paraphrase loosely.
@@ -157,4 +163,4 @@ Code: `app/spectrum_core.py` (pure logic, tested), `app/spectrum_store.py` (SQLi
 docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q pytest && python -m pytest -q tests"
 ```
 
-Next increment: ADS-B-derived GNSS interference layer, then harmonics and third-order intermodulation.
+Next increment: propagation-aware distance (terrain and power) or fifth-order IM; the GNSS interference layer already exists (gpsjam method).

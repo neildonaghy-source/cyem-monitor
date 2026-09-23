@@ -521,15 +521,16 @@
   const SEV_COL = { high: '#ff5c5c', medium: '#f3b23e', low: '#f3b23e' };
   const worst = (cs) => cs.some((c) => c.severity === 'high') ? 'high' : cs.some((c) => c.severity === 'medium') ? 'medium' : cs.length ? 'low' : null;
   async function fetchConflicts() {
-    lastConflicts = await api(`/api/spectrum/conflicts?guard_khz=${SPEC.guard_khz}&radius_km=${SPEC.radius_km}`);
+    lastConflicts = await api(`/api/spectrum/conflicts?guard_khz=${SPEC.guard_khz}&radius_km=${SPEC.radius_km}&harm_order=${SPEC.harm_order ?? 3}&cosite_km=${SPEC.cosite_km ?? 1}`);
     return lastConflicts;
   }
   function conflictRows(cs, max = 12) {
     if (!cs.length) return '<p class="ok">No conflicts at current settings.</p>';
-    return `<table class="grid"><tr><th>Sev</th><th>Against</th><th>MHz</th><th>BW kHz</th><th>Spacing kHz</th><th>km</th></tr>${cs.slice(0, max).map((c) => {
+    const mech = (c) => !c.mechanism || c.mechanism === 'fundamental' ? 'fund.' : `<span title="product at ${mhz(c.product_hz)} MHz, BW ${khz(c.product_bw_hz)} kHz">${esc(c.mechanism === 'im3' ? 'IM3' : c.label)}</span>`;
+    return `<table class="grid"><tr><th>Sev</th><th>Type</th><th>Against</th><th>MHz</th><th>BW kHz</th><th>Spacing kHz</th><th>km</th></tr>${cs.slice(0, max).map((c) => {
       const m = c.b_meta || {};
-      const who = c.b_kind !== 'planned' ? `${esc(c.b_name)}<div class="dim">${esc(m.product || '')} · ${esc(m.licence || '')}</div>` : `<b>planned:</b> ${esc(c.b_name)}`;
-      return `<tr><td style="color:${SEV_COL[c.severity]}">${c.severity}</td><td>${who}</td><td class="mono">${mhz(c.b_freq_hz)}</td><td class="mono">${khz(c.b_bw_hz)}</td><td class="mono">${khz(c.spacing_hz)}${c.co_channel ? '' : ' <span class="dim">(guard)</span>'}</td><td class="mono">${c.dist_km ?? '<span title="Area licence; location not published">area</span>'}</td></tr>`;
+      const who = c.b_kind === 'product' ? `<b>hit by:</b> ${esc(c.b_name)}` : c.b_kind !== 'planned' ? `${esc(c.b_name)}<div class="dim">${esc(m.product || '')} · ${esc(m.licence || '')}</div>` : `<b>planned:</b> ${esc(c.b_name)}`;
+      return `<tr><td style="color:${SEV_COL[c.severity]}">${c.severity}</td><td class="mono">${mech(c)}</td><td>${who}</td><td class="mono">${mhz(c.b_freq_hz)}</td><td class="mono">${khz(c.b_bw_hz)}</td><td class="mono">${khz(c.spacing_hz)}${c.co_channel ? '' : ' <span class="dim">(guard)</span>'}</td><td class="mono">${c.dist_km ?? '<span title="Area licence; location not published">area</span>'}</td></tr>`;
     }).join('')}</table>${cs.length > max ? `<p class="dim">+${cs.length - max} more</p>` : ''}`;
   }
   async function loadPlanned() {
@@ -874,12 +875,12 @@
     const head = st.loaded
       ? `<p class="dim">Baseline: <b>${st.loaded.toLocaleString('en-GB')}</b> Ofcom WTR assignments, source dated ${esc(src.last_modified || '?')}, loaded ${st.updated ? ago(st.updated) + ' ago' : '?'}. Licensed assignments only, not measured on-air use. Band plan is simplified; UKFAT is authoritative.</p>`
       : `<p class="warn">Ofcom baseline not loaded yet. It downloads on first run (about 52 MB); check Health for the <b>wtr</b> collector.</p>`;
-    const settingsRow = `<div class="specset">Guard <input id="sp-guard" type="number" step="any" min="0" value="${SPEC.guard_khz}"> kHz · Radius <input id="sp-rad" type="number" step="any" min="1" value="${SPEC.radius_km}"> km · Display ±<input id="sp-span" type="number" step="any" min="1" value="${SPEC.span_khz}"> kHz <button id="sp-recheck">Recheck</button></div>`;
+    const settingsRow = `<div class="specset">Guard <input id="sp-guard" type="number" step="any" min="0" value="${SPEC.guard_khz}"> kHz · Radius <input id="sp-rad" type="number" step="any" min="1" value="${SPEC.radius_km}"> km · Display ±<input id="sp-span" type="number" step="any" min="1" value="${SPEC.span_khz}"> kHz · Harmonics to <input id="sp-harm" type="number" min="0" max="5" step="1" value="${SPEC.harm_order ?? 3}"> · Co-site IM3 <input id="sp-cosite" type="number" step="any" min="0" value="${SPEC.cosite_km ?? 1}"> km <button id="sp-recheck">Recheck</button></div>`;
     const tot = res.totals;
     const list = res.planned.length ? `<table class="grid"><tr><th>Emitter</th><th>MHz</th><th>BW kHz</th><th>Window (Z)</th><th>Conflicts</th><th></th></tr>${res.planned.map((p) => {
       const c = { high: 0, medium: 0, low: 0 }; p.conflicts.forEach((x) => { c[x.severity] += 1; });
       return `<tr class="${p.id === specSel ? 'sel' : ''}"><td><a href="#" data-sel="${esc(p.id)}">${esc(p.name)}</a></td><td class="mono">${mhz(p.freq_hz)}</td><td class="mono">${khz(p.bw_hz)}</td><td class="mono dim">${p.start ? fmtZ(p.start) : 'open'} → ${p.end ? fmtZ(p.end) : 'open'}</td><td><span style="color:#ff5c5c">${c.high}H</span> <span style="color:#f3b23e">${c.medium}M ${c.low}L</span></td><td style="white-space:nowrap"><button data-edit="${esc(p.id)}">Edit</button> <button data-del="${esc(p.id)}">Delete</button></td></tr>`;
-    }).join('')}</table><p class="dim">Totals: ${tot.vs_licensed} against licences, ${tot.planned_pairs} planned/planned pairs; ${tot.high} high, ${tot.medium} medium, ${tot.low} low.</p>` : '<p class="dim">No planned emitters yet. Add one below.</p>';
+    }).join('')}</table><p class="dim">Totals: ${tot.vs_licensed} against licences, ${tot.planned_pairs} planned/planned pairs, ${tot.harmonic} harmonic and ${tot.im3} IM3 product hits; ${tot.high} high, ${tot.medium} medium, ${tot.low} low. Harmonic and IM3 results are screening only: power and filtering are not modelled.</p>` : '<p class="dim">No planned emitters yet. Add one below.</p>';
     const sel = res.planned.find((p) => p.id === specSel);
     openModal('Spectrum deconfliction', `${head}${settingsRow}<h3 class="sec">Planned emitters</h3>${list}
       <h3 class="sec">${draft?.id ? 'Edit' : 'Add'} planned emitter</h3>${specForm(draft)}
@@ -909,6 +910,8 @@
       SPEC.guard_khz = Math.max(0, Number($('#sp-guard').value) || 0);
       SPEC.radius_km = Math.max(1, Number($('#sp-rad').value) || 50);
       SPEC.span_khz = Math.max(1, Number($('#sp-span').value) || 200);
+      SPEC.harm_order = Math.min(5, Math.max(0, Math.round(Number($('#sp-harm').value) || 0)));
+      SPEC.cosite_km = Math.max(0, Number($('#sp-cosite').value) || 0);
       saveSpec(); draft = formToDraft(readForm()); openSpectrum(); loadPlanned().catch(() => {});
     });
     $('#sp-clear')?.addEventListener('click', () => { draft = null; openSpectrum(); });
@@ -938,7 +941,7 @@
     $('#sp-brief')?.addEventListener('click', async () => {
       const btn = $('#sp-brief'); btn.disabled = true; btn.textContent = 'Generating…';
       try {
-        const r = await api('/api/spectrum/brief', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guard_khz: SPEC.guard_khz, radius_km: SPEC.radius_km }) });
+        const r = await api('/api/spectrum/brief', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ guard_khz: SPEC.guard_khz, radius_km: SPEC.radius_km, harm_order: SPEC.harm_order ?? 3, cosite_km: SPEC.cosite_km ?? 1 }) });
         $('#sp-brief-out').innerHTML = renderMd(r.content) + `<p class="dim">${esc(r.model || '')} · ${r.duration_s ?? ''} s · narrates computed results only; check against the table above.</p>`;
       } catch (e) { $('#sp-brief-out').innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
       finally { btn.disabled = false; btn.textContent = 'Regenerate note'; }

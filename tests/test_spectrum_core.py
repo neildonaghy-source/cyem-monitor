@@ -120,3 +120,44 @@ def test_looks_personal_masks_individuals_not_organisations():
 
 def test_parse_row_masks_personal_company():
     assert parse_wtr_row({**ROW, "Licencee Company": "Daniel James"})["company"] is None
+
+
+from app.spectrum_core import check_products, harmonic_emitters, im3_emitters  # noqa: E402
+
+
+def test_harmonics_scale_frequency_and_width():
+    hs = harmonic_emitters(_p("P", 150e6, bw=25e3), 3)
+    assert [(h.freq_hz, h.bw_hz, h.meta["label"]) for h in hs] == [(300e6, 50e3, "H2"), (450e6, 75e3, "H3")]
+    assert harmonic_emitters(_p("P", 150e6), 1) == []
+
+
+def test_harmonic_hits_licensed_victim():
+    h2 = harmonic_emitters(_p("P", 150e6, bw=25e3), 2)
+    near = _p("W1", 300.01e6, bw=12.5e3, lat=51.02, kind="wtr")   # inside the 50 kHz H2, ~2 km
+    far = _p("W2", 300.01e6, bw=12.5e3, lat=51.35, kind="wtr")    # ~39 km
+    clear = _p("W3", 300.2e6, bw=12.5e3, lat=51.0, kind="wtr")
+    out = check_products(h2, [near, far, clear], guard_hz=0, radius_km=50)
+    assert [(o["b"], o["severity"]) for o in out] == [("W1", "medium"), ("W2", "low")]
+
+
+def test_im3_products_and_cosite_rule():
+    a, b = _p("A", 150.0e6), _p("B", 150.1e6, lat=51.001)       # ~110 m apart
+    far = _p("C", 150.2e6, lat=51.2)                             # ~22 km: not co-sited
+    ims = im3_emitters([a, b, far], cosite_km=1.0)
+    assert sorted(round(i.freq_hz) for i in ims) == [149_900_000, 150_200_000]
+    assert all(i.bw_hz == 3 * 12.5e3 for i in ims)
+    assert im3_emitters([a, _p("S", 150.0e6)], 1.0) == []        # same frequency: no new product
+
+
+def test_im3_on_own_net_is_high_and_never_hits_sources():
+    a, b = _p("A", 150.0e6), _p("B", 150.1e6, lat=51.001)
+    victim = _p("V", 150.2e6, lat=51.01)                         # planned net on 2fB - fA, ~1 km away
+    ims = im3_emitters([a, b], 1.0)
+    out = check_products(ims, [a, b, victim], guard_hz=0, radius_km=50)
+    assert [(o["b"], o["severity"], o["mechanism"]) for o in out] == [("V", "high", "im3")]
+
+
+def test_im3_respects_time_windows():
+    a = _p("A", 150.0e6, start="2026-10-01T00:00:00Z", end="2026-10-01T06:00:00Z")
+    b = _p("B", 150.1e6, lat=51.001, start="2026-10-01T12:00:00Z", end="2026-10-01T18:00:00Z")
+    assert im3_emitters([a, b], 1.0) == []

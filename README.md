@@ -175,7 +175,8 @@ removes them.
 
 - **Terrain:** Copernicus GLO-30 surface model (30 m, AWS open data), tiles downloaded on first use to
   `data-store/dem/` (excluded from OneDrive). Surface model, so some tree and building canopy is included.
-- **Models:** effective earth radius k (default 4/3); Deygout diffraction with ITU-R P.526 J(v); free-space
+- **Models:** effective earth radius k (default 4/3); Deygout diffraction limited to 3 edges with ITU-R P.526 J(v)
+  (more edges over-estimate the loss: 6 edges gave 63 dB against 49 dB on the Chichester to Petersfield path); free-space
   loss; coarse sea-level gas table; ITU-R P.838-3 rain coefficients (tabulated from memory, verify for
   design use) with ITU-R P.530 path reduction and percentage scaling, valid 99.0 to 99.999%.
 - **Not modelled:** clutter, multipath and ducting fades, antenna patterns and alignment, interference.
@@ -183,4 +184,27 @@ removes them.
 - Code: `app/link_core.py` (pure maths, tested in `tests/test_link_core.py`), `app/dem.py`, `app/link_api.py`
   (router `/api/links/*`, table `planned_links`, `planned_emitters.link_id`). Needs `rasterio` and `libexpat1`.
 
-Next: point-to-multipoint and omni coverage overlays, which will also replace the fixed radius in deconfliction.
+## Coverage: omni, sector, P2MP hub (added 2026-09-23)
+
+Top-bar **Coverage** button. Site (pick on map), mast height, frequency, power, antenna gain, omni or sector
+(azimuth, beamwidth; 3GPP-style pattern with 25 dB front-to-back), radius up to 60 km, receiver height, gain,
+sensitivity and required margin. Computes received level on 360 radials at about 50 m steps (capped at 600
+samples, so about 83 m at 50 km) in 1 to 5 s, and shows a map overlay: strong (margin + 10 dB), adequate
+(required margin) and marginal (above sensitivity). Stats: adequate and marginal areas, furthest adequate range,
+and the interference footprint above the site threshold.
+
+- **Model:** free space + Deygout diffraction limited to 3 edges (same method as the link planner) + gases, on
+  the Copernicus 30 m surface model with earth radius factor k. Cross-check: valley site to Petersfield, coverage
+  -109.5 dBm against the link planner -114.4 dBm; the 5 dB difference is the coarser coverage sampling. Earlier
+  single-edge and Bullington versions were 35 and 19 dB optimistic and were replaced before release.
+- **Deconfliction:** a saved site creates a planned emitter (`planned_emitters.site_id`). For that emitter the
+  fixed radius is replaced by the site radius, and a licence only counts as a clash if the predicted level of our
+  signal at its location reaches the interference threshold (default -120 dBm). The conflict table shows that
+  predicted level. Severity: high if 20 dB or more above threshold with occupied-band overlap, medium otherwise.
+- **Not modelled:** clutter and buildings, antenna tilt and vertical pattern, receiver antenna pattern,
+  multipath and time variability. Screening grade.
+- Code: `app/coverage_core.py` (numpy; tests in `tests/test_coverage_core.py`), `app/coverage_api.py`
+  (router `/api/coverage/*`, table `coverage_sites`, polar grid stored compressed), `dem.grid_sampler()`.
+
+Next options: export of the plan (frequencies, conflicts, links, coverage) to a document; finer coverage sampling
+on demand; HF skywave planning using the existing MUF layer.

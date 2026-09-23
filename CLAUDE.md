@@ -42,3 +42,4 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Box-level changes (backup excludes, `~/bin/runbook_gen.py`) must be kept in step with this file and the README.
 - Harmonic and IM3 screening live in `spectrum_core` (`harmonic_emitters`, `im3_emitters`, `check_products`); `run_conflicts` takes `harm_order` and `cosite_km`. Keep product severities below fundamental ones except IM3 on own nets.
 - Link planner: `link_core.py` stays stdlib-only and tested; terrain via `dem.heights()` (rasterio, lazy import, run in a thread). Saved links own their planned emitters via `link_id`; keep create/delete in step.
+- Coverage: `coverage_core.polar_prx` is vectorised Deygout (3 edges) per radial; keep it consistent with `link_core.deygout_loss_db` (depth 1). Cross-check any model change against the link planner on a real path before shipping. Saved sites own their planned emitter via `site_id`.

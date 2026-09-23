@@ -20,6 +20,7 @@ from .scheduler import Scheduler
 from .spectrum_api import router as spectrum_router
 from .link_api import ensure_link_schema, router as link_router
 from .coverage_api import ensure_coverage_schema, router as coverage_router
+from .omni import build_wide_ask, router as omni_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -49,6 +50,7 @@ app = FastAPI(title="CyEM Monitor", version="0.1.0", lifespan=lifespan, docs_url
 app.include_router(spectrum_router)
 app.include_router(link_router)
 app.include_router(coverage_router)
+app.include_router(omni_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 
@@ -309,11 +311,12 @@ class AskReq(BaseModel):
 
 @app.post("/api/ask")
 async def ask(req: AskReq):
-    messages = llm.build_ask_messages(get_db(), req.question.strip())
+    messages, meta = build_wide_ask(get_db(), req.question.strip())
 
     async def gen():
         try:
-            async for tok in llm.chat_stream(messages, num_predict=600, temperature=0.3):
+            yield f"data: {json.dumps({'meta': meta})}\n\n"
+            async for tok in llm.chat_stream(messages, num_predict=700, temperature=0.2):
                 yield f"data: {json.dumps({'t': tok})}\n\n"
             yield "data: {\"done\": true}\n\n"
         except Exception as e:  # noqa: BLE001

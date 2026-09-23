@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23g';
+  const BUILD = '2026-09-23h';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1238,6 +1238,83 @@
     e.popup.getElement()?.querySelectorAll('a.cv-open').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); map.closePopup(); covDraft = null; covRes = null; openCoverage(a.dataset.id); }));
   });
   $('#btn-cov').addEventListener('click', () => openCoverage());
+  // ---------------------------------------------------------------- omnibox: search + Ask AI (home screen)
+  const omniOut = $('#omni-out'), omniBody = $('#omni-body'), omniIn = $('#omni-q');
+  const omniMark = L.layerGroup().addTo(map);
+  function omniShow(html) { omniBody.innerHTML = html; omniOut.classList.add('show'); }
+  function omniHide() { omniOut.classList.remove('show'); }
+  $('#omni-close').addEventListener('click', omniHide);
+  function flyMark(lat, lon, label) {
+    if (lat == null || lon == null) return;
+    omniMark.clearLayers();
+    L.circleMarker([lat, lon], { radius: 11, color: '#fff', weight: 2, fill: false }).addTo(omniMark);
+    L.circleMarker([lat, lon], { radius: 5, color: '#3cc7ff', weight: 1, fillOpacity: 1 }).bindTooltip(esc(label || ''), { permanent: false }).addTo(omniMark);
+    map.flyTo([lat, lon], Math.max(map.getZoom(), 10), { duration: 0.8 });
+  }
+  function omniRow(label, sub, attrs) { return `<div class="omni-row" ${attrs}><div>${label}</div>${sub ? `<div class="dim">${sub}</div>` : ''}</div>`; }
+  async function omniSearch(q) {
+    omniShow('<span class="spinner"></span> searching…');
+    let r;
+    try { r = await api(`/api/search?q=${encodeURIComponent(q)}&limit=12`); } catch (e) { return omniShow(`<p class="bad">${esc(e.message)}</p>`); }
+    const R = r.results, parts = [];
+    const sec = (title, rows) => rows.length ? `<h3 class="sec">${title} <span class="dim">${rows.length}</span></h3>${rows.join('')}` : '';
+    parts.push(sec('Planned emitters', R.planned.map((p) => omniRow(esc(p.name), `${p.freq_mhz} MHz`, `data-act="spec" data-id="${esc(p.id)}"`))));
+    parts.push(sec('Links', R.links.map((l) => omniRow(esc(l.name), `${l.freq_mhz} MHz · ${esc(l.last_verdict || '')}`, `data-act="link" data-id="${esc(l.id)}"`))));
+    parts.push(sec('Coverage sites', R.sites.map((s) => omniRow(esc(s.name), `${s.freq_mhz} MHz`, `data-act="site" data-id="${esc(s.id)}"`))));
+    parts.push(sec(r.freqs_mhz.length ? `Ofcom licences near ${r.freqs_mhz.join(', ')} MHz` : 'Ofcom licences', R.licences.map((x) =>
+      omniRow(`${esc(x.company || 'Licensee withheld')} <span class="dim">${esc(x.licence)}</span>`, `${x.freq_mhz} MHz · ${khz(x.bw_hz)} kHz · ${esc(x.product)}`,
+        `data-act="fly" data-lat="${x.lat ?? ''}" data-lon="${x.lon ?? ''}" data-label="${esc(x.company || x.licence)}"`))));
+    parts.push(sec('Feed items (30 days)', R.items.map((it) => omniRow(`${it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : esc(it.title)}`,
+      `${esc(it.source || '')} · ${esc(it.domain || '')} · ${it.when ? ago(it.when) + ' ago' : ''}`,
+      it.lat != null ? `data-act="fly" data-lat="${it.lat}" data-lon="${it.lon}" data-label="${esc(it.title.slice(0, 60))}"` : ''))));
+    const html = parts.join('');
+    omniShow((html || '<p class="dim">No matches.</p>') + `<p class="dim" style="margin-top:8px">Tip: press Ask AI to put this question to the model with all of the above as context.</p>`);
+    omniBody.querySelectorAll('.omni-row[data-act]').forEach((el) => el.addEventListener('click', (e) => {
+      if (e.target.closest('a')) return;
+      const a = el.dataset.act, id = el.dataset.id;
+      if (a === 'fly') { if (el.dataset.lat) flyMark(+el.dataset.lat, +el.dataset.lon, el.dataset.label); else omniShow(omniBody.innerHTML + '<p class="dim">Area licence: no published location.</p>'); }
+      if (a === 'spec') { omniHide(); openSpectrum(id); }
+      if (a === 'link') { omniHide(); linkDraft = null; linkRes = null; openLinks(id); }
+      if (a === 'site') { omniHide(); covDraft = null; covRes = null; openCoverage(id); }
+    }));
+  }
+  let omniAbort = null;
+  async function omniAsk(q) {
+    if (omniAbort) omniAbort.abort();
+    omniAbort = new AbortController();
+    omniShow(`<p><b>Q:</b> ${esc(q)}</p><div id="omni-ans" class="md"><span class="spinner"></span> thinking… (1–2 min on the box's CPU)</div><div id="omni-src"></div>`);
+    const out = $('#omni-ans');
+    let text = '', first = true, meta = null;
+    try {
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }), signal: omniAbort.signal });
+      const reader = r.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n'); buf = parts.pop();
+        for (const p of parts) {
+          const line = p.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          const d = JSON.parse(line.slice(6));
+          if (d.meta) meta = d.meta;
+          if (d.t) { if (first) { out.textContent = ''; first = false; } text += d.t; out.textContent = text; }
+          if (d.error) out.innerHTML = `<p class="bad">Error: ${esc(d.error)}</p>`;
+        }
+      }
+      if (text) out.innerHTML = renderMd(text);
+      const srcs = (meta?.sources || []).filter((s) => new RegExp(`\\[${s.n}\\]`).test(text));
+      $('#omni-src').innerHTML = (srcs.length ? `<h3 class="sec">Cited items</h3>${srcs.map((s) => `<div>[${s.n}] ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title)}</a>` : esc(s.title)} <span class="dim">${esc(s.source || '')}</span></div>`).join('')}` : '')
+        + `<p class="dim">Answer draws on CyEM status, the latest brief, ${meta?.items ?? 0} matching items${meta?.freqs_mhz?.length ? `, Ofcom licences near ${meta.freqs_mhz.join(', ')} MHz` : ''} and your plan. Anything under "General knowledge" is the model's background, not CyEM data.</p>`;
+    } catch (e) { if (e.name !== 'AbortError') out.innerHTML = `<p class="bad">Error: ${esc(e.message)}</p>`; }
+  }
+  $('#omni-form').addEventListener('submit', (e) => { e.preventDefault(); const q = omniIn.value.trim(); if (q.length >= 2) (q.startsWith('?') ? omniAsk(q.slice(1).trim()) : omniSearch(q)); });
+  $('#omni-ask').addEventListener('click', () => { const q = omniIn.value.trim().replace(/^\?/, ''); if (q.length >= 2) omniAsk(q); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || '')) { e.preventDefault(); omniIn.focus(); omniIn.select(); }
+    if (e.key === 'Escape') omniHide();
+  });
   // ---------------------------------------------------------------- panels / mobile
   const mobile = () => window.matchMedia('(max-width: 900px)').matches;
   const panels = (() => { try { return { rail: false, side: false, ...JSON.parse(localStorage.getItem('cyem.panels') || '{}') }; } catch { return { rail: false, side: false }; } })();

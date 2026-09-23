@@ -202,3 +202,16 @@ table.grid tr.sel td { background: rgba(60, 199, 255, .08); }
 
 /* layer panel scrolls on its own (wheel and touch) instead of panning the map */
 #layers { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+
+/* ---- omnibox (home-screen search + Ask AI) ---- */
+#omni-form { display: flex; gap: 4px; flex: 0 1 420px; min-width: 200px; margin: 0 8px; }
+#omni-form input { flex: 1; min-width: 0; }
+#omni-out { display: none; position: fixed; top: 52px; left: 50%; transform: translateX(-50%); width: min(760px, 94vw); max-height: 70vh;
+  overflow: auto; z-index: 1200; background: var(--panel, #10161d); border: 1px solid var(--border, #243040); border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0,0,0,.5); padding: 0 14px 12px; overscroll-behavior: contain; }
+#omni-out.show { display: block; }
+#omni-out .omni-head { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 10px 0 6px;
+  background: var(--panel, #10161d); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #8593a6); }
+.omni-row { padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.omni-row:hover { background: rgba(60,199,255,.08); }
+@media (max-width: 900px) { #omni-form { order: 5; flex: 1 1 100%; margin: 4px 0 0; } #omni-out { top: 96px; } }

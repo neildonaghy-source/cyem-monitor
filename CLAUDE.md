@@ -47,3 +47,5 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Keys (AISSTREAM_KEY, OPENCELLID_KEY) live only in `.env`; never log or echo URLs containing them. `.env.*` is ignored except `.env.example`.
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
 - Push after each merge: `git push origin main` (remote alias github-cyem). Tool-call timeouts from the Mac are common: run long jobs with nohup and read logs.
+
+- Clients: native CyEM apps on the Mac and iPhone (source ~/cyem-app on the Mac) embed Tailscale and load https://trade.tail013324.ts.net:8443; keep that URL and the Tailscale serve on 8443 stable.

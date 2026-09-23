@@ -36,6 +36,8 @@ def ensure_coverage_schema(db: Database) -> None:
         cols = {r[1] for r in c.execute("PRAGMA table_info(planned_emitters)").fetchall()}
         if "site_id" not in cols:
             c.execute("ALTER TABLE planned_emitters ADD COLUMN site_id TEXT")
+        if "fine" not in {r[1] for r in c.execute("PRAGMA table_info(coverage_sites)").fetchall()}:
+            c.execute("ALTER TABLE coverage_sites ADD COLUMN fine INTEGER DEFAULT 0")
 
 
 class SiteIn(BaseModel):
@@ -57,6 +59,7 @@ class SiteIn(BaseModel):
     sens_dbm: float = Field(default=-110, ge=-160, le=0)
     margin_db: float = Field(default=10, ge=0, le=60)
     itf_dbm: float = Field(default=-120, ge=-160, le=0)
+    fine: bool = False
     k: float = Field(default=4 / 3, gt=0.3, le=10)
     start_at: str | None = None
     end_at: str | None = None
@@ -69,7 +72,7 @@ N_AZ = 360
 def _compute(S: SiteIn) -> tuple[Coverage, dict]:
     t0 = time.monotonic()
     R = S.radius_km * 1000
-    n = int(min(600, max(60, R / 50))) + 1          # ~50 m steps, capped at 600
+    n = int(min(1000 if S.fine else 600, max(60, R / 50))) + 1   # ~50 m steps; cap 600, or 1000 when fine
     dist = np.linspace(0, R, n)
     az = np.arange(N_AZ) * (360 / N_AZ)
     lats, lons = radial_points(S.lat, S.lon, az, dist)

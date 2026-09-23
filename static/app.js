@@ -1148,7 +1148,7 @@
     ['freq_mhz', 'Freq MHz', 'number'], ['bw_khz', 'BW kHz', 'number'], ['ptx_dbm', 'Tx dBm', 'number'], ['gtx_dbi', 'Ant gain dBi', 'number'],
     ['ltx_db', 'Feeder loss dB', 'number'], ['pattern', 'Pattern omni/sector', 'text'], ['azimuth', 'Sector azimuth °', 'number'], ['beamwidth', 'Beamwidth °', 'number'],
     ['radius_km', 'Radius km (≤60)', 'number'], ['rx_h_agl', 'Rx height m', 'number'], ['grx_dbi', 'Rx gain dBi', 'number'], ['sens_dbm', 'Rx sens dBm', 'number'],
-    ['margin_db', 'Req margin dB', 'number'], ['itf_dbm', 'Interference thr dBm', 'number'], ['start_at', 'Start (Z)', 'datetime-local'], ['end_at', 'End (Z)', 'datetime-local']];
+    ['margin_db', 'Req margin dB', 'number'], ['itf_dbm', 'Interference thr dBm', 'number'], ['fine', 'Fine sampling (1 = on, ~3x slower)', 'number'], ['start_at', 'Start (Z)', 'datetime-local'], ['end_at', 'End (Z)', 'datetime-local']];
   function covForm(d) {
     const val = (k, t) => t === 'datetime-local' ? toLocalInput(d[k]) : esc(d[k] ?? '');
     return `<div class="specform">${COV_FIELDS.map(([k, lbl, t]) => `<label${k === 'name' ? ' class="wide"' : ''}>${esc(lbl)}<input id="cv-${k}" type="${t}" step="any" value="${val(k, t)}"></label>`).join('')}
@@ -1163,6 +1163,7 @@
       o[k] = t === 'number' ? (v === '' ? null : Number(v)) : t === 'datetime-local' ? (v ? `${v}:00Z` : null) : (v || null);
     }
     if (o.pattern) o.pattern = o.pattern.toLowerCase();
+    o.fine = !!o.fine;
     return o;
   }
   function covStats(r) {

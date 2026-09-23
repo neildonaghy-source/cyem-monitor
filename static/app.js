@@ -1,6 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
+  const BUILD = '2026-09-23d';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -107,7 +108,7 @@
     saved[L_.id] = on; saveLs('cyem.layers', saved);
   }
   function buildLayerPanel() {
-    layerCtl.innerHTML = '<h3><span>Layers</span><a href="#" id="layers-toggle">hide</a></h3>';
+    layerCtl.innerHTML = `<h3><span>Layers <span class="dim" style="letter-spacing:0;text-transform:none">build ${BUILD}</span></span><a href="#" id="layers-toggle">hide</a></h3>`;
     for (const g of GROUPS) {
       const sec = document.createElement('div');
       sec.className = 'lgroup' + (collapsed[g.id] ? ' collapsed' : '');
@@ -139,6 +140,16 @@
           cb.checked = on;
           setLayerOn(LAYERS.find((l) => l.id === lab.dataset.layer), on);
         });
+        const touched = new Set();
+        sec.querySelectorAll('label[data-opt]').forEach((lab) => {
+          const cb = lab.querySelector('input');
+          if (cb.checked === on) return;
+          cb.checked = on; optState[lab.dataset.opt] = on;
+          const L_ = LAYERS.find((l) => (l.opts || []).some((o) => o.id === lab.dataset.opt));
+          if (L_) touched.add(L_);
+        });
+        saveLs('cyem.layeropts', optState);
+        touched.forEach((L_) => { if (map.hasLayer(groups[L_.id])) L_.load().catch(console.warn); });
       }));
       sec.querySelectorAll('label[data-layer]').forEach((lab) => {
         const L_ = LAYERS.find((l) => l.id === lab.dataset.layer);
@@ -156,6 +167,11 @@
   for (const L_ of LAYERS) { groups[L_.id] = L.layerGroup(); if (isOn(L_)) groups[L_.id].addTo(map); }
   buildLayerPanel();
   L.DomEvent.disableScrollPropagation(layerCtl);
+  layerCtl.addEventListener('wheel', (e) => {
+    if (layerCtl.scrollHeight <= layerCtl.clientHeight) return;
+    layerCtl.scrollTop += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    e.preventDefault(); e.stopPropagation();
+  }, { passive: false });
   L.DomEvent.disableClickPropagation(layerCtl);
   setBasemap((() => { try { return localStorage.getItem('cyem.basemap') || 'esri_dark'; } catch { return 'esri_dark'; } })());
   $('#legend').innerHTML = `<span><i style="background:#ff5c5c"></i>GNSS high</span><span><i style="background:#f3b23e"></i>GNSS medium / ISR aircraft</span><span><i style="background:#ff6fb1"></i>emitter</span><span><i style="background:#ff8c42"></i>outage</span><span><i style="background:#b48cff"></i>ransomware</span><span><i style="background:#3cc7ff"></i>C2</span><span><i style="background:#45d38a"></i>GDELT</span>`;

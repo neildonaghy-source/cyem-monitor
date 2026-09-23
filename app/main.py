@@ -19,6 +19,7 @@ from .db import get_db, iso
 from .scheduler import Scheduler
 from .spectrum_api import router as spectrum_router
 from .link_api import ensure_link_schema, router as link_router
+from .coverage_api import ensure_coverage_schema, router as coverage_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
     db = get_db()
     ensure_schema(db)
     ensure_link_schema(db)
+    ensure_coverage_schema(db)
     scheduler = Scheduler(db)
     scheduler.start()
     log.info("CyEM Monitor up; data dir %s; model %s at %s", settings.data_dir, settings.ollama_model, settings.ollama_url)
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CyEM Monitor", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", redoc_url=None)
 app.include_router(spectrum_router)
 app.include_router(link_router)
+app.include_router(coverage_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

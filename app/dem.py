@@ -102,3 +102,28 @@ def status() -> dict:
     tifs = sorted(p.name for p in d.glob("*.tif"))
     return {"tiles_cached": len(tifs), "sea_tiles": len(list(d.glob("*.missing"))),
             "cache_mb": round(sum(p.stat().st_size for p in d.glob("*.tif")) / 1e6, 1), "source": BASE}
+
+
+def grid_sampler(s: float, w: float, n: float, e: float, res_deg: float = 1 / 1800):
+    """Read the DEM for a bounding box once (mosaicking tiles, ~2 arcsec by default)
+    and return f(lats, lons) -> heights (numpy arrays, nearest cell). Sea tiles = 0 m.
+    Synchronous; call via asyncio.to_thread."""
+    import numpy as np
+    from rasterio.merge import merge
+    names = {tile_name(la + 0.5, lo + 0.5) for la in range(math.floor(s), math.floor(n) + 1)
+             for lo in range(math.floor(w), math.floor(e) + 1)}
+    with _lock:
+        dss = [_dataset(p) for p in (ensure_tile(nm) for nm in sorted(names)) if p is not None]
+        if not dss:
+            return lambda lats, lons: np.zeros(np.shape(lats), dtype=np.float32)
+        arr, tr = merge(dss, bounds=(w, s, e, n), res=(res_deg, res_deg), nodata=0.0, indexes=[1])
+    grid = np.nan_to_num(arr[0].astype(np.float32), nan=0.0)
+    grid[grid < -500] = 0.0
+    x0, y0, px, py = tr.c, tr.f, tr.a, tr.e
+    rows, cols = grid.shape
+
+    def sample(lats, lons):
+        c = np.clip(((np.asarray(lons) - x0) / px).astype(int), 0, cols - 1)
+        r = np.clip(((np.asarray(lats) - y0) / py).astype(int), 0, rows - 1)
+        return grid[r, c]
+    return sample

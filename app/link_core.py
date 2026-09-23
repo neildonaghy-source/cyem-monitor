@@ -4,7 +4,8 @@ Models, all screening-grade:
   - Great-circle path, terrain profile supplied by the caller (see dem.py).
   - Effective earth radius k*R (default k = 4/3) applied as earth bulge.
   - First Fresnel zone radius and clearance ratio along the path.
-  - Diffraction: ITU-R P.526 knife-edge J(v), Deygout construction (up to 3 edges).
+  - Diffraction: ITU-R P.526 knife-edge J(v), Deygout construction limited to 3 edges
+    (principal plus one each side), as P.526 advises: more edges over-estimate the loss.
   - Free-space loss.
   - Gaseous absorption: coarse sea-level table (7.5 g/m3 water vapour), approximate.
   - Rain: ITU-R P.838-3 k/alpha (tabulated from memory, log-log interpolated: verify
@@ -73,7 +74,7 @@ def knife_edge_loss_db(v: float) -> float:
 
 
 def deygout_loss_db(dist: list[float], elev: list[float], h_start: float, h_end: float, f_hz: float,
-                    s: int = 0, e: int | None = None, depth: int = 2) -> tuple[float, list[dict]]:
+                    s: int = 0, e: int | None = None, depth: int = 1) -> tuple[float, list[dict]]:
     """Diffraction loss over the profile by the Deygout construction.
     dist/elev: along-path distance (m) and terrain height including earth bulge (m ASL).
     h_start/h_end: absolute heights (m ASL) of the ray end points for this sub-path.

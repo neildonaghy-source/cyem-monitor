@@ -246,9 +246,30 @@ def run_conflicts(db: Database, *, guard_hz: float, radius_km: float, harm_order
     from .spectrum_core import find_conflicts
     planned = [planned_to_emitter(r) for r in planned_list(db)]
     by_id: dict[str, list[dict]] = {p.id: [] for p in planned}
+    try:
+        from .coverage_api import coverage_for_emitters
+        covmap = coverage_for_emitters(db)
+    except Exception:  # noqa: BLE001 - coverage is optional
+        covmap = {}
     for p in planned:
-        by_id[p.id].extend(find_conflicts([p], wtr_candidates(db, p, guard_hz=guard_hz, radius_km=radius_km),
-                                          guard_hz=guard_hz, radius_km=radius_km))
+        cv = covmap.get(p.id)
+        rad = cv[0].radius_m / 1000 if cv else radius_km
+        hits = find_conflicts([p], wtr_candidates(db, p, guard_hz=guard_hz, radius_km=rad), guard_hz=guard_hz, radius_km=rad)
+        if cv:
+            # coverage site: a licence only counts if our predicted level at its location
+            # reaches the site's interference threshold
+            cov, itf = cv
+            kept = []
+            for h in hits:
+                lv = cov.level_dbm(h["b_lat"], h["b_lon"])
+                if lv is None or lv < itf:
+                    continue
+                h["pred_dbm"] = round(lv, 1)
+                h["coverage_based"] = True
+                h["severity"] = ("high" if lv >= itf + 20 else "medium") if h["co_channel"] else "low"
+                kept.append(h)
+            hits = kept
+        by_id[p.id].extend(hits)
         by_id[p.id].extend(wtr_area_conflicts(db, p, guard_hz=guard_hz))
     pmap = {p.id: p for p in planned}
     pp = find_conflicts(planned, planned, guard_hz=guard_hz, radius_km=radius_km)

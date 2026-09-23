@@ -23,6 +23,7 @@ from .coverage_api import ensure_coverage_schema, router as coverage_router
 from .omni import build_wide_ask, router as omni_router
 from .export import router as export_router
 from .cells import router as cells_router
+from .satnogs import router as sat_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -55,6 +56,7 @@ app.include_router(coverage_router)
 app.include_router(omni_router)
 app.include_router(export_router)
 app.include_router(cells_router)
+app.include_router(sat_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

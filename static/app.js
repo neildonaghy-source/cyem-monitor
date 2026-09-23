@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23m';
+  const BUILD = '2026-09-23n';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1269,6 +1269,8 @@
     parts.push(sec('UK allocation (UKFAT)', (R.ukfat || []).map((u) => `<div class="omni-row"><div><b>${esc(u.band)}</b> <span class="dim">UKFAT p.${u.page}</span></div>`
       + u.rows.map((r) => `<div class="dim">${esc(r.service)}${r.service_name ? ' · ' + esc(r.service_name) : ''} · ${esc(r.status)} · ${esc(r.footnotes)}</div>`).join('')
       + Object.entries(u.footnotes).map(([k, v]) => `<div style="margin-top:3px"><b>${esc(k)}</b> ${esc(v)}</div>`).join('') + '</div>')));
+    parts.push(sec('Satellite downlinks (SatNOGS, ±50 kHz)', (R.sats || []).map((t) => omniRow(`${esc(String(t.sat))} <span class="dim">NORAD ${t.norad ?? '?'}</span>`,
+      `${mhz(t.lo)} MHz ${esc(t.mode)} · ${esc(t.desc)}${t.offset_khz ? ` · ${t.offset_khz} kHz off` : ''}`, t.norad ? `data-act="sat" data-norad="${t.norad}" data-label="${esc(String(t.sat))}"` : ''))));
     parts.push(sec('Planned emitters', R.planned.map((p) => omniRow(esc(p.name), `${p.freq_mhz} MHz`, `data-act="spec" data-id="${esc(p.id)}"`))));
     parts.push(sec('Links', R.links.map((l) => omniRow(esc(l.name), `${l.freq_mhz} MHz · ${esc(l.last_verdict || '')}`, `data-act="link" data-id="${esc(l.id)}"`))));
     parts.push(sec('Coverage sites', R.sites.map((s) => omniRow(esc(s.name), `${s.freq_mhz} MHz`, `data-act="site" data-id="${esc(s.id)}"`))));
@@ -1285,6 +1287,13 @@
       const a = el.dataset.act, id = el.dataset.id;
       if (a === 'fly') { if (el.dataset.lat) flyMark(+el.dataset.lat, +el.dataset.lon, el.dataset.label); else omniShow(omniBody.innerHTML + '<p class="dim">Area licence: no published location.</p>'); }
       if (a === 'spec') { omniHide(); openSpectrum(id); }
+      if (a === 'sat') {
+        const c = map.getCenter();
+        const box = document.createElement('div'); box.className = 'dim'; box.textContent = 'computing passes…'; el.appendChild(box);
+        api(`/api/sat/passes?norad=${el.dataset.norad}&lat=${c.lat.toFixed(4)}&lon=${c.lng.toFixed(4)}&hours=24`).then((r) => {
+          box.innerHTML = r.passes.length ? `Next passes over map centre (${c.lat.toFixed(2)}, ${c.lng.toFixed(2)}), ≥10° elevation:` + r.passes.slice(0, 6).map((q) => `<div class="mono">${fmtZ(q.start)} · ${q.duration_min} min · max ${q.max_el}° · az ${q.az_start}°→${q.az_end}°</div>`).join('') : 'No passes above 10° in the next 24 h.';
+        }).catch((e) => { box.textContent = e.message; });
+      }
       if (a === 'link') { omniHide(); linkDraft = null; linkRes = null; openLinks(id); }
       if (a === 'site') { omniHide(); covDraft = null; covRes = null; openCoverage(id); }
     }));

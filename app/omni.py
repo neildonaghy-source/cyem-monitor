@@ -88,7 +88,7 @@ def licences_near(db, f, place, limit):
 
 def search_all(db: Database, q: str, limit: int = 12) -> dict:
     q = q.strip()
-    res: dict[str, list] = {"items": [], "licences": [], "planned": [], "links": [], "sites": [], "ukfat": []}
+    res: dict[str, list] = {"items": [], "licences": [], "planned": [], "links": [], "sites": [], "ukfat": [], "sats": []}
     if len(q) < 2:
         return res
     freqs = parse_freqs(q)
@@ -100,6 +100,12 @@ def search_all(db: Database, q: str, limit: int = 12) -> dict:
             for e in _uk(f, 1):
                 res["ukfat"].append({"freq_mhz": _mhz(f), "band": e["band"], "page": e["page"], "rows": e["rows"],
                                      "footnotes": {k: v[:300] for k, v in e["footnote_text"].items() if v}})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .satnogs import transmitters_near
+        for f in freqs:
+            res["sats"] += transmitters_near(f, limit)
     except Exception:  # noqa: BLE001
         pass
     only_freq = bool(freqs) and not re.sub(r"(\d+(\.\d+)?)|\b(ghz|mhz|khz|near|around|at|in|by|on|who|is|licensed|licences?)\b|[\s?.,]", "", rest, flags=re.I)
@@ -222,10 +228,19 @@ def build_wide_ask(db: Database, question: str) -> tuple[list[dict], dict]:
                 uk_lines.append(t)
     except Exception:  # noqa: BLE001
         pass
+    sat_lines = []
+    try:
+        from .satnogs import transmitters_near
+        for f in parse_freqs(question):
+            for t in transmitters_near(f, 8):
+                sat_lines.append(f"  - {t['sat']} (NORAD {t['norad']}): {_mhz(t['lo'])} MHz {t['mode']} {t['desc']}")
+    except Exception:  # noqa: BLE001
+        pass
     latest = db.brief()
     brief_txt = f"LATEST BRIEF ({latest['created_at']}):\n{latest['content'][:2200]}" if latest else "LATEST BRIEF: none"
     user = (f"Current time: {iso(datetime.now(timezone.utc))}.\n\nSTATUS\n{llm.status_block(db)}\n\n{brief_txt}\n\n"
             f"USER'S PLAN\n{plan_summary(db)}\n\n"
+            + ("SATELLITE DOWNLINKS NEAR THE FREQUENCIES (SatNOGS DB, +/-50 kHz for Doppler; not a numbered item)\n" + "\n".join(sat_lines) + "\n\n" if sat_lines else "")
             + ("UK FREQUENCY ALLOCATION TABLE (Ofcom UKFAT, authoritative; not a numbered item)\n" + "\n".join(uk_lines) + "\n\n" if uk_lines else "")
             + ("OFCOM REGISTER, UK-WIDE, FREQUENCIES IN THE QUESTION (not a numbered item)\n" + "\n".join(lic_lines) + "\n\n" if lic_lines else "")
             + f"RELEVANT ITEMS\n{body or '(no matching items)'}\n\nQUESTION: {question}")

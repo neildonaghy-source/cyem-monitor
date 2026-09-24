@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-23q';
+  const BUILD = '2026-09-24a';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1447,11 +1447,19 @@
   function showSide(on, remember = true) { $('#side').classList.toggle('hidden', !on); $('#btn-side').classList.toggle('active', on); if (remember && !mobile()) { panels.side = on; saveLs('cyem.panels', panels); } setTimeout(() => map.invalidateSize(), 50); }
   $('#btn-rail').addEventListener('click', () => showRail($('#rail').classList.contains('hidden')));
   $('#btn-side').addEventListener('click', () => showSide($('#side').classList.contains('hidden')));
-  $$('#mobnav button').forEach((b) => b.addEventListener('click', () => {
-    $$('#mobnav button').forEach((x) => x.classList.toggle('active', x === b));
+  $$('#mobnav button[data-view]').forEach((b) => b.addEventListener('click', () => {
+    $$('#mobnav button[data-view]').forEach((x) => x.classList.toggle('active', x === b));
     showRail(b.dataset.view === 'rail'); showSide(b.dataset.view === 'side');
     if (b.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 250);
   }));
+  // Phone layout hides the top-bar buttons; the Tools sheet exposes the same actions.
+  const MOB_TOOLS = [['btn-spec', 'Spectrum', 'Planned emitters, conflicts, export'], ['btn-links', 'Links', 'Point-to-point link planner'],
+    ['btn-cov', 'Coverage', 'Omni / sector / P2MP coverage'], ['btn-hf', 'HF', 'Skywave now-cast'], ['btn-health', 'Health', 'Collectors and data status']];
+  $('#mob-tools').addEventListener('click', () => {
+    openModal('Tools', `<div class="mobtools">${MOB_TOOLS.filter(([id]) => $('#' + id)).map(([id, t, d]) => `<button data-go="${id}"><b>${t}</b><span class="dim">${d}</span></button>`).join('')}
+      <a href="/api/export/plan.docx" class="btnlink" download><b>Export plan (Word)</b></a></div>`);
+    $$('#modal-body .mobtools button').forEach((b) => b.addEventListener('click', () => $('#' + b.dataset.go).click()));
+  });
   if (mobile()) { showRail(false, false); showSide(false, false); } else { showRail(panels.rail, false); showSide(panels.side, false); }
 
   // ---------------------------------------------------------------- refresh loops

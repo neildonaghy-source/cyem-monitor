@@ -219,3 +219,7 @@ table.grid tr.sel td { background: rgba(60, 199, 255, .08); }
 a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--border, #243040); border-radius: 5px; text-decoration: none; }
 
 .omni-web { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted, #8593a6); white-space: nowrap; }
+
+/* phone Tools sheet */
+.mobtools { display: grid; gap: 8px; }
+.mobtools button, .mobtools a.btnlink { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; text-align: left; font-size: 15px; }

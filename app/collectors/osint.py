@@ -15,6 +15,11 @@ from ..tagging import enrich, strip_html
 from .base import Context, Result, item_id, parse_dt, register
 
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
+# Escalating waits after a 429, in seconds. Worst case one theme costs
+# 60+120+240 = 7 min; four themes plus spacing stay far inside the 2 h cycle.
+GDELT_429_BACKOFF_S = (60, 120, 240)
+# Gap between themes. 30 s was not enough to stay under the throttle.
+GDELT_THEME_GAP_S = 60
 
 THEMES: list[dict] = [
     {"key": "cyber", "label": "Cyber attacks", "tags": ["gdelt"],
@@ -38,12 +43,20 @@ def _seendate(s: str | None) -> str | None:
 async def _theme(ctx: Context, theme: dict) -> tuple[dict, list[dict]]:
     params = {"query": theme["query"], "mode": "artlist", "format": "json", "timespan": "24h",
               "maxrecords": 75, "sort": "hybridrel"}
+    # GDELT documents "one request per 5 s" but throttles far harder in
+    # practice: with 30 s spacing and a single 45 s retry, 2-3 of the 4 themes
+    # were 429-ing on EVERY run (2026-09-24 audit), so the OSINT layer had been
+    # running on partial coverage indefinitely. The collector interval is 2 h,
+    # so patience is nearly free — escalate the backoff instead of giving up.
     r = await ctx.http.get(GDELT_DOC, params=params, timeout=60)
-    if r.status_code == 429:  # one request per 5 s per IP; back off once and retry
-        await asyncio.sleep(45)
+    for backoff in GDELT_429_BACKOFF_S:
+        if r.status_code != 429:
+            break
+        await asyncio.sleep(backoff)
         r = await ctx.http.get(GDELT_DOC, params=params, timeout=60)
-        if r.status_code == 429:
-            raise RuntimeError("GDELT rate limited (429)")
+    if r.status_code == 429:
+        raise RuntimeError(
+            f"GDELT rate limited (429) after {len(GDELT_429_BACKOFF_S)} retries")
     r.raise_for_status()
     try:
         data = r.json()
@@ -98,9 +111,9 @@ async def _theme(ctx: Context, theme: dict) -> tuple[dict, list[dict]]:
 @register("gdelt", interval_s=2 * 60 * 60, domain="osint", description="GDELT DOC: news for cyber, GNSS/EW, connectivity and space themes (24h), placed by headline country")
 async def collect_gdelt(ctx: Context) -> Result:
     results, errors, items = [], [], []
-    for i, t in enumerate(THEMES):  # sequential: GDELT allows one request per 5 seconds
+    for i, t in enumerate(THEMES):  # sequential: GDELT throttles concurrent callers hard
         if i:
-            await asyncio.sleep(30)
+            await asyncio.sleep(GDELT_THEME_GAP_S)
         try:
             res, its = await _theme(ctx, t)
             results.append(res)

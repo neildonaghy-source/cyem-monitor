@@ -6,6 +6,11 @@ services:
     image: cyem-monitor:latest
     container_name: cyem
     restart: unless-stopped
+    labels:
+      # Built from the Dockerfile here; there is no registry to pull from, so
+      # watchtower must not try. (2026-09-24 audit: it did, nightly, logging
+      # "pull access denied for cyem-monitor".)
+      - "com.centurylinklabs.watchtower.enable=false"
     ports:
       - "127.0.0.1:3020:8080"      # Tailscale serve proxies 8443/8444 -> 3020
     environment:

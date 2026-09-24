@@ -113,7 +113,6 @@ async def _theme(ctx: Context, theme: dict) -> tuple[dict, list[dict]]:
             "articles": len(data.get("articles", []))}, items
 
 
-@register("gdelt", interval_s=2 * 60 * 60, domain="osint", description="GDELT DOC: news for cyber, GNSS/EW, connectivity and space themes (24h), placed by headline country")
 def rotated_themes(now: datetime | None = None) -> list[dict]:
     """THEMES, rotated so a different one leads each run.
 
@@ -128,6 +127,7 @@ def rotated_themes(now: datetime | None = None) -> list[dict]:
     return THEMES[offset:] + THEMES[:offset]
 
 
+@register("gdelt", interval_s=2 * 60 * 60, domain="osint", description="GDELT DOC: news for cyber, GNSS/EW, connectivity and space themes (24h), placed by headline country")
 async def collect_gdelt(ctx: Context) -> Result:
     results, errors, items = [], [], []
     for i, t in enumerate(rotated_themes()):  # sequential: GDELT throttles concurrent callers hard

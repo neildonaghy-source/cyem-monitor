@@ -15,9 +15,14 @@ from ..tagging import enrich, strip_html
 from .base import Context, Result, item_id, parse_dt, register
 
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
-# Escalating waits after a 429, in seconds. Worst case one theme costs
-# 60+120+240 = 7 min; four themes plus spacing stay far inside the 2 h cycle.
-GDELT_429_BACKOFF_S = (60, 120, 240)
+# Waits after a 429, in seconds.
+#
+# 2026-09-24, second pass: escalating 60/120/240 did NOT fix the 429s -- a run
+# with three retries per theme still lost 2 of 4 themes and took 21 min instead
+# of 6. GDELT's throttle here is cumulative across a run, not a short window
+# you can wait out, so a long backoff buys nothing and just stretches the run.
+# Kept short, and the real fix is the rotation below.
+GDELT_429_BACKOFF_S = (30, 90)
 # Gap between themes. 30 s was not enough to stay under the throttle.
 GDELT_THEME_GAP_S = 60
 
@@ -109,9 +114,23 @@ async def _theme(ctx: Context, theme: dict) -> tuple[dict, list[dict]]:
 
 
 @register("gdelt", interval_s=2 * 60 * 60, domain="osint", description="GDELT DOC: news for cyber, GNSS/EW, connectivity and space themes (24h), placed by headline country")
+def rotated_themes(now: datetime | None = None) -> list[dict]:
+    """THEMES, rotated so a different one leads each run.
+
+    Later positions in a run are far likelier to be throttled: over the six
+    runs before 2026-09-24, `satcom` -- always last -- failed 6/6, while
+    `infra` failed 2/6. With a fixed order the same theme is starved forever.
+    Rotating by the 2-hourly slot gives every theme the lead position once per
+    8 h, so a theme missed on one run is picked up on the next.
+    """
+    now = now or datetime.now(timezone.utc)
+    offset = (now.hour // 2) % len(THEMES)
+    return THEMES[offset:] + THEMES[:offset]
+
+
 async def collect_gdelt(ctx: Context) -> Result:
     results, errors, items = [], [], []
-    for i, t in enumerate(THEMES):  # sequential: GDELT throttles concurrent callers hard
+    for i, t in enumerate(rotated_themes()):  # sequential: GDELT throttles concurrent callers hard
         if i:
             await asyncio.sleep(GDELT_THEME_GAP_S)
         try:

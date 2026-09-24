@@ -23,7 +23,15 @@ GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 # you can wait out, so a long backoff buys nothing and just stretches the run.
 # Kept short, and the real fix is the rotation below.
 GDELT_429_BACKOFF_S = (30, 90)
-# Gap between themes. 30 s was not enough to stay under the throttle.
+# Gap between themes. Measured 2026-09-24, one run each:
+#   30 s  -> lost 2-3 of 4 themes
+#   60 s  -> lost 1 (satcom, last),  run 7.7 min
+#   120 s -> lost 1 (infra, 3rd),    run 12.7 min
+# Doubling the gap did not improve the count, it only moved which theme was
+# dropped, so 60 s it is. GDELT's limit here is not something spacing solves;
+# the query itself is fine (an isolated `satcom` call after a ~90 s quiet gap
+# returns HTTP 200 with articles). Losing ~1 theme per run is acceptable
+# because rotated_themes() guarantees it is a different theme each time.
 GDELT_THEME_GAP_S = 60
 
 THEMES: list[dict] = [

@@ -3,6 +3,7 @@ Reception and display of spectrum occupancy only; no demodulated content is stor
 from __future__ import annotations
 
 import json
+import math
 import os
 import struct
 
@@ -109,3 +110,87 @@ async def set_position(node: str, p: PosIn):
     if not n:
         raise HTTPException(404, "unknown node")
     return {"node": node, "lat": p.lat, "lon": p.lon}
+
+
+# ---- correlation: licensed / exempt / public / government / unexplained ------------------------
+@router.get("/correlate")
+async def correlate(node: str, radius_km: float = 40, max_peaks: int = 40):
+    """Latest sweep's peaks classified against public data from the receiver's position. Who/what/where come from
+    licence records and live layers, not from listening. 'Where' for licensed matches is the licensed site."""
+    from .sdr_classify import bearing, band_for, haversine_km, verdict
+    from .spectrum_core import bbox_for_radius, looks_personal
+    db = get_db()
+    r = db.one("SELECT * FROM sdr_sweeps WHERE node=? ORDER BY id DESC LIMIT 1", (node,))
+    if not r:
+        raise HTTPException(404, "no sweeps from this node yet")
+    n = db.one("SELECT lat, lon FROM sdr_nodes WHERE node=?", (node,)) or {}
+    lat, lon = n.get("lat"), n.get("lon")
+    peaks = json.loads(r["peaks"] or "[]")[:max_peaks]
+    tol = max(r["bin_hz"] / 2, 25e3)
+    lic_rows = []
+    if lat is not None:
+        s, nn, w, e = bbox_for_radius(lat, lon, radius_km)
+        lic_rows = db.query("SELECT licence, freq_hz, bw_hz, company, product, emission, lat, lon, ant_height_m FROM wtr "
+                            "WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?", (s, nn, w, e))
+    # live context, counted once
+    ctx = {}
+    if lat is not None:
+        try:
+            snap, _ = db.get_snapshot("air")
+            ctx["aircraft"] = sum(1 for a in (snap or {}).get("aircraft", []) if haversine_km(lat, lon, a["lat"], a["lon"]) <= 150)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            snap, _ = db.get_snapshot("ais")
+            ships = [v for v in (snap or {}).get("vessels", []) if haversine_km(lat, lon, v["lat"], v["lon"]) <= 40]
+            ctx["ships"] = len(ships)
+            ctx["ship_names"] = [v.get("name") or f"MMSI {v['mmsi']}" for v in sorted(ships, key=lambda v: haversine_km(lat, lon, v["lat"], v["lon"]))[:5]]
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from .cells import cells as cells_q
+            dlat, dlon = 5 / 111.0, 5 / (111.0 * max(0.2, math.cos(math.radians(lat))))
+            got = await cells_q(lat - dlat, lon - dlon, lat + dlat, lon + dlon, limit=2000)
+            items = got.get("cells", got.get("items", [])) if isinstance(got, dict) else got
+            ctx["cells_5km"] = len(items)
+        except Exception:  # noqa: BLE001
+            pass
+    out, counts = [], {}
+    for p in peaks:
+        f = p["f_hz"]
+        band = band_for(f)
+        lic = []
+        for L in lic_rows:
+            if abs(L["freq_hz"] - f) <= tol + (L["bw_hz"] or 0) / 2:
+                d = haversine_km(lat, lon, L["lat"], L["lon"])
+                if d <= radius_km:
+                    who = L["company"] or ""
+                    who = "Licensee withheld (individual)" if (not who or any(looks_personal(x.strip()) for x in who.split(";"))) else who
+                    lic.append({"who": who, "what": L["product"], "licence": L["licence"], "f_mhz": round(L["freq_hz"] / 1e6, 5),
+                                "emission": L["emission"], "dist_km": round(d, 1), "bearing": round(bearing(lat, lon, L["lat"], L["lon"])),
+                                "lat": L["lat"], "lon": L["lon"]})
+        lic.sort(key=lambda x: x["dist_km"])
+        seen, uniq = set(), []
+        for x in lic:                                  # one line per site and licensee
+            k = (x["who"], round(x["lat"], 3), round(x["lon"], 3))
+            if k not in seen:
+                seen.add(k); uniq.append(x)
+        status, text = verdict(band, uniq)
+        context = None
+        fm = f / 1e6
+        if 1085 <= fm <= 1095 and "aircraft" in ctx:
+            context = f"ADS-B: {ctx['aircraft']} aircraft within 150 km"
+        elif 117.975 <= fm <= 137 and "aircraft" in ctx:
+            context = f"Airband: {ctx['aircraft']} aircraft within 150 km"
+        elif 156 <= fm <= 162.05 and "ships" in ctx:
+            context = f"Maritime: {ctx['ships']} ships within 40 km" + (f" ({', '.join(ctx['ship_names'])})" if ctx.get("ship_names") else "")
+        elif band and band[1].startswith("Mobile network") and "cells_5km" in ctx:
+            context = f"{ctx['cells_5km']} mobile cells within 5 km"
+        counts[status] = counts.get(status, 0) + 1
+        out.append({**p, "status": status, "status_text": text, "band": band[1] if band else None,
+                    "licences": uniq[:5], "licence_count": len(uniq), "context": context})
+    return {"node": node, "ts": r["ts"], "position": {"lat": lat, "lon": lon} if lat is not None else None,
+            "radius_km": radius_km, "tolerance_khz": round(tol / 1e3, 1), "counts": counts, "peaks": out,
+            "notes": "Correlation with public records only; nothing is demodulated. A licensed match means an assignment exists "
+                     "within the sweep bin near you, not that it is the source. Position of licensed matches is the licensed site. "
+                     "Unexplained = no nearby licence and no exempt/public band: a lead to investigate, not proof of unlicensed use."}

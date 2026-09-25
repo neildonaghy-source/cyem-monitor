@@ -216,3 +216,69 @@ EXAMPLES = {"mdo-operational": {
              "single-channel net is denied by blue's spot jammer: the EP lesson; GNSS jamming from high ground reaches aircraft, the frigate and precision fires; blue EA denies the red "
              "VHF net. Tap any symbol to focus on it. First run takes a couple of minutes (new terrain tiles).",
     "centre": [57.95, -5.10], "zoom": 8, "params": {"df_fix_good_m": 5000}, "entities": MDO}, **EXAMPLES}
+
+
+# ---- operational-level MDO vignette: the Suwalki Gap (notional forces, public geography) ----
+BV2, RV2 = 42.300, 47.600
+SUW = [
+    # ---- blue: defending the corridor (Suwalki - Augustow - Lazdijai - Marijampole)
+    em("Blue Div HQ (Augustow)", B, "comms", 53.845, 22.980, 12, BV2, 25, 47, sens_dbm=-110, js_req_db=0, hop_bw_khz=58000,
+       notes="Frequency-hopping 30-88 MHz"),
+    rx("Blue Bde (Suwalki)", B, "Blue Div HQ (Augustow)", 54.100, 22.930, 6, BV2, 25, 44),
+    rx("Blue BG (Lazdijai)", B, "Blue Div HQ (Augustow)", 54.230, 23.510, 3, BV2, 25, 44),
+    rx("Blue BG (Marijampole)", B, "Blue Div HQ (Augustow)", 54.560, 23.350, 3, BV2, 25, 44,
+       track=[[54.450, 23.100], [54.350, 22.850]], speed_kmh=15, notes="Counter-moves south-west"),
+    rx("Blue Recce (border)", B, "Blue Div HQ (Augustow)", 54.330, 22.700, 3, BV2, 25, 40),
+    es("Blue ES/DF (Suwalki)", B, 54.120, 22.980, 20, 20, 3000, -118, df=2),
+    es("Blue ES/DF (Lazdijai)", B, 54.200, 23.600, 20, 20, 3000, -118, df=2),
+    es("Blue ES/DF (Marijampole)", B, 54.580, 23.400, 20, 20, 3000, -118, df=2),
+    em("Blue GBAD radar", B, "radar", 54.050, 23.050, 10, 9500, 20000, 88),
+    em("Blue CB radar", B, "radar", 54.000, 22.900, 6, 3300, 5000, 88, pattern="sector", azimuth=300, beamwidth=90),
+    ea("Blue VHF jammer", B, "comms", 54.250, 22.950, 10, RV2, 25, 60, notes="Spot on the red net"),
+    ea("Blue C-UAS", B, "cuas", 54.110, 22.960, 6, 2300, 200000, 50),
+    em("Blue UAS GCS", B, "datalink", 54.080, 23.000, 5, 2350, 5000, 40, sens_dbm=-95, js_req_db=6),
+    rx("Blue UAV", B, "Blue UAS GCS", 54.300, 22.750, 800, 2350, 5000, 30, sidc=FA,
+       track=[[54.400, 22.500], [54.300, 22.750]], speed_kmh=100),
+    em("Blue SATCOM (Div)", B, "comms", 53.845, 22.985, 3, 7950, 5000, 70, pattern="sector", azimuth=165, beamwidth=3),
+    # ---- blue air and space
+    em("Blue AEW radar", B, "radar", 53.900, 21.800, 9000, 1300, 5000, 90, sidc=FA, pattern="sector", azimuth=45, beamwidth=120),
+    em("Blue Link 16 (AEW)", B, "datalink", 53.900, 21.800, 9000, 1087.5, 3000, 50, sens_dbm=-100, js_req_db=10, hop_bw_khz=255000, sidc=FA),
+    rx("Blue fighter pair", B, "Blue Link 16 (AEW)", 54.300, 22.500, 8000, 1087.5, 3000, 43, sidc=FA,
+       track=[[54.450, 22.100], [54.200, 22.300], [54.300, 22.500]], speed_kmh=700),
+    es("Blue airborne ES", B, 55.000, 23.800, 10000, 20, 18000, -115, df=3, sidc=FA,
+       track=[[55.100, 22.900], [55.000, 23.800]], speed_kmh=600),
+    em("GPS L1 (space)", B, "nav", 54.200, 23.000, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140),
+    rx("Blue fires (GNSS)", B, "GPS L1 (space)", 54.020, 22.940, 2, 1575.42, 2046),
+    rx("Blue UAV nav (GNSS)", B, "GPS L1 (space)", 54.300, 22.750, 800, 1575.42, 2046, sidc=FA,
+       track=[[54.400, 22.500], [54.300, 22.750]], speed_kmh=100),
+    rx("Blue fighters (GNSS)", B, "GPS L1 (space)", 54.300, 22.500, 8000, 1575.42, 2046, sidc=FA,
+       track=[[54.450, 22.100], [54.200, 22.300], [54.300, 22.500]], speed_kmh=700),
+    # ---- red (west flank): notional force beyond the western border
+    em("Red Army HQ (west)", R, "comms", 54.600, 22.200, 12, RV2, 25, 50, sens_dbm=-110, js_req_db=0),
+    rx("Red Bde (west)", R, "Red Army HQ (west)", 54.400, 22.450, 3, RV2, 25, 44, track=[[54.300, 22.700]], speed_kmh=10,
+       notes="Pushes east into the gap"),
+    es("Red ES/DF (west)", R, 54.450, 22.300, 20, 20, 3000, -118, df=2),
+    ea("Red VHF barrage", R, "comms", 54.450, 22.400, 15, 45, 20000, 63, notes="35-55 MHz, 2 kW EIRP"),
+    ea("Red GNSS jammer (west)", R, "nav", 54.650, 22.000, 40, 1575.42, 2046, 55, notes="Mast-mounted, 300 W EIRP"),
+    ea("Red L-band barrage", R, "datalink", 54.550, 22.100, 20, 1087.5, 255000, 70, notes="Against Link 16"),
+    em("Red SAM radar", R, "radar", 54.600, 21.950, 10, 3000, 10000, 95, pattern="sector", azimuth=90, beamwidth=120),
+    es("Red airborne ES", R, 54.800, 21.700, 9000, 20, 18000, -115, df=3, sidc=HA,
+       track=[[54.800, 22.300], [54.800, 21.700]], speed_kmh=550),
+    # ---- red (south-east flank)
+    rx("Red Bde (south-east)", R, "Red Army HQ (west)", 53.700, 23.850, 3, RV2, 25, 44, track=[[53.850, 23.600]], speed_kmh=10,
+       notes="Pushes north-west towards the gap"),
+    es("Red ES/DF (south-east)", R, 53.800, 23.750, 20, 20, 3000, -118, df=2),
+    ea("Red GNSS jammer (south-east)", R, "nav", 53.650, 23.850, 40, 1575.42, 2046, 55),
+    em("Red CB radar", R, "radar", 53.750, 23.800, 6, 3100, 5000, 90, pattern="sector", azimuth=330, beamwidth=90),
+    em("Red UAS GCS", R, "datalink", 53.720, 23.820, 5, 2200, 5000, 40, sens_dbm=-95, js_req_db=6),
+    rx("Red UAV", R, "Red UAS GCS", 53.900, 23.500, 800, 2200, 5000, 30, sidc=HA,
+       track=[[54.000, 23.200], [53.900, 23.500]], speed_kmh=100),
+]
+EXAMPLES = {"suwalki-mdo": {
+    "title": "0b. Operational-level MDO: the Suwalki Gap (notional)",
+    "about": "Notional blue force holds the corridor between Suwalki, Augustow, Lazdijai and Marijampole against a notional "
+             "red force pressing from the western and south-eastern flanks. Two-sided GNSS jamming from masts squeezes the "
+             "corridor; an L-band barrage targets Link 16; airborne ES on both sides out-hear ground ES. Blue HQ nets hop "
+             "across 30-88 MHz. Public geography only; forces, frequencies and values are notional. Use multi-select to "
+             "compare, for example, both red GNSS jammers against the blue fires and UAV.",
+    "centre": [54.15, 22.95], "zoom": 8, "params": {"df_fix_good_m": 5000}, "entities": SUW}, **EXAMPLES}

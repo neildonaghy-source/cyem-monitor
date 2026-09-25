@@ -11,7 +11,9 @@ from pathlib import Path
 from .config import settings
 
 UNIT = {"khz": 1e3, "mhz": 1e6, "ghz": 1e9}
-_BAND = re.compile(r"^\s*([\d.]+)\s*[–-]\s*([\d.]+)\s*(KHz|kHz|MHz|GHz)\s*$")
+_BAND = re.compile(r"^\s*([\d.]+)\s*[–-]\s*([\d.]+)\s*(khz|mhz|ghz)\s*$", re.I)       # Ofcom PDF has e.g. "108 MHZ"
+_BAND_NOUNIT = re.compile(r"^\s*(\d[\d.]*)\s*[–-]\s*(\d[\d.]*)\s*$")                 # e.g. "10.45 – 10.475"
+_TXTBAND = re.compile(r"^\s*(\d[\d.]*)\s*[–-]\s*(\d[\d.]*)\s*(khz|mhz|ghz)\b(.*)$", re.I)
 _ABBR = re.compile(r"^([A-Z][A-Z0-9()\- ]{1,20}?)\s{1,}([A-Z][a-z].{3,90})$")
 _UKFN = re.compile(r"\bUK\d+(?:\.\d+)?\b")
 _CACHE: dict = {}
@@ -58,6 +60,8 @@ def parse_pdf(pdf_path: Path) -> dict:
                             else:
                                 rr = (rr + " " + c).strip()
                         m = _BAND.match(band) if band else None
+                        if not m and band and cur and _BAND_NOUNIT.match(band):
+                            m = _BAND.match(band + " " + cur["band"].split()[-1])
                         if m:
                             try:
                                 float(m.group(1).rstrip(".")); float(m.group(2).rstrip("."))
@@ -80,6 +84,34 @@ def parse_pdf(pdf_path: Path) -> dict:
                             fns[row[0]] = row[1][:1500]
     if cur:
         entries.append(cur)
+    # Fallback: some rows never reach extract_tables(); recover them from the page text.
+    covered = [(e["lo_hz"], e["hi_hz"]) for e in entries]
+    with pdfplumber.open(str(pdf_path)) as pdf:
+        for n, page in enumerate(pdf.pages, start=1):
+            if n < 13:
+                continue
+            for line in (page.extract_text() or "").splitlines():
+                m = _TXTBAND.match(line)
+                if not m:
+                    continue
+                try:
+                    u = UNIT[m.group(3).lower()]
+                    lo, hi = float(m.group(1).rstrip(".")) * u, float(m.group(2).rstrip(".")) * u
+                except (ValueError, KeyError):
+                    continue
+                if hi <= lo or any(a <= lo + 1 and hi <= b + 1 for a, b in covered):
+                    continue
+                toks = m.group(4).split()
+                svc = [t for t in toks if t in abbr or re.match(r"^[A-Z]{2,6}$", t)]
+                prse = next((t for t in toks if t in ("PR", "SE")), "")
+                fn = " ".join(t for t in toks if re.search(r"(UK\d|\b5\.\d)", t))
+                if not svc:
+                    continue
+                entries.append({"band": f"{m.group(1)} – {m.group(2)} {m.group(3)}", "lo_hz": lo, "hi_hz": hi, "page": n,
+                                "rr_region1": "", "source": "text",
+                                "rows": [{"service": svc[0], "status": prse, "footnotes": fn}] + [{"service": x, "status": "", "footnotes": ""} for x in svc[1:3]]})
+                covered.append((lo, hi))
+    entries.sort(key=lambda e: e["lo_hz"])
     for e in entries:
         codes = set()
         for r in e["rows"]:

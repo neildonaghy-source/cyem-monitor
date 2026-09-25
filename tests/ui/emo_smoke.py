@@ -58,7 +58,7 @@ async def main():
         await pg.evaluate("() => [...document.querySelectorAll('.emo-sym')].find(s => s.textContent.includes('Blue HQ')).click()")
         rec("focus card opens", bool(await wait_text(pg, "#emo-card", "Compare with others", 30)))
         await pg.click("[data-emo-plannet]")
-        rec("score map renders", bool(await wait_text(pg, "#emo-planout", "Where to site", 240)))
+        rec("score map renders", bool(await wait_text(pg, "#emo-planout", "siting", 240)))
         rec("heatmap overlay on map", (await pg.evaluate("() => document.querySelectorAll('.leaflet-image-layer').length")) > 0)
         await pg.click("[data-emo-tune]")
         rec("tune options render", bool(await wait_text(pg, "#emo-planout", "Power:", 120)))

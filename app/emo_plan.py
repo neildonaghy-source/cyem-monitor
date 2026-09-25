@@ -270,7 +270,7 @@ class MapIn(BaseModel):
 
 def _pseudo(src: dict, at: dict, at_pos, eirp: float, radius_km: float) -> dict:
     """A transmitter at 'at' (its height) radiating on src's frequency with the given EIRP, omni."""
-    return {**src, "id": f"rcp:{src['id']}:{at['id']}", "updated_at": f"{src['updated_at']}|{at['updated_at']}",
+    return {**src, "id": f"rcp:{src['id']}:{at['id']}:{int(min(100.0, radius_km))}", "updated_at": f"{src['updated_at']}|{at['updated_at']}",
             "lat": at_pos[0], "lon": at_pos[1], "h_agl": at["h_agl"], "eirp_dbm": eirp, "pattern": "omni",
             "azimuth": None, "beamwidth": None, "radius_km": min(100.0, radius_km)}
 
@@ -403,7 +403,14 @@ async def plan_map(body: MapIn, t_min: float = 0):
                       "exposure_db": round(float(exposure[i, j]), 1), "worst_js_db": round(float(js[i, j]), 1),
                       "power_cut_db": round(float(headroom[i, j]), 1),
                       "heard_by": [sensors[k]["name"] for k in range(len(sensors)) if E[k][i, j] >= 0],
+                      "heard_at_min_power": [sensors[k]["name"] for k in range(len(sensors)) if E[k][i, j] - headroom[i, j] >= 0],
                       "where": _describe((b["lat"], b["lon"]), net["name"] + " (current)", here)})
+        i0, j0 = LA.shape[0] // 2, LA.shape[1] // 2
+        current = {"score": round(float(score[i0, j0]), 1), "users_closed": int(closed[i0, j0]), "of_users": len(users),
+                   "link_margin_db": round(float(link[i0, j0]), 1), "exposure_db": round(float(exposure[i0, j0]), 1),
+                   "worst_js_db": round(float(js[i0, j0]), 1), "power_cut_db": round(float(headroom[i0, j0]), 1),
+                   "heard_by": [sensors[k]["name"] for k in range(len(sensors)) if E[k][i0, j0] >= 0],
+                   "heard_at_min_power": [sensors[k]["name"] for k in range(len(sensors)) if E[k][i0, j0] - headroom[i0, j0] >= 0]}
         layers = {"score": _heat_png(score, ok), "exposure": _heat_png(-exposure, ok), "link": _heat_png(link, ok)}
         meta = {"opp_sensors": [s["name"] for s in sensors], "opp_jammers": [j["name"] for j in jammers], "users": [u["name"] for u in users],
                 "unavoidable": [sensors[k]["name"] for k in range(len(sensors)) if bool(np.all((E[k] - headroom)[ok] >= 0))] if sensors and ok.any() else []}
@@ -433,9 +440,128 @@ async def plan_map(body: MapIn, t_min: float = 0):
             b.update({"denied": int(denied[i, j]), "of_users": len(users), "min_js_db": round(float(minjs[i, j]), 1),
                       "exposure_db": round(float(exposure[i, j]), 1), "fratricide": int(frat[i, j]),
                       "where": _describe((b["lat"], b["lon"]), y["name"] + " (current)", here)})
+        i0, j0 = LA.shape[0] // 2, LA.shape[1] // 2
+        current = {"score": round(float(score[i0, j0]), 1), "denied": int(denied[i0, j0]), "of_users": len(users),
+                   "min_js_db": round(float(minjs[i0, j0]), 1), "exposure_db": round(float(exposure[i0, j0]), 1), "fratricide": int(frat[i0, j0])}
         layers = {"score": _heat_png(score, ok), "exposure": _heat_png(-exposure, ok), "denial": _heat_png(denied.astype(float), ok)}
         meta = {"opp_df": [d["name"] for d in df], "own_nets_same_band": [n["name"] for n in own_nets], "users": [u["name"] for u in users]}
-    return {"kind": body.kind, "name": mover["name"], "target_net": net["name"] if body.kind == "ea" else None,
+    return {"kind": body.kind, "name": mover["name"], "target_net": net["name"] if body.kind == "ea" else None, "current": current,
+            "js_req_db": jsreq,
             "bounds": bounds, "layers": layers, "best": best, "allowed_km2": round(float(ok.sum()) * (2 * R / body.px) ** 2, 0),
             **meta, "legend": "Heatmap: green = better site, red = worse; blank = outside reach, inside stand-off, or on the other side.",
             "notes": "Reciprocity score map (screening-grade terrain). Users are kept where they are. Positions to test, not a solution."}
+
+
+# ---- A4: red (or blue) course-of-action generator: MLCOA / MDCOA ----------------------------------------------
+class CoaIn(BaseModel):
+    side: str = Field(default="red", pattern="^(blue|red)$")     # the side that responds
+    coa: str = Field(pattern="^(mlcoa|mdcoa)$")
+
+
+_SNAP: dict = {}     # side -> {entity id: (lat, lon)} before the last COA, for revert
+
+
+def _hq_net(ents, side):
+    """The opposing side's highest-value net: an emitter with users; prefer names containing HQ, then most users."""
+    nets = [e for e in ents.values() if e["side"] == side and e["kind"] == "emitter" and e.get("fixed_level_dbm") is None
+            and any(u.get("net") == e["id"] for u in ents.values())]
+    if not nets:
+        return None
+    return sorted(nets, key=lambda n: (("HQ" not in n["name"]), -sum(1 for u in ents.values() if u.get("net") == n["id"])))[0]
+
+
+async def _df_site(emo_api, ents, p, pos, sensor, target, partners, max_move, standoff):
+    """Best site for a DF sensor to hear 'target' with a good cut angle against its partner DF sites."""
+    import numpy as np
+    from .ems_core import sample
+    from .sdr_classify import bearing
+    here = pos(sensor)
+    LA, LO, _ = _axes(here, max_move, 60)
+    own_g, opp_g = _ground(ents, pos, sensor["side"]), _ground(ents, pos, target["side"])
+    ok = _mask(LA, LO, here, max_move, own_g, opp_g, standoff)
+    tp = pos(target)
+    radius = min(100.0, __import__("app.sdr_classify", fromlist=["haversine_km"]).haversine_km(here[0], here[1], *tp) + max_move + 2)
+    E = sample(await emo_api.coverage_for(_pseudo(target, target, tp, target["eirp_dbm"], radius), tp, sensor["h_agl"]), LA, LO) - (sensor.get("sens_dbm") or p.default_sens)
+    # cut angle with the nearest partner: bearing from candidate to target vs partner to target
+    cut = np.zeros(LA.shape)
+    if partners:
+        pb = [bearing(pos(q)[0], pos(q)[1], tp[0], tp[1]) for q in partners]
+        b = (np.degrees(np.arctan2(np.sin(np.radians(tp[1] - LO)) * np.cos(np.radians(tp[0])),
+                                   np.cos(np.radians(LA)) * np.sin(np.radians(tp[0])) - np.sin(np.radians(LA)) * np.cos(np.radians(tp[0])) * np.cos(np.radians(tp[1] - LO)))) + 360) % 360
+        cuts = [np.minimum(np.abs((b - x + 180) % 360 - 180), 180 - np.abs((b - x + 180) % 360 - 180)) for x in pb]
+        cut = np.maximum.reduce(cuts)
+    score = np.minimum(E, 20) - 0.15 * np.abs(cut - 90) if partners else np.minimum(E, 20)
+    score = np.where(E >= 0, score, -99)
+    ok = ok & np.isfinite(score)
+    best = _best_points(score, LA, LO, ok, n=1)
+    i0, j0 = LA.shape[0] // 2, LA.shape[1] // 2
+    cur = {"score": round(float(score[i0, j0]), 1), "hear_db": round(float(E[i0, j0]), 1), "cut_deg": round(float(cut[i0, j0]), 0)}
+    if best:
+        i, j = best[0].pop("ij")
+        best[0].update({"hear_db": round(float(E[i, j]), 1), "cut_deg": round(float(cut[i, j]), 0)})
+    return cur, (best[0] if best else None)
+
+
+@router.post("/coa")
+async def red_coa(body: CoaIn, t_min: float = 0):
+    """Generate and APPLY a course of action for one side: MLCOA = modest improvements to the current laydown (few moves,
+    short distances, only if clearly better); MDCOA = each jammer and DF site re-sited to hurt the other side's
+    highest-value net most. Positions are changed in the scenario; /coa/revert restores them."""
+    emo_api, ents, p, pos = _ctx(t_min)
+    side, opp = body.side, ("blue" if body.side == "red" else "red")
+    ml = body.coa == "mlcoa"
+    max_move, standoff, gain_needed, max_moves = (15.0, 10.0, 8.0, 2) if ml else (40.0, 10.0, 0.5, 99)
+    target = _hq_net(ents, opp)
+    if not target:
+        raise HTTPException(400, f"{opp} has no net to target")
+    _SNAP[side] = {e["id"]: (e["lat"], e["lon"]) for e in ents.values() if e["side"] == side}
+    moves = []
+    # jammers: against the opposing net they can affect, preferring the HQ net
+    for y in [e for e in ents.values() if e["side"] == side and e["kind"] == "effector" and e["active"]]:
+        nets = [n for n in ents.values() if n["side"] == opp and n["kind"] == "emitter" and emo_api.overlap(*emo_api.band(y), *emo_api.band(n))
+                and any(u.get("net") == n["id"] for u in ents.values())]
+        if not nets:
+            continue
+        tgt = target if target in nets else sorted(nets, key=lambda n: -sum(1 for u in ents.values() if u.get("net") == n["id"]))[0]
+        m = await plan_map(MapIn(kind="ea", name=y["name"], target_net=tgt["name"], max_move_km=max_move, standoff_km=standoff, px=48), t_min=t_min)
+        if m["best"] and m["best"][0]["score"] - m["current"]["score"] >= gain_needed:
+            b = m["best"][0]
+            moves.append({"entity": y["name"], "id": y["id"], "kind": "effector", "from": pos(y), "to": (b["lat"], b["lon"]),
+                          "where": b["where"], "against": tgt["name"], "gain": round(b["score"] - m["current"]["score"], 1),
+                          "detail": f"denies {b['denied']}/{b['of_users']} (was {m['current']['denied']}), exposure {b['exposure_db']:+} dB"})
+    # DF sites: hear the opposing HQ net best with a good cut angle against the other DF sites
+    dfs = [e for e in ents.values() if e["side"] == side and e["kind"] == "sensor" and e.get("df_rms_deg") and e["h_agl"] < 300
+           and emo_api.overlap(*emo_api.band(target), *emo_api.band(e))]
+    for d in dfs:
+        cur, best = await _df_site(emo_api, ents, p, pos, d, target, [q for q in dfs if q is not d], max_move, standoff)
+        if best and best["score"] - cur["score"] >= gain_needed:
+            moves.append({"entity": d["name"], "id": d["id"], "kind": "sensor", "from": pos(d), "to": (best["lat"], best["lon"]),
+                          "where": _describe((best["lat"], best["lon"]), d["name"] + " (current)", pos(d)), "against": target["name"],
+                          "gain": round(best["score"] - cur["score"], 1),
+                          "detail": f"hears {target['name']} at {best['hear_db']:+} dB (was {cur['hear_db']:+}), cut {best['cut_deg']:.0f} deg (was {cur['cut_deg']:.0f})"})
+    moves.sort(key=lambda m: -m["gain"])
+    moves = moves[:max_moves]
+    from .db import get_db, now_iso
+    with get_db().tx() as c:
+        for m in moves:
+            c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (m["to"][0], m["to"][1], now_iso(), m["id"]))
+    before = emo_api._LAST.get("score")
+    res = await emo_api.run(emo_api.RunIn(**{k: v for k, v in emo_api._LAST["params"].model_dump().items()}), t_min=t_min)
+    return {"side": side, "coa": body.coa, "target": target["name"], "moves": moves, "score_before": before, "score_after": res["score"],
+            "notes": ("MLCOA: at most two moves within 15 km, each only if clearly better. " if ml else
+                      "MDCOA: every jammer and DF site re-sited within 40 km for greatest effect on the other side's highest-value net. ")
+                     + "Applied to the scenario; use revert to restore."}
+
+
+@router.post("/coa/revert")
+async def coa_revert(side: str = "red", t_min: float = 0):
+    emo_api, ents, p, pos = _ctx(t_min)
+    snap = _SNAP.pop(side, None)
+    if not snap:
+        raise HTTPException(404, "nothing to revert")
+    from .db import get_db, now_iso
+    with get_db().tx() as c:
+        for eid, (la, lo) in snap.items():
+            c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (la, lo, now_iso(), eid))
+    res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
+    return {"reverted": len(snap), "score": res["score"]}

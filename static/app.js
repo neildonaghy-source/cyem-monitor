@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25r';
+  const BUILD = '2026-09-25s';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1802,11 +1802,28 @@
       <div id="emo-askout" class="md"></div>
       <div class="specset">Briefing phases (minutes) <input id="emo-phases" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
         <a id="emo-export" class="btnlink" href="#">Export briefing (Word)</a> <span class="dim">one section per phase; takes a minute per new phase</span></div>
+      <div class="specset">Other side's response: <select id="emo-coaside"><option value="red">Red</option><option value="blue">Blue</option></select>
+        <button id="emo-coa-ml" title="Most likely: at most two modest moves">MLCOA</button> <button id="emo-coa-md" title="Most dangerous: every jammer and DF site re-sited for effect">MDCOA</button>
+        <button id="emo-coa-rev">Revert</button> <span id="emo-coaout" class="dim"></span></div>
       <div id="emo-results"></div>
       <h3 class="sec">Entities</h3>${list}
       <h3 class="sec">${EMO.editId ? 'Edit entity' : 'Add entity'}</h3>${emoForm(EMO.draft)}`);
     emoResults();
     const body = $('#modal-body');
+    const coa = async (kind) => {
+      const side = $('#emo-coaside').value, o = $('#emo-coaout');
+      o.innerHTML = '<span class="spinner"></span> generating and applying…';
+      try {
+        const r = kind === 'revert' ? await postJson(`/api/emo/plan/coa/revert?side=${side}&t_min=${EMO.t}`, {}) : await postJson(`/api/emo/plan/coa?t_min=${EMO.t}`, { side, coa: kind });
+        planLayer.clearLayers();
+        (r.moves || []).forEach((m) => { L.polyline([m.from, m.to], { color: SIDE_COL[side], weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer); });
+        o.innerHTML = kind === 'revert' ? `reverted ${r.reverted} positions` : (r.moves.length ? `${r.coa.toUpperCase()} against ${esc(r.target)}: ${r.moves.map((m) => `<b>${esc(m.entity)}</b> ${esc(m.where)} (${esc(m.detail)})`).join('; ')}` : `${r.coa.toUpperCase()}: no move clearly improves ${side}'s laydown`);
+        await emoLoad(); EMO.prevScore = r.score_before || EMO.prevScore; EMO.res = null; await emoRun();
+      } catch (err) { o.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    };
+    $('#emo-coa-ml').addEventListener('click', () => coa('mlcoa'));
+    $('#emo-coa-md').addEventListener('click', () => coa('mdcoa'));
+    $('#emo-coa-rev').addEventListener('click', () => coa('revert'));
     $('#emo-tgt').addEventListener('change', (e) => { EMO.params.df_fix_good_m = Math.max(50, +e.target.value || 1000); emoRun(); });
     $('#emo-export').addEventListener('click', (e) => {
       e.preventDefault();

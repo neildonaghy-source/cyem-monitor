@@ -512,7 +512,7 @@ async def run(p: RunIn, t_min: float = 0):
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]
     horizon = max([track_minutes(e) for e in ents] + [0])
     _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
-                  "jamming": jamming, "params": p, "bounds": [[s, w], [n, e_]]})
+                  "jamming": jamming, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
             "positions": {e["id"]: e["pos"] for e in ents}, "on_air": {e["id"]: e["active"] for e in ents}, "detections": detections, "fixes": fixes,
             "jamming": jamming, "nets": per_net, "exposure": exposure, "score": score, "params": p.model_dump(),
@@ -752,7 +752,7 @@ async def _plan_facts(question: str, selected: list[str] | None) -> str:
         targets = [n for n in nets if n["side"] != y["side"]]
         for n in targets[:2]:
             try:
-                r = await emo_plan.site_ea(emo_plan.SiteEAIn(effector=y["name"], target_net=n["name"]), t_min=t)
+                r = await emo_plan.plan_map(emo_plan.MapIn(kind="ea", name=y["name"], target_net=n["name"]), t_min=t)
             except HTTPException as e:
                 out.append(f"COMPUTED PLAN (EA {y['name']} vs {n['name']}): not possible ({e.detail})."); continue
             c, b = r["current"], (r["best"] or [None])[0]
@@ -782,7 +782,7 @@ async def _plan_facts(question: str, selected: list[str] | None) -> str:
         if any(y["side"] != n["side"] for y in effs):
             continue                               # this net is the EA target above, not one to re-site
         try:
-            r = await emo_plan.site_net(emo_plan.SiteNetIn(net=n["name"]), t_min=t)
+            r = await emo_plan.plan_map(emo_plan.MapIn(kind="net", name=n["name"]), t_min=t)
         except HTTPException as e:
             out.append(f"COMPUTED PLAN (EP {n['name']}): not possible ({e.detail})."); continue
         c = r["current"]

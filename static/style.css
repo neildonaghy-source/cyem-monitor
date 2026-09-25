@@ -246,3 +246,12 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 @media (max-width: 900px) { #emo-card { top: auto; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); right: 3vw; max-height: 45vh; } }
 .emo-chipsel { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #243040; border-radius: 12px; padding: 1px 4px 1px 8px; margin: 2px 0; }
 .emo-chipsel button { padding: 0 6px; }
+
+#emo-askbar { position: fixed; left: 50%; transform: translateX(-50%); top: 60px; z-index: 1120; display: flex; gap: 6px; width: min(560px, 92vw);
+  background: rgba(10,14,19,.92); border: 1px solid #3c8cff; border-radius: 18px; padding: 4px 6px 4px 12px; }
+#emo-askbar input { flex: 1; background: transparent; border: 0; color: #e6edf3; font-size: 14px; min-width: 0; }
+#emo-askcard { position: fixed; left: 12px; top: 106px; width: min(420px, 94vw); max-height: 60vh; overflow: auto; z-index: 1150;
+  background: rgba(10,14,19,.96); border: 1px solid #3c8cff; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.emo-pair { border-left: 3px solid #dc3cdc; padding: 4px 8px; margin: 6px 0; background: rgba(220,60,220,.07); }
+@media (max-width: 900px) { #emo-askbar { top: 52px; } #emo-askcard { top: 96px; left: 3vw; max-height: 45vh; } }
+.emo-fixlbl.emo-loc { background: rgba(120, 128, 140, .85); }

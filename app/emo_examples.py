@@ -282,3 +282,163 @@ EXAMPLES = {"suwalki-mdo": {
              "across 30-88 MHz. Public geography only; forces, frequencies and values are notional. Use multi-select to "
              "compare, for example, both red GNSS jammers against the blue fires and UAV.",
     "centre": [54.15, 22.95], "zoom": 8, "params": {"df_fix_good_m": 5000}, "entities": SUW}, **EXAMPLES}
+
+
+# ---- littoral A2/AD vignette: Vestfjord and Lofoten (notional forces; Cold Response-style area) ----
+G = "grey"
+NL, NA, NS = "SNGPU----------", "SNAP-----------", "SNSP-----------"   # neutral land / air / sea (drawn grey)
+BVL, RVL, BU = 55.500, 47.600, 252.400
+LIT = [
+    # ---- blue: Littoral Response Group from seaward (south-west), raid force ashore
+    em("Blue LPD (UHF net)", B, "comms", 67.750, 13.000, 25, BU, 25, 50, sens_dbm=-105, js_req_db=0, sidc=FS),
+    rx("Blue frigate (UHF)", B, "Blue LPD (UHF net)", 67.850, 13.300, 25, BU, 25, 47, sidc=FS, track=[[68.000, 13.600]], speed_kmh=25),
+    em("Blue frigate radar", B, "radar", 67.850, 13.300, 25, 3000, 10000, 95, sidc=FS, track=[[68.000, 13.600]], speed_kmh=25,
+       notes="Air-defence radar: the EMCON test"),
+    rx("Blue helicopter (UHF)", B, "Blue LPD (UHF net)", 67.800, 13.100, 300, BU, 25, 40, sidc=FA,
+       track=[[68.050, 13.750], [67.800, 13.100]], speed_kmh=180),
+    rx("Blue landing craft (UHF)", B, "Blue LPD (UHF net)", 67.780, 13.080, 3, BU, 25, 40, sidc=FS,
+       track=[[68.080, 13.800]], speed_kmh=25),
+    em("Blue raid force HQ (VHF)", B, "comms", 68.100, 13.850, 4, BVL, 25, 44, sens_dbm=-110, js_req_db=0, hop_bw_khz=58000,
+       notes="Commando company group ashore, hopping 30-88 MHz"),
+    rx("Blue raid team 1", B, "Blue raid force HQ (VHF)", 68.130, 13.950, 2, BVL, 25, 37),
+    rx("Blue raid team 2", B, "Blue raid force HQ (VHF)", 68.090, 14.050, 2, BVL, 25, 37, track=[[68.150, 14.200]], speed_kmh=4),
+    em("Blue raid SATCOM", B, "comms", 68.100, 13.855, 2, 7950, 5000, 60, pattern="sector", azimuth=175, beamwidth=5),
+    em("Blue UAS GCS (ship)", B, "datalink", 67.750, 13.005, 20, 2350, 5000, 40, sens_dbm=-95, js_req_db=6, sidc=FS),
+    rx("Blue UAV", B, "Blue UAS GCS (ship)", 67.950, 13.500, 600, 2350, 5000, 30, sidc=FA,
+       track=[[68.150, 14.000], [68.050, 14.300], [67.950, 13.500]], speed_kmh=120),
+    es("Blue LPD ES", B, 67.750, 13.000, 30, 20, 18000, -110, df=3, sidc=FS),
+    es("Blue MPA ES", B, 67.500, 13.500, 8000, 20, 18000, -115, df=3, sidc=FA,
+       track=[[67.600, 12.300], [67.500, 13.500]], speed_kmh=550),
+    ea("Blue ship comms EA", B, "comms", 67.850, 13.300, 25, RVL, 25, 60, sidc=FS, track=[[68.000, 13.600]], speed_kmh=25,
+       notes="Spot on the red coastal C2 net"),
+    ea("Blue airborne EA", B, "comms", 67.700, 13.600, 8000, RVL, 5000, 65, sidc=FA, track=[[67.900, 14.100]], speed_kmh=600,
+       notes="Stand-off; 5 MHz wide"),
+    em("Blue Link 16 (AEW)", B, "datalink", 67.200, 12.300, 9000, 1087.5, 3000, 50, sens_dbm=-100, js_req_db=10, hop_bw_khz=255000, sidc=FA),
+    rx("Blue fighter pair", B, "Blue Link 16 (AEW)", 67.700, 13.200, 8000, 1087.5, 3000, 43, sidc=FA,
+       track=[[68.100, 14.100], [67.700, 13.200]], speed_kmh=700, notes="Strike route across Vestfjord"),
+    em("GPS L1 (space)", B, "nav", 67.950, 13.700, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140),
+    rx("Blue landing craft (GNSS)", B, "GPS L1 (space)", 67.780, 13.080, 3, 1575.42, 2046, sidc=FS, track=[[68.080, 13.800]], speed_kmh=25),
+    rx("Blue UAV (GNSS)", B, "GPS L1 (space)", 67.950, 13.500, 600, 1575.42, 2046, sidc=FA,
+       track=[[68.150, 14.000], [68.050, 14.300], [67.950, 13.500]], speed_kmh=120),
+    rx("Blue fighters (GNSS)", B, "GPS L1 (space)", 67.700, 13.200, 8000, 1575.42, 2046, sidc=FA,
+       track=[[68.100, 14.100], [67.700, 13.200]], speed_kmh=700),
+    # ---- red: A2/AD ashore on Lofoten
+    em("Red coastal defence HQ", R, "comms", 68.230, 14.570, 15, RVL, 25, 50, sens_dbm=-110, js_req_db=0),
+    rx("Red coastal battery (west)", R, "Red coastal defence HQ", 68.050, 13.950, 5, RVL, 25, 44),
+    rx("Red coastal battery (east)", R, "Red coastal defence HQ", 68.300, 15.000, 5, RVL, 25, 44),
+    em("Red coastal surveillance radar", R, "radar", 68.150, 13.600, 30, 9400, 20000, 85, pattern="sector", azimuth=225, beamwidth=180),
+    em("Red missile targeting radar", R, "radar", 68.020, 13.900, 20, 9800, 20000, 90, pattern="sector", azimuth=200, beamwidth=120),
+    em("Red SAM radar", R, "radar", 68.220, 14.200, 15, 3000, 10000, 95),
+    es("Red ES/DF (Leknes)", R, 68.250, 13.700, 30, 20, 18000, -115, df=2),
+    es("Red ES/DF (Svolvaer)", R, 68.350, 14.900, 30, 20, 18000, -115, df=2),
+    es("Red patrol boat ES", R, 68.000, 14.400, 10, 20, 18000, -110, df=3, sidc=HS, track=[[67.900, 13.800]], speed_kmh=30),
+    ea("Red UHF barrage", R, "comms", 68.200, 14.000, 20, 312.5, 175000, 70, notes="225-400 MHz against the ship nets"),
+    ea("Red L-band barrage", R, "datalink", 68.150, 14.400, 20, 1087.5, 255000, 70, notes="Against Link 16"),
+    ea("Red GNSS jammer (mountain)", R, "nav", 68.300, 14.300, 400, 1575.42, 2046, 55, notes="On high ground"),
+    em("Red UAS GCS", R, "datalink", 68.200, 14.500, 10, 2200, 5000, 40, sens_dbm=-95, js_req_db=6),
+    rx("Red maritime UAV", R, "Red UAS GCS", 68.000, 13.800, 800, 2200, 5000, 30, sidc=HA,
+       track=[[67.800, 13.200], [68.000, 13.800]], speed_kmh=110),
+    # ---- grey: civil and neutral
+    em("Bodo ATC radar", G, "radar", 67.270, 14.370, 30, 2800, 2000, 90, sidc=NL, notes="Civil primary surveillance radar"),
+    em("Coastal ferry (marine VHF)", G, "comms", 67.300, 14.350, 20, 156.8, 25, 44, sens_dbm=-110, js_req_db=0, sidc=NS,
+       track=[[68.100, 13.900]], speed_kmh=30),
+    rx("Fishing vessel 1", G, "Coastal ferry (marine VHF)", 67.900, 13.700, 5, 156.8, 25, 44, sidc=NS),
+    rx("Fishing vessel 2", G, "Coastal ferry (marine VHF)", 68.050, 14.600, 5, 156.8, 25, 44, sidc=NS),
+    em("FM broadcast (Svolvaer)", G, "comms", 68.235, 14.520, 60, 95.0, 200, 70, sidc=NL),
+    em("Mobile mast (Leknes)", G, "comms", 68.150, 13.620, 30, 806.0, 10000, 60, sidc=NL),
+    em("Airliner (ADS-B)", G, "other", 67.600, 13.900, 10000, 1090.0, 2000, 57, sidc=NA, track=[[68.400, 15.000]], speed_kmh=800),
+    em("GPS L1 (civil users)", G, "nav", 68.000, 14.000, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140, sidc=NL),
+    rx("Civil GNSS (Svolvaer)", G, "GPS L1 (civil users)", 68.235, 14.570, 2, 1575.42, 2046, sidc=NL),
+    rx("Civil GNSS (ferry)", G, "GPS L1 (civil users)", 67.300, 14.350, 20, 1575.42, 2046, sidc=NS, track=[[68.100, 13.900]], speed_kmh=30),
+    rx("Civil GNSS (Leknes airport)", G, "GPS L1 (civil users)", 68.152, 13.609, 2, 1575.42, 2046, sidc=NL),
+]
+EXAMPLES = {"littoral-a2ad": {
+    "title": "0c. Littoral A2/AD: Vestfjord and Lofoten (notional)",
+    "about": "A Littoral Response Group approaches from seaward and puts a commando raid force ashore against a notional A2/AD "
+             "position on Lofoten. The question: how does the commander convert electromagnetic understanding into a temporary "
+             "advantage before red adapts? Find and fix the red targeting radars with blue ES; decide when the frigate radiates "
+             "(EMCON); deny the red coastal C2 net with shipborne and airborne EA; judge whether the fighters' Link 16 survives the "
+             "L-band barrage along the strike route; and count the civil GNSS collateral. Grey entities are civil. Notional forces "
+             "and values on public geography.",
+    "centre": [67.95, 13.80], "zoom": 8, "params": {"df_fix_good_m": 3000}, "entities": LIT}, **EXAMPLES}
+
+
+# ---- realism pass (2026-09-25): grey (civil) entities in every scenario, and layout fixes ----
+def _civil_gnss(lat, lon, users):
+    """A civil GNSS 'net' (fixed space signal) and its users, so jamming shows as collateral."""
+    net = em("GPS L1 (civil users)", G, "nav", lat, lon, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140, sidc=NL)
+    return [net] + [rx(n, G, "GPS L1 (civil users)", la, lo, h, 1575.42, 2046, sidc=sd) for n, la, lo, h, sd in users]
+
+
+EXAMPLES["bg-vignette"]["entities"] += [
+    em("Boscombe Down ATC radar", G, "radar", 51.152, -1.747, 25, 2800, 2000, 88, sidc=NL),
+    em("FM broadcast (notional)", G, "comms", 51.070, -1.790, 60, 95.5, 200, 67, sidc=NL),
+    em("Mobile mast (Larkhill)", G, "comms", 51.200, -1.805, 25, 806.0, 10000, 60, sidc=NL),
+] + _civil_gnss(51.20, -1.90, [("Civil GNSS (A303 traffic)", 51.170, -1.830, 2, NL), ("Civil GNSS (farm)", 51.250, -1.950, 2, NL)])
+
+EXAMPLES["mdo-operational"]["entities"] += [
+    em("Inverness ATC radar", G, "radar", 57.540, -4.050, 25, 2800, 2000, 90, sidc=NL),
+    em("FM/TV transmitter (notional)", G, "comms", 57.630, -4.120, 80, 94.0, 200, 70, sidc=NL),
+    em("Ferry Ullapool-Stornoway (marine VHF)", G, "comms", 57.900, -5.170, 20, 156.8, 25, 44, sens_dbm=-110, js_req_db=0, sidc=NS,
+       track=[[58.200, -6.350]], speed_kmh=30),
+    rx("Fishing vessel (Minch)", G, "Ferry Ullapool-Stornoway (marine VHF)", 58.050, -5.700, 5, 156.8, 25, 44, sidc=NS),
+] + _civil_gnss(57.9, -5.0, [("Civil GNSS (Ullapool)", 57.895, -5.160, 2, NL), ("Civil GNSS (ferry)", 57.900, -5.170, 20, NS)])
+
+_s = EXAMPLES["suwalki-mdo"]["entities"]
+_s.append(em("Red Bde HQ (south-east)", R, "comms", 53.680, 23.830, 12, RV2, 25, 47, sens_dbm=-110, js_req_db=0,
+             notes="Own net: the western HQ is ~120 km away, beyond VHF"))
+for _e in _s:
+    if _e["name"] == "Red Bde (south-east)":
+        _e["net"] = "Red Bde HQ (south-east)"
+_s += [
+    em("Kaunas ATC radar", G, "radar", 54.960, 24.080, 25, 2800, 2000, 90, sidc=NL),
+    em("FM broadcast (Suwalki)", G, "comms", 54.100, 22.930, 60, 95.0, 200, 67, sidc=NL),
+    em("Mobile mast (Augustow)", G, "comms", 53.845, 22.975, 30, 806.0, 10000, 60, sidc=NL),
+] + _civil_gnss(54.2, 23.1, [("Civil GNSS (Via Baltica, Suwalki)", 54.100, 22.930, 2, NL),
+                             ("Civil GNSS (Via Baltica, Marijampole)", 54.560, 23.350, 2, NL)])
+
+EXAMPLES["solent-maritime"]["entities"] += [
+    em("Coastguard VTS radar (Needles)", G, "radar", 50.662, -1.585, 60, 9410, 20000, 80, sidc=NL),
+    em("Isle of Wight ferry (marine VHF)", G, "comms", 50.795, -1.105, 15, 156.8, 25, 44, sens_dbm=-110, js_req_db=0, sidc=NS,
+       track=[[50.735, -1.165]], speed_kmh=25),
+    rx("Yacht (Solent)", G, "Isle of Wight ferry (marine VHF)", 50.760, -1.300, 5, 156.8, 25, 37, sidc=NS),
+] + _civil_gnss(50.75, -1.25, [("Civil GNSS (ferry)", 50.795, -1.105, 15, NS), ("Civil GNSS (Cowes)", 50.760, -1.300, 2, NL)])
+
+EXAMPLES["a303-gnss"]["entities"] += [
+    em("Boscombe Down ATC radar", G, "radar", 51.152, -1.747, 25, 2800, 2000, 88, sidc=NL),
+] + _civil_gnss(51.15, -1.95, [("Civil GNSS (A303 west)", 51.120, -2.050, 2, NL), ("Civil GNSS (Amesbury)", 51.172, -1.780, 2, NL),
+                               ("Civil GNSS (Stonehenge coach)", 51.179, -1.826, 2, NL)])
+
+EXAMPLES["brecon-siting"]["entities"] += [
+    ea("Red VHF jammer", R, "comms", 52.020, -3.650, 8, 62.3, 25, 57, notes="Spot on the blue net: test siting against EA too"),
+    em("FM broadcast (notional)", G, "comms", 51.990, -3.400, 60, 97.0, 200, 67, sidc=NL),
+    em("Mobile mast (Brecon)", G, "comms", 51.947, -3.395, 25, 806.0, 10000, 60, sidc=NL),
+]
+
+EXAMPLES["cuas-vs-datalink"]["entities"] += [
+    em("Civil drone controller", G, "datalink", 51.200, -1.860, 2, 2440, 20000, 20, sens_dbm=-90, js_req_db=6, sidc=NL),
+    rx("Civil hobby drone", G, "Civil drone controller", 51.205, -1.855, 60, 2440, 20000, 20, sidc=NA),
+    em("Wi-Fi hotspot (farm)", G, "other", 51.215, -1.890, 5, 2437, 20000, 20, sidc=NL),
+]
+
+
+# ---- layout fixes from the realism scrub (2026-09-25) ----
+def _set(ex, name, **kw):
+    for _e in EXAMPLES[ex]["entities"]:
+        if _e["name"] == name:
+            _e.update(kw)
+            return
+    raise KeyError(f"{ex}: {name}")
+
+
+# red UAS ground stations were sited below the Warminster escarpment (39 dB diffraction): move onto the plain, 10 m mast
+_set("bg-vignette", "Red UAS GCS", lat=51.235, lon=-2.070, h_agl=10)
+_set("cuas-vs-datalink", "Red UAS GCS", lat=51.235, lon=-2.070, h_agl=10)
+# MDO: recce was ~45 km from its HQ through the Highlands; pull it into VHF range on higher ground
+_set("mdo-operational", "Blue Recce", lat=57.880, lon=-4.880, h_agl=4)
+# Brecon: give blue its own ES/DF so the red jammer can be located (two-way picture)
+EXAMPLES["brecon-siting"]["entities"].append(es("Blue ES/DF (Sennybridge)", B, 51.990, -3.570, 12, 30, 400, -115, df=2))
+EXAMPLES["brecon-siting"]["entities"].append(es("Blue ES/DF (Pen y Fan)", B, 51.884, -3.437, 10, 30, 400, -115, df=2))
+# Solent: ES receivers cover 30-3000 MHz, so civil marine VHF and the ferry are heard too
+for _n in ("Blue shore ES/DF (Portsdown)", "Blue shore ES/DF (Needles)", "Red ES vessel"):
+    _set("solent-maritime", _n, freq_mhz=30, f_hi_mhz=3000)

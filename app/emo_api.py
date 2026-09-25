@@ -62,7 +62,7 @@ def ensure_emo_schema(db: Database) -> None:
 
 class EntityIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    side: str = Field(pattern="^(blue|red)$")
+    side: str = Field(pattern="^(blue|red|grey)$")   # grey = neutral / civil
     kind: str = Field(pattern="^(emitter|receiver|sensor|effector)$")
     category: str | None = Field(default=None, pattern=CATS)
     lat: float = Field(ge=-85, le=85)
@@ -339,6 +339,8 @@ LAYER_RGBA = {
     "blue_seen": (255, 70, 70, 110),    # blue emissions detectable by red ES
     "red_seen": (60, 200, 255, 110),    # red emissions detectable by blue ES
     "blue_denied": (235, 40, 235, 210), "red_denied": (255, 170, 30, 210),
+    "grey_cov": (170, 180, 190, 55), "grey_seen": (190, 195, 205, 80),   # civil emissions heard by either side
+    "grey_denied": (255, 255, 255, 200),                                  # collateral: civil users denied
 }
 
 
@@ -410,7 +412,7 @@ async def run(p: RunIn, t_min: float = 0):
 
     # ES maps: where each side's emissions can be heard by the other side's (ground) sensors
     for e in terr_rad:
-        watchers = [x for x in sensors if x["side"] == other(e["side"]) and overlap(*band(e), *band(x))]
+        watchers = [x for x in sensors if x["side"] != e["side"] and x["side"] != "grey" and overlap(*band(e), *band(x))]
         if watchers:
             sens = min(x.get("sens_dbm") or p.default_sens for x in watchers)
             L[f"{e['side']}_seen"] |= lv[e["id"]] >= sens
@@ -431,15 +433,18 @@ async def run(p: RunIn, t_min: float = 0):
             detections.append(d)
             if det and x.get("df_rms_deg"):
                 brg = bearing_deg(x["pos"][0], x["pos"][1], e["pos"][0], e["pos"][1])
-                bearings.setdefault(e["id"], []).append({"sensor": x["name"], "site": x["pos"], "bearing": brg,
-                                                        "sigma": x["df_rms_deg"]})
+                # bearings are pooled per observing side: red and blue never share a fix
+                bearings.setdefault((e["id"], x["side"]), []).append({"sensor": x["name"], "site": x["pos"], "bearing": brg,
+                                                                     "sigma": x["df_rms_deg"]})
     fixes = []
-    for tid, bs in bearings.items():
+    for (tid, by_side), bs in bearings.items():
         t = byid[tid]
         f = df_fix(t["pos"], bs) if len(bs) >= 2 else None
-        fixes.append({"target": t["name"], "target_side": t["side"], "lobs": len(bs),
+        good = bool(f and f["error_m"] <= p.df_fix_good_m)
+        fixes.append({"target": t["name"], "target_side": t["side"], "by_side": by_side, "lobs": len(bs),
                       "sensors": [b["sensor"] for b in bs], "bearings": [{"site": b["site"], "bearing": round(b["bearing"], 1)} for b in bs],
-                      "fix": f, "targetable": bool(f and f["error_m"] <= p.df_fix_good_m), "pos": t["pos"]})
+                      "fix": f, "targetable": good and t["side"] != "grey",          # civil emitters are located, not targets
+                      "located": good and t["side"] == "grey", "pos": t["pos"]})
 
     # EA: nets, J/S, denial
     jamming, per_net = [], []
@@ -467,6 +472,7 @@ async def run(p: RunIn, t_min: float = 0):
                 js = round(J - Sv, 1)
                 status = "no signal" if Sv < vs else ("denied" if js >= jsreq else "holds")
                 jamming.append({"effector": y["name"], "effector_id": y["id"], "victim_id": v["id"], "effector_side": y["side"], "victim": v["name"], "net": nn["name"],
+                                "collateral": nn["side"] == "grey",
                                 "category": y.get("category"), "j_dbm": round(J, 1), "s_dbm": round(Sv, 1), "js_db": js,
                                 "js_req_db": jsreq, "bw_penalty_db": round(pen, 1), "status": status, "a": y["pos"], "b": v["pos"]})
         L[f"{nn['side']}_denied"] |= den
@@ -476,7 +482,7 @@ async def run(p: RunIn, t_min: float = 0):
                         "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq})
 
     layers = {k: overlay_png(region_masks(m, LAYER_RGBA[k], hatched=k.endswith("_denied"))) for k, m in L.items() if m.any()}
-    exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red")]
+    exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]
     horizon = max([track_minutes(e) for e in ents] + [0])
     _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
                   "jamming": jamming, "params": p})
@@ -638,7 +644,7 @@ no clutter, multipath or detailed receiver modelling). Suggest EP or EA options 
 (move, EMCON, antenna, power, frequency), not as doctrine. Under 250 words unless a list is needed."""
 
 
-def scenario_context() -> str:
+def scenario_context(selected: list[str] | None = None) -> str:
     """Pre-sorted facts so a small model only narrates: nothing here needs inferring."""
     if not _LAST:
         return "(no analysis has been run yet)"
@@ -659,12 +665,43 @@ def scenario_context() -> str:
                                                                           for j in hold if j["effector_side"] != side) or "none"))
     det = sorted([d for d in _LAST["detections"] if d["detected"] and d["sensor_side"] == "red"], key=lambda d: -d["margin_db"])[:12]
     L.append("LOUDEST BLUE EMISSIONS HEARD BY RED: " + ("; ".join(f"{d['target']} heard by {d['sensor']} at +{d['margin_db']} dB" for d in det) or "none"))
+    col = [j for j in _LAST["jamming"] if j.get("collateral") and j["status"] == "denied"]
+    L.append("CIVIL (GREY) USERS DENIED AS COLLATERAL: " + ("; ".join(f"{j['victim']} by {j['effector']} (J/S {j['js_db']} dB)" for j in col) or "none"))
+    if selected:
+        ents = {e["id"]: e for e in _all()}
+        names = [ents[i]["name"] for i in selected if i in ents]
+        sel = set(selected)
+        L.append("USER SELECTION (answer about these first): " + "; ".join(f"{ents[i]['name']} ({ents[i]['side']} {ents[i]['kind']}, {ents[i]['freq_mhz']} MHz)" for i in selected if i in ents))
+        L.append("WITHIN SELECTION, DETECTIONS: " + ("; ".join(f"{d['sensor']} {'hears' if d['detected'] else 'does not hear'} {d['target']} ({d['margin_db']:+} dB)"
+                 for d in _LAST["detections"] if d.get("sensor_id") in sel and d["target_id"] in sel) or "none"))
+        L.append("WITHIN SELECTION, JAMMING: " + ("; ".join(f"{j['effector']} vs {j['victim']}: J/S {j['js_db']} dB, {j['status']}"
+                 for j in _LAST["jamming"] if j.get("effector_id") in sel and (j.get("victim_id") in sel or j["net"] in names)) or "none"))
+        for i in selected:
+            e = ents.get(i)
+            if not e:
+                continue
+            if e["kind"] == "emitter":
+                users = [u["name"] for u in ents.values() if u.get("net") == i]
+                kind = {"comms": "communications net", "datalink": "datalink", "nav": "navigation signal"}.get(e.get("category"), "emitter")
+                L.append(f"FACT: {e['name']} is the control station of a {e['side']} {kind} on {e['freq_mhz']} MHz"
+                         + (f" with users {', '.join(users)}." if users else "."))
+                for j in [j for j in _LAST["jamming"] if j["net"] == e["name"]]:
+                    L.append(f"FACT: {j['effector']} against {j['victim']} (a user of that net): J/S {j['js_db']} dB against a "
+                             f"{j['js_req_db']} dB threshold, so the user is {j['status'].upper()}.")
+            if e["kind"] == "effector":
+                hit = [j for j in _LAST["jamming"] if j.get("effector_id") == i]
+                L.append(f"FACT: {e['name']} is a {e['side']} jammer on {e['freq_mhz']} MHz; it denies "
+                         f"{sum(j['status'] == 'denied' for j in hit)} of {len(hit)} users it reaches"
+                         + (": " + ", ".join(j["victim"] for j in hit if j["status"] == "denied") if hit else "") + ".")
+        L.append("RULE: jamming denies RECEPTION at the net's users; the control station still transmits and can still be "
+                 "heard and DF-fixed. Being fixed is about targeting, not about jamming.")
     L.append("Note: radars and SATCOM are emitters only; only nets (comms, datalinks, GNSS) can be jammed in this model.")
     return "\n".join(L)
 
 
 class AskIn(BaseModel):
     question: str = Field(min_length=2, max_length=800)
+    selected: list[str] | None = None
 
 
 @router.post("/ask")
@@ -672,7 +709,7 @@ async def emo_ask(req: AskIn):
     from fastapi.responses import StreamingResponse
     from . import llm
     msgs = [{"role": "system", "content": EMO_ASK_SYSTEM},
-            {"role": "user", "content": f"ANALYSIS\n{scenario_context()}\n\nQUESTION: {req.question.strip()}"}]
+            {"role": "user", "content": f"ANALYSIS\n{scenario_context(req.selected)}\n\nQUESTION: {req.question.strip()}"}]
 
     async def gen():
         try:
@@ -772,3 +809,69 @@ async def emo_export(phases: str = "0", df_fix_good_m: float = 1000):
     name = f"CyEM-EMO-brief-{datetime.now(timezone.utc):%Y%m%d-%H%MZ}.docx"
     return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                              headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+
+# ---- pair analysis: how two selected entities interact, as a map overlay -------------------------
+@router.get("/pair")
+async def pair(a: str, b: str, t_min: float = 0):
+    """Jammer vs a net (or a net user): the net's coverage with the zone this jammer denies hatched, plus J/S at each
+    user. Emitter vs an opposing sensor: where the emitter is heard at that sensor's sensitivity. Else no overlay."""
+    if not _LAST or abs(_LAST.get("t", -1) - t_min) > 1e-6:
+        raise HTTPException(409, "run the analysis first")
+    from .ems_core import band_masks, region_masks
+    ents = {e["id"]: e for e in _all()}
+    A, Bn = ents.get(a), ents.get(b)
+    if not A or not Bn:
+        raise HTTPException(404, "no such entity")
+    p: RunIn = _LAST["params"]
+    pos = lambda e: _LAST["pos"].get(e["id"], (e["lat"], e["lon"]))  # noqa: E731
+    radiates = lambda e: e["active"] and e.get("eirp_dbm") is not None and e.get("fixed_level_dbm") is None  # noqa: E731
+    y, net = None, None
+    for x, o in ((A, Bn), (Bn, A)):
+        if x["kind"] == "effector" and x["side"] != o["side"]:
+            n = o if o["kind"] == "emitter" else ents.get(o.get("net") or "") if o["kind"] == "receiver" else None
+            if n and n["side"] != x["side"] and overlap(*band(n), *band(x)):
+                y, net = x, n
+                break
+    if y and radiates(y):
+        gy = await coverage_for(y, pos(y), p.rx_h)
+        grids = [gy]
+        space = net.get("fixed_level_dbm") is not None
+        if not space:
+            gn = await coverage_for(net, pos(net), p.rx_h); grids.append(gn)
+        s_, w_, n_, e_ = union_bounds(grids)
+        LA, LO = raster_axes(s_, w_, n_, e_, px=480)
+        km2 = cell_km2(LA, LO)
+        J = sample(gy, LA, LO) - jam_penalty(y, net)      # bandwidth, hopping and processing gain
+        S = np.full(LA.shape, float(net["fixed_level_dbm"])) if space else sample(gn, LA, LO)
+        covd = (J > -900) if space else S >= (net.get("sens_dbm") or p.default_sens)
+        jsreq = net["js_req_db"] if net.get("js_req_db") is not None else p.js_req_db
+        with np.errstate(invalid="ignore"):
+            den = covd & ((J - S) >= jsreq)
+        holds = covd & ~den
+        netcol = {"blue": (60, 140, 255, 90), "red": (255, 90, 90, 80), "grey": (170, 180, 190, 80)}[net["side"]]
+        masks = region_masks(holds, netcol) + region_masks(den, (235, 40, 235, 210), hatched=True)
+        users = [j for j in _LAST["jamming"] if j.get("effector_id") == y["id"] and j["net"] == net["name"]]
+        return {"kind": "jam", "effector": y["name"], "net": net["name"], "net_side": net["side"], "space": space,
+                "overlay": {"png": overlay_png(masks), "bounds": [[s_, w_], [n_, e_]]} if masks else None,
+                "coverage_km2": None if space else round(float(covd.sum()) * km2, 1),
+                "denied_km2": round(float(den.sum()) * km2, 1),
+                "denied_pct": round(100 * float(den.sum()) / max(1, int(covd.sum())), 1), "js_req_db": jsreq,
+                "users": [{"victim": u["victim"], "js_db": u["js_db"], "status": u["status"]} for u in users],
+                "legend": f"Tint: where {net['name']} works; hatched magenta: where {y['name']} denies it (J/S >= {jsreq:g} dB)."}
+    for em_, se in ((A, Bn), (Bn, A)):
+        if se["kind"] == "sensor" and em_["side"] != se["side"] and radiates(em_) and overlap(*band(em_), *band(se)):
+            ge = await coverage_for(em_, pos(em_), p.rx_h)
+            s_, w_, n_, e_ = ge.bounds()
+            LA, LO = raster_axes(s_, w_, n_, e_, px=480)
+            thr = se.get("sens_dbm") or p.default_sens
+            masks = band_masks(sample(ge, LA, LO), thr, em_["side"] if em_["side"] != "grey" else "grey")
+            d = next((d for d in _LAST["detections"] if d.get("sensor_id") == se["id"] and d["target_id"] == em_["id"]), None)
+            return {"kind": "hear", "emitter": em_["name"], "sensor": se["name"],
+                    "overlay": {"png": overlay_png(masks), "bounds": [[s_, w_], [n_, e_]]},
+                    "margin_db": d["margin_db"] if d else None, "detected": bool(d and d["detected"]),
+                    "legend": f"Where a sensor like {se['name']} ({thr:g} dBm) at ground level would hear {em_['name']}; "
+                              f"the actual {se['name']} at its position and height: {'hears it' if d and d['detected'] else 'does not hear it'}"
+                              + (f" ({d['margin_db']:+} dB)." if d else ".")}
+    return {"kind": "none", "overlay": None, "legend": "No direct interaction: different bands, same side, or neither is a sensor or effector."}

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25m';
+  const BUILD = '2026-09-25p';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1443,27 +1443,27 @@
   // ---------------------------------------------------------------- EMO red / blue (notional scenarios)
   const EMO = { ents: [], res: null, t: 0, horizon: 0, params: { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000 }, draft: null, editId: null,
     playing: false, busy: false, pending: false, stale: false, started: 0, examples: null, about: '',
-    on: { blue_seen: false, red_seen: false, blue_denied: false, red_denied: false, blue_cov: false, red_cov: false, lines: true },
-    focus: null, focusRes: null, multi: false, sel: [], multiRes: {} };
+    on: { blue_seen: false, red_seen: false, blue_denied: false, red_denied: false, blue_cov: false, red_cov: false, lines: true, civil_lines: false },
+    focus: null, focusRes: null, multi: false, sel: [], multiRes: {}, pairRes: {} };
   const emoLayer = L.layerGroup().addTo(map);
-  const SIDE_COL = { blue: '#3c8cff', red: '#ff4646' };
+  const SIDE_COL = { blue: '#3c8cff', red: '#ff4646', grey: '#a6b0bd' };
   const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
     ['blue_denied', 'Blue nets denied', '#dc3cdc'], ['red_denied', 'Red nets denied', '#ffa028'], ['blue_cov', 'Blue net coverage', '#3c8cff'],
-    ['red_cov', 'Red net coverage', '#ff5a5a'], ['lines', 'Detections, bearings, J/S lines', '#c8d3e0']];
+    ['red_cov', 'Red net coverage', '#ff5a5a'], ['grey_seen', 'Civil emissions heard', '#c8ccd4'], ['grey_denied', 'Civil users denied (collateral)', '#ffffff'], ['civil_lines', 'Lines to civil emitters', '#a6b0bd'], ['lines', 'Detections, bearings, J/S lines', '#c8d3e0']];
   const KIND_TXT = { emitter: 'Emitter', receiver: 'Net user', sensor: 'ES sensor', effector: 'EA effector' };
-  function emoIcon(e) {
-    const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : 'SHGPU----------');
+  function emoIcon(e, off = [0, 0]) {
+    const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : e.side === 'grey' ? 'SNGPU----------' : 'SHGPU----------');
     const air = EMO.res?.on_air?.[e.id] ?? e.active;
     const dim = e.kind !== 'sensor' && (e.kind !== 'receiver' || e.eirp_dbm != null) && !air;
     let html = null, sz = [16, 16], anc = [8, 8];
     if (window.ms) {
       try {
-        const sym = new ms.Symbol(sidc, { size: 24, uniqueDesignation: e.name.slice(0, 20), additionalInformation: `${KIND_TXT[e.kind]}${e.category ? ' · ' + e.category.toUpperCase() : ''}${dim ? ' · OFF-AIR' : ''}` });
+        const sym = new ms.Symbol(sidc, { size: 24, ...(e.side === 'grey' ? { fillColor: '#a6b0bd', colorMode: 'Light' } : {}), uniqueDesignation: e.name.slice(0, 20), additionalInformation: `${KIND_TXT[e.kind]}${e.category ? ' · ' + e.category.toUpperCase() : ''}${dim ? ' · OFF-AIR' : ''}` });
         html = sym.asSVG(); const s = sym.getSize(), a = sym.getAnchor(); sz = [s.width, s.height]; anc = [a.x, a.y];
       } catch (err) { console.warn('milsymbol', err); }
     }
     html = html || `<div style="width:14px;height:14px;border:2px solid #fff;background:${SIDE_COL[e.side]};${e.side === 'red' ? 'transform:rotate(45deg)' : 'border-radius:3px'}"></div>`;
-    return L.divIcon({ className: 'emo-sym', html: `<div style="opacity:${dim ? 0.35 : 1}">${html}</div>`, iconSize: sz, iconAnchor: anc });
+    return L.divIcon({ className: 'emo-sym', html: `<div style="opacity:${dim ? 0.35 : 1}">${html}</div>`, iconSize: sz, iconAnchor: [anc[0] - off[0], anc[1] - off[1]] });
   }
   const emoPos = (e) => (EMO.t === 0 || !EMO.res?.positions?.[e.id]) ? [e.lat, e.lon] : EMO.res.positions[e.id];
   const emoPosId = (id, fallback) => { const e = EMO.ents.find((x) => x.id === id); return e ? emoPos(e) : fallback; };
@@ -1472,9 +1472,13 @@
     const r = EMO.res;
     const F = EMO.focus ? EMO.focusRes : null;
     const M = EMO.multi && EMO.sel.length > 1;
-    if (M) { for (const id of EMO.sel) { const R = EMO.multiRes[id]; if (R?.overlay) L.imageOverlay(R.overlay.png, R.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.3 : 0.8 }).addTo(emoLayer); } }
+    if (M) {
+      const inPair = new Set();
+      for (const [k, P] of Object.entries(EMO.pairRes)) { if (P?.overlay) { k.split('|').forEach((x) => inPair.add(x)); L.imageOverlay(P.overlay.png, P.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.3 : 0.9 }).addTo(emoLayer); } }
+      for (const id of EMO.sel) { if (inPair.has(id)) continue; const R = EMO.multiRes[id]; if (R?.overlay) L.imageOverlay(R.overlay.png, R.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.3 : 0.7 }).addTo(emoLayer); }
+    }
     else if (F?.overlay) L.imageOverlay(F.overlay.png, F.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
-    if (!EMO.focus && !M) for (const [k] of EMO_LAYERS) if (k !== 'lines' && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
+    if (!EMO.focus && !M) for (const [k] of EMO_LAYERS) if (!['lines', 'civil_lines'].includes(k) && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
     const selSet = new Set(EMO.sel);
     const selNames = new Set(EMO.ents.filter((e) => selSet.has(e.id)).map((e) => e.name));
     const inv = (a, b) => M ? (selSet.has(a) && selSet.has(b)) : (!EMO.focus || a === EMO.focus || b === EMO.focus);
@@ -1482,7 +1486,8 @@
       ...((F?.jams || []).map((x) => x.victim_id)), ...((F?.jammed || []).flatMap((x) => [x.effector_id, x.victim_id]))] : []);
     for (const e of EMO.ents) if (e.track?.length) L.polyline([[e.lat, e.lon], ...e.track], { color: SIDE_COL[e.side], weight: 2, dashArray: '6 6', opacity: 0.7, interactive: false }).addTo(emoLayer);
     if (EMO.on.lines && r) {
-      for (const d of r.detections.filter((x) => x.detected && inv(x.sensor_id, x.target_id))) {
+      const greyIds = new Set(EMO.ents.filter((e) => e.side === 'grey').map((e) => e.id));
+      for (const d of r.detections.filter((x) => x.detected && inv(x.sensor_id, x.target_id) && (EMO.on.civil_lines || M || EMO.focus || !greyIds.has(x.target_id)))) {
         L.polyline([emoPosId(d.sensor_id, d.a), emoPosId(d.target_id, d.b)], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: EMO.stale ? 0.35 : 0.7, dashArray: d.df ? null : '2 5' })
           .bindTooltip(`${esc(d.sensor)} hears ${esc(d.target)}: ${d.level_dbm} dBm, margin ${d.margin_db} dB${d.df ? ' (DF bearing)' : ''}`).addTo(emoLayer);
       }
@@ -1491,6 +1496,7 @@
         L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : 1.5, fillOpacity: f.targetable ? 0.25 : 0.08 })
           .bindTooltip(`${f.targetable ? 'FIXED, TARGETABLE' : 'Fix'}: ${esc(f.target)} ±${f.fix.error_m} m (cut ${f.fix.cut_deg}°, ${esc(f.fix.sensors.join(' + '))})`, { direction: 'top' }).addTo(emoLayer);
         if (f.targetable) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl', html: `FIX ±${f.fix.error_m} m`, iconSize: [84, 16], iconAnchor: [42, -10] }) }).addTo(emoLayer);
+        else if (f.located && (EMO.on.civil_lines || M || EMO.focus)) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl emo-loc', html: `located ±${f.fix.error_m} m`, iconSize: [96, 16], iconAnchor: [48, -10] }) }).addTo(emoLayer);
       }
       for (const j of r.jamming.filter((x) => inv(x.effector_id, x.victim_id) || (EMO.focus && F?.kind === 'emitter' && x.net === F?.name))) {
         const col = j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6';
@@ -1498,8 +1504,12 @@
           .bindTooltip(`${esc(j.effector)} → ${esc(j.victim)}: J/S ${j.js_db} dB vs ${j.js_req_db} dB needed → ${esc(j.status)}${j.bw_penalty_db ? ` (bandwidth loss ${j.bw_penalty_db} dB)` : ''}`).addTo(emoLayer);
       }
     }
+    // fan out co-located symbols (e.g. a ship's radar, radio and EA) so each can be tapped
+    const stack = {}, fan = {};
+    for (const e of EMO.ents) { const p = emoPos(e); const k = `${p[0].toFixed(3)},${p[1].toFixed(3)}`; (stack[k] = stack[k] || []).push(e.id); }
+    for (const ids of Object.values(stack)) if (ids.length > 1) ids.forEach((id, i) => { const a = (2 * Math.PI * i) / ids.length - Math.PI / 2, r = 16 + 5 * ids.length; fan[id] = [Math.round(r * Math.cos(a)), Math.round(r * Math.sin(a))]; });
     for (const e of EMO.ents) {
-      const mk = L.marker(emoPos(e), { icon: emoIcon(e), draggable: EMO.t === 0, zIndexOffset: e.id === EMO.focus ? 2000 : 1000, autoPan: true,
+      const mk = L.marker(emoPos(e), { icon: emoIcon(e, fan[e.id]), draggable: EMO.t === 0, zIndexOffset: e.id === EMO.focus ? 2000 : 1000, autoPan: true,
         opacity: (EMO.focus || M) && !involved.has(e.id) ? 0.3 : 1 });
       mk.on('click', (ev) => (EMO.multi || ev.originalEvent?.shiftKey) ? emoToggleSel(e.id) : emoFocus(e.id));
       mk.on('dragend', async () => {
@@ -1531,7 +1541,7 @@
       emoDraw(); emoCard(emoCardHtml(EMO.focusRes));
     } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
   }
-  function emoClearFocus() { EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; document.getElementById('emo-card')?.remove(); emoDraw(); }
+  function emoClearFocus() { EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; document.getElementById('emo-card')?.remove(); emoDraw(); }
   function emoCard(html) {
     let c = document.getElementById('emo-card');
     if (!c) { c = document.createElement('div'); c.id = 'emo-card'; document.body.appendChild(c); }
@@ -1578,6 +1588,11 @@
     if (!EMO.res) { emoCard('<span class="dim">Waiting for the analysis to finish…</span>'); return; }
     try {
       await Promise.all(EMO.sel.filter((id) => !EMO.multiRes[id]).map(async (id) => { EMO.multiRes[id] = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`); }));
+      const pairs = []; for (let i = 0; i < EMO.sel.length; i++) for (let k = i + 1; k < EMO.sel.length; k++) pairs.push([EMO.sel[i], EMO.sel[k]]);
+      for (const key of Object.keys(EMO.pairRes)) { const [a, b] = key.split('|'); if (!EMO.sel.includes(a) || !EMO.sel.includes(b)) delete EMO.pairRes[key]; }
+      await Promise.all(pairs.filter(([a, b]) => !(`${a}|${b}` in EMO.pairRes)).map(async ([a, b]) => {
+        try { const P = await api(`/api/emo/pair?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&t_min=${EMO.t}`); EMO.pairRes[`${a}|${b}`] = P.kind === 'none' ? null : P; } catch (e) { EMO.pairRes[`${a}|${b}`] = null; }
+      }));
       EMO.focusRes = EMO.multiRes[EMO.focus] || null;
       emoDraw(); emoCard(emoMultiHtml());
     } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
@@ -1599,10 +1614,40 @@
       </select></p>
       <p class="dim">Add from the list, or tap symbols on the map${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}; × removes. All selected footprints are shown; lines only between them.</p>
       ${EMO.sel.length < 2 ? '<p class="dim">Select at least one more entity.</p>' : ''}
+      ${Object.values(EMO.pairRes).filter(Boolean).map((P) => P.kind === 'jam'
+        ? `<div class="emo-pair"><b>${esc(P.effector)} vs ${esc(P.net)}</b>: ${P.space ? `denies ${P.denied_km2} km²` : `denies <b>${P.denied_pct}%</b> of the net's coverage (${P.denied_km2} of ${P.coverage_km2} km²)`}; fails at J/S ${P.js_req_db} dB.${P.users.length ? '<br>' + P.users.map((u) => `${esc(u.victim)}: J/S ${u.js_db} dB, <b style="color:${u.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(u.status)}</b>`).join(' · ') : ''}<div class="dim">${esc(P.legend)}</div></div>`
+        : `<div class="emo-pair"><b>${esc(P.sensor)} ${P.detected ? 'hears' : 'does not hear'} ${esc(P.emitter)}</b>${P.margin_db != null ? ` (${P.margin_db >= 0 ? '+' : ''}${P.margin_db} dB)` : ''}<div class="dim">${esc(P.legend)}</div></div>`).join('')}
       ${tbl(`Who hears whom (${det.filter((d) => d.detected).length})`, det.map((d) => row(`${nm(d.sensor_id)} → ${nm(d.target_id)}`, `${d.margin_db >= 0 ? '+' : ''}${d.margin_db} dB`, d.detected ? (d.df ? 'heard, DF bearing' : 'heard') : '<span class="dim">not heard</span>')))}
       ${tbl('Fixes on selected', fx.map((f) => row(esc(f.target), `±${f.fix.error_m} m`, `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}by ${esc(f.fix.sensors.join(' + '))}`)))}
       ${tbl(`Who jams whom (${jam.length})`, jam.map((j) => row(`${nm(j.effector_id)} → ${nm(j.victim_id)}`, `J/S ${j.js_db} dB`, `<b style="color:${j.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(j.status)}</b>`)))}
       ${EMO.sel.length > 1 && !det.length && !jam.length ? '<p class="dim">No interactions between these on their frequencies (different bands, or no sensor/effector among them).</p>' : ''}`;
+  }
+  function emoAskBar() {
+    if (document.getElementById('emo-askbar') || !EMO.ents.length) return;
+    const bar = document.createElement('div'); bar.id = 'emo-askbar';
+    bar.innerHTML = '<input id="emo-askmap" placeholder="Ask about this scenario or your selection…"><button id="emo-askgo">Ask</button><button id="emo-askx" title="Hide">×</button>';
+    document.body.appendChild(bar);
+    const go = async () => {
+      const q = $('#emo-askmap').value.trim(); if (q.length < 2) return;
+      const sel = EMO.multi && EMO.sel.length ? EMO.sel : EMO.focus ? [EMO.focus] : null;
+      let card = document.getElementById('emo-askcard'); if (!card) { card = document.createElement('div'); card.id = 'emo-askcard'; document.body.appendChild(card); }
+      card.innerHTML = `<div class="emo-card-head"><b>EMO analyst</b><span class="dim">${sel ? `about ${sel.length} selected` : 'whole scenario'}</span><span class="btns"><button id="emo-askclose">Close</button></span></div><div id="emo-askbody"><span class="spinner"></span> thinking… (about a minute)</div>`;
+      $('#emo-askclose').addEventListener('click', () => card.remove());
+      let text = '';
+      try {
+        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel }) });
+        const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+        while (true) {
+          const { value, done } = await rd.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); const parts = buf.split('\n\n'); buf = parts.pop();
+          for (const p of parts) { const l = p.split('\n').find((x) => x.startsWith('data: ')); if (!l) continue; const d = JSON.parse(l.slice(6)); if (d.t) { text += d.t; $('#emo-askbody').textContent = text; } }
+        }
+        $('#emo-askbody').innerHTML = renderMd(text || '(no answer)');
+      } catch (err) { $('#emo-askbody').innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+    };
+    $('#emo-askgo').addEventListener('click', go);
+    $('#emo-askmap').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+    $('#emo-askx').addEventListener('click', () => bar.remove());
   }
   async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
   let emoTick = null;
@@ -1614,8 +1659,8 @@
     try {
       await emoLoad();
       EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min;
-      EMO.stale = EMO.pending; emoDraw(); emoResults();
-      if (EMO.multi && EMO.sel.length) { EMO.multiRes = {}; emoMultiRefresh(); } else if (EMO.focus) emoFocus(EMO.focus);
+      EMO.stale = EMO.pending; emoDraw(); emoResults(); emoAskBar();
+      if (EMO.multi && EMO.sel.length) { EMO.multiRes = {}; EMO.pairRes = {}; emoMultiRefresh(); } else if (EMO.focus) emoFocus(EMO.focus);
       const fx = EMO.res.fixes.filter((f) => f.targetable).length;
       const worst = [...EMO.res.nets].sort((a, b) => b.denied_pct - a.denied_pct)[0];
       emoStatus(`EMO T+${Math.round(EMO.t)} min${EMO.pending ? ' · updating…' : ''} · ${fx} targetable fix${fx === 1 ? '' : 'es'}${worst ? ` · ${worst.net} ${worst.denied_pct}% denied` : ''} · ${EMO.res.compute_s} s`);
@@ -1629,7 +1674,7 @@
     chip.textContent = t; chip.classList.toggle('busy', /computing|updating/.test(t));
   }
   function emoToast(t) { console.warn(t); emoStatus(t); }
-  const EMO_FIELDS = [['name', 'Name', 'text'], ['side', 'Side (blue/red)', 'text'], ['kind', 'Kind (emitter/receiver/sensor/effector)', 'text'],
+  const EMO_FIELDS = [['name', 'Name', 'text'], ['side', 'Side (blue/red/grey)', 'text'], ['kind', 'Kind (emitter/receiver/sensor/effector)', 'text'],
     ['category', 'Category (comms/radar/datalink/nav/cuas/other/es/df/rwr)', 'text'], ['lat', 'Lat', 'number'], ['lon', 'Lon', 'number'],
     ['h_agl', 'Height m AGL', 'number'], ['freq_mhz', 'Freq MHz (sensor: band start)', 'number'], ['f_hi_mhz', 'Sensor band end MHz', 'number'],
     ['bw_khz', 'Bandwidth kHz', 'number'], ['eirp_dbm', 'EIRP dBm (blank = receive only)', 'number'], ['sens_dbm', 'Sensitivity dBm', 'number'],

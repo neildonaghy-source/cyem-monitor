@@ -1,8 +1,8 @@
 /* CyEM Monitor service worker: makes the app installable and keeps the shell
    available if the tailnet drops. Network-first for everything; only the static
    shell is cached as a fallback. API responses are never cached. */
-const CACHE = 'cyem-shell-v32';
-const SHELL = ['/', '/static/style.css?v=2026-09-25m', '/static/app.js?v=2026-09-25m', '/static/vendor/leaflet.js', '/static/vendor/leaflet.css', '/static/vendor/marked.umd.js', '/static/manifest.webmanifest'];
+const CACHE = 'cyem-shell-v35';
+const SHELL = ['/', '/static/style.css?v=2026-09-25p', '/static/app.js?v=2026-09-25p', '/static/vendor/leaflet.js', '/static/vendor/leaflet.css', '/static/vendor/marked.umd.js', '/static/manifest.webmanifest'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => null)); self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

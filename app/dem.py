@@ -66,8 +66,8 @@ def _dataset(path: Path):
     key = str(path)
     ds = _open.get(key)
     if ds is None:
-        if len(_open) > 8:     # keep a handful of tiles open
-            for k in list(_open)[:4]:
+        if len(_open) > 40:    # enough for a 100 km footprint (up to ~12 tiles) plus other callers; handles are small
+            for k in list(_open)[:10]:
                 try:
                     _open.pop(k).close()   # type: ignore[attr-defined]
                 except Exception:  # noqa: BLE001

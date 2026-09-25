@@ -53,7 +53,7 @@ class SiteIn(BaseModel):
     pattern: str = Field(default="omni", pattern="^(omni|sector)$")
     azimuth: float | None = Field(default=None, ge=0, lt=360)
     beamwidth: float | None = Field(default=None, gt=1, le=180)
-    radius_km: float = Field(default=20, gt=0.5, le=60)
+    radius_km: float = Field(default=20, gt=0.5, le=100)
     rx_h_agl: float = Field(default=1.5, ge=0, le=100)
     grx_dbi: float = Field(default=0, ge=-10, le=40)
     sens_dbm: float = Field(default=-110, ge=-160, le=0)

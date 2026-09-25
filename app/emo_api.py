@@ -75,7 +75,7 @@ class EntityIn(BaseModel):
     beamwidth: float | None = Field(default=None, gt=1, le=180)
     net: str | None = None
     active: bool = True
-    radius_km: float = Field(default=30, gt=0.5, le=60)
+    radius_km: float | None = Field(default=None, gt=0.5, le=100)   # blank: automatic by band and height
     sidc: str | None = Field(default=None, max_length=30)
     track: list[list[float]] | None = None
     speed_kmh: float | None = Field(default=None, ge=0, le=2000)
@@ -101,10 +101,19 @@ def _decode(row: dict) -> dict:
     return r
 
 
+def auto_radius(freq_mhz: float, h_agl: float) -> float:
+    """Default footprint radius: airborne 100 km, HF/VHF 80 km, UHF 60 km, 1 GHz and above 40 km."""
+    if h_agl > 300:
+        return 100.0
+    return 80.0 if freq_mhz < 300 else 60.0 if freq_mhz < 1000 else 40.0
+
+
 def _upsert(b: EntityIn, eid: str | None) -> dict:
     db = get_db()
     eid = eid or uuid.uuid4().hex[:8]
     d = b.model_dump()
+    if d.get("radius_km") is None:
+        d["radius_km"] = auto_radius(d["freq_mhz"], d["h_agl"])
     d["track"] = json.dumps(d["track"]) if d.get("track") else None
     d["active"] = 1 if d["active"] else 0
     cols = list(d)
@@ -462,7 +471,9 @@ async def load_example(name: str):
         c.execute("DELETE FROM emo_entities")
     ids = {}
     for d in ex["entities"]:
-        ids[d["name"]] = _upsert(EntityIn(**{k: v for k, v in d.items() if k != "net"}), None)["id"]
+        dd = {k: v for k, v in d.items() if k != "net"}
+        dd["radius_km"] = max(dd.get("radius_km") or 0, auto_radius(dd["freq_mhz"], dd.get("h_agl", 2)))
+        ids[d["name"]] = _upsert(EntityIn(**dd), None)["id"]
     with get_db().tx() as c:
         for d in ex["entities"]:
             if d.get("net"):

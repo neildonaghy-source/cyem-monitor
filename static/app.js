@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25c';
+  const BUILD = '2026-09-25d';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1147,7 +1147,7 @@
   const COV_FIELDS = [['name', 'Site name', 'text'], ['lat', 'Lat', 'number'], ['lon', 'Lon', 'number'], ['h_agl', 'Mast m AGL', 'number'],
     ['freq_mhz', 'Freq MHz', 'number'], ['bw_khz', 'BW kHz', 'number'], ['ptx_dbm', 'Tx dBm', 'number'], ['gtx_dbi', 'Ant gain dBi', 'number'],
     ['ltx_db', 'Feeder loss dB', 'number'], ['pattern', 'Pattern omni/sector', 'text'], ['azimuth', 'Sector azimuth °', 'number'], ['beamwidth', 'Beamwidth °', 'number'],
-    ['radius_km', 'Radius km (≤60)', 'number'], ['rx_h_agl', 'Rx height m', 'number'], ['grx_dbi', 'Rx gain dBi', 'number'], ['sens_dbm', 'Rx sens dBm', 'number'],
+    ['radius_km', 'Radius km (≤100)', 'number'], ['rx_h_agl', 'Rx height m', 'number'], ['grx_dbi', 'Rx gain dBi', 'number'], ['sens_dbm', 'Rx sens dBm', 'number'],
     ['margin_db', 'Req margin dB', 'number'], ['itf_dbm', 'Interference thr dBm', 'number'], ['fine', 'Fine sampling (1 = on, ~3x slower)', 'number'], ['start_at', 'Start (Z)', 'datetime-local'], ['end_at', 'End (Z)', 'datetime-local']];
   function covForm(d) {
     const val = (k, t) => t === 'datetime-local' ? toLocalInput(d[k]) : esc(d[k] ?? '');
@@ -1588,7 +1588,7 @@
     ['bw_khz', 'Bandwidth kHz', 'number'], ['eirp_dbm', 'EIRP dBm (blank = receive only)', 'number'], ['sens_dbm', 'Sensitivity dBm', 'number'],
     ['js_req_db', 'Net fails at J/S dB', 'number'], ['df_rms_deg', 'DF accuracy ° RMS (sensor)', 'number'], ['fixed_level_dbm', 'Space signal dBm (GNSS)', 'number'],
     ['pattern', 'Antenna omni/sector', 'text'], ['azimuth', 'Sector azimuth °', 'number'], ['beamwidth', 'Beamwidth °', 'number'],
-    ['radius_km', 'Compute radius km', 'number'], ['speed_kmh', 'Track speed km/h', 'number'], ['sidc', 'APP-6 SIDC', 'text'], ['notes', 'Notes', 'text']];
+    ['radius_km', 'Footprint radius km (≤100, blank = auto)', 'number'], ['speed_kmh', 'Track speed km/h', 'number'], ['sidc', 'APP-6 SIDC', 'text'], ['notes', 'Notes', 'text']];
   function emoForm(d) {
     d = d || { side: 'blue', kind: 'emitter', category: 'comms', h_agl: 3, bw_khz: 25, pattern: 'omni', radius_km: 20 };
     const nets = EMO.ents.filter((e) => e.kind === 'emitter');

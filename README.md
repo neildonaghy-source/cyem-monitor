@@ -278,3 +278,4 @@ EMO button (and phone Tools sheet). Notional scenarios only. Symmetric model: bo
 Code: `app/emo_api.py`, `app/emo_examples.py`, `app/ems_core.py`; tests `tests/test_emo.py`.
 
 - **Focus (added 2026-09-25):** tap a symbol to see only that entity: its footprint in strength bands against the opposing sensors, who picks it up (margin, DF), what it hears, what it jams or is jammed by, and its fix. Whole-picture washes are off by default (tick boxes in the panel). Footprints stop at the entity compute radius (Edit to change).
+- **Footprint radius (2026-09-25):** up to 100 km; blank = automatic (airborne 100, HF/VHF 80, UHF 60, 1 GHz+ 40 km). Pairwise detections and DF fixes are computed along full terrain paths at any range; only the map footprints use the radius. Same compute cost (fixed 600 samples per radial, coarser steps at long range). DEM keeps up to 40 tiles open.

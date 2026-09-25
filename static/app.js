@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25i';
+  const BUILD = '2026-09-25k';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1444,7 +1444,7 @@
   const EMO = { ents: [], res: null, t: 0, horizon: 0, params: { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000 }, draft: null, editId: null,
     playing: false, busy: false, pending: false, stale: false, started: 0, examples: null, about: '',
     on: { blue_seen: false, red_seen: false, blue_denied: false, red_denied: false, blue_cov: false, red_cov: false, lines: true },
-    focus: null, focusRes: null };
+    focus: null, focusRes: null, multi: false, sel: [], multiRes: {} };
   const emoLayer = L.layerGroup().addTo(map);
   const SIDE_COL = { blue: '#3c8cff', red: '#ff4646' };
   const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
@@ -1471,10 +1471,14 @@
     emoLayer.clearLayers();
     const r = EMO.res;
     const F = EMO.focus ? EMO.focusRes : null;
-    if (F?.overlay) L.imageOverlay(F.overlay.png, F.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
-    if (!EMO.focus) for (const [k] of EMO_LAYERS) if (k !== 'lines' && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
-    const inv = (a, b) => !EMO.focus || a === EMO.focus || b === EMO.focus;
-    const involved = new Set(EMO.focus ? [EMO.focus, ...((F?.heard_by || []).map((d) => d.sensor_id)), ...((F?.hears || []).map((d) => d.target_id)),
+    const M = EMO.multi && EMO.sel.length > 1;
+    if (M) { for (const id of EMO.sel) { const R = EMO.multiRes[id]; if (R?.overlay) L.imageOverlay(R.overlay.png, R.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.3 : 0.8 }).addTo(emoLayer); } }
+    else if (F?.overlay) L.imageOverlay(F.overlay.png, F.overlay.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
+    if (!EMO.focus && !M) for (const [k] of EMO_LAYERS) if (k !== 'lines' && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
+    const selSet = new Set(EMO.sel);
+    const selNames = new Set(EMO.ents.filter((e) => selSet.has(e.id)).map((e) => e.name));
+    const inv = (a, b) => M ? (selSet.has(a) && selSet.has(b)) : (!EMO.focus || a === EMO.focus || b === EMO.focus);
+    const involved = M ? selSet : new Set(EMO.focus ? [EMO.focus, ...((F?.heard_by || []).map((d) => d.sensor_id)), ...((F?.hears || []).map((d) => d.target_id)),
       ...((F?.jams || []).map((x) => x.victim_id)), ...((F?.jammed || []).flatMap((x) => [x.effector_id, x.victim_id]))] : []);
     for (const e of EMO.ents) if (e.track?.length) L.polyline([[e.lat, e.lon], ...e.track], { color: SIDE_COL[e.side], weight: 2, dashArray: '6 6', opacity: 0.7, interactive: false }).addTo(emoLayer);
     if (EMO.on.lines && r) {
@@ -1482,7 +1486,7 @@
         L.polyline([emoPosId(d.sensor_id, d.a), emoPosId(d.target_id, d.b)], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: EMO.stale ? 0.35 : 0.7, dashArray: d.df ? null : '2 5' })
           .bindTooltip(`${esc(d.sensor)} hears ${esc(d.target)}: ${d.level_dbm} dBm, margin ${d.margin_db} dB${d.df ? ' (DF bearing)' : ''}`).addTo(emoLayer);
       }
-      for (const f of r.fixes.filter((x) => x.fix && (!EMO.focus || x.target === F?.name))) {
+      for (const f of r.fixes.filter((x) => x.fix && (M ? selNames.has(x.target) : (!EMO.focus || x.target === F?.name)))) {
         const col = f.target_side === 'blue' ? '#ff4646' : '#3cc8ff';
         L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : 1.5, fillOpacity: f.targetable ? 0.25 : 0.08 })
           .bindTooltip(`${f.targetable ? 'FIXED, TARGETABLE' : 'Fix'}: ${esc(f.target)} ±${f.fix.error_m} m (cut ${f.fix.cut_deg}°, ${esc(f.fix.sensors.join(' + '))})`, { direction: 'top' }).addTo(emoLayer);
@@ -1496,8 +1500,8 @@
     }
     for (const e of EMO.ents) {
       const mk = L.marker(emoPos(e), { icon: emoIcon(e), draggable: EMO.t === 0, zIndexOffset: e.id === EMO.focus ? 2000 : 1000, autoPan: true,
-        opacity: EMO.focus && !involved.has(e.id) ? 0.3 : 1 });
-      mk.on('click', () => emoFocus(e.id));
+        opacity: (EMO.focus || M) && !involved.has(e.id) ? 0.3 : 1 });
+      mk.on('click', (ev) => (EMO.multi || ev.originalEvent?.shiftKey) ? emoToggleSel(e.id) : emoFocus(e.id));
       mk.on('dragend', async () => {
         const ll = mk.getLatLng();
         e.lat = +ll.lat.toFixed(5); e.lon = +ll.lng.toFixed(5); EMO.stale = true; emoDraw();
@@ -1527,12 +1531,15 @@
       emoDraw(); emoCard(emoCardHtml(EMO.focusRes));
     } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
   }
-  function emoClearFocus() { EMO.focus = null; EMO.focusRes = null; document.getElementById('emo-card')?.remove(); emoDraw(); }
+  function emoClearFocus() { EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; document.getElementById('emo-card')?.remove(); emoDraw(); }
   function emoCard(html) {
     let c = document.getElementById('emo-card');
     if (!c) { c = document.createElement('div'); c.id = 'emo-card'; document.body.appendChild(c); }
     c.innerHTML = html;
     c.querySelector('[data-emo-clear]')?.addEventListener('click', emoClearFocus);
+    c.querySelector('[data-emo-multi]')?.addEventListener('click', () => { EMO.multi = true; EMO.sel = [EMO.focus]; emoMultiRefresh(); });
+    c.querySelector('[data-emo-done]')?.addEventListener('click', () => { const last = EMO.sel[EMO.sel.length - 1]; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; if (last) emoFocus(last); else emoClearFocus(); });
+    c.querySelectorAll('[data-emo-unsel]').forEach((b) => b.addEventListener('click', () => emoToggleSel(b.dataset.emoUnsel)));
     c.querySelector('[data-emo-emcon]')?.addEventListener('click', async (x) => {
       const b = x.currentTarget; await fetch(`/api/emo/${encodeURIComponent(EMO.focus)}/active?on=${b.dataset.on === '1'}`, { method: 'POST' }); EMO.stale = true; emoRun();
     });
@@ -1547,7 +1554,7 @@
     const hears = f.hears.filter((d) => d.detected), misses = f.hears.filter((d) => !d.detected);
     const radiates = ['emitter', 'effector'].includes(f.kind) || (f.kind === 'receiver' && e.eirp_dbm != null);
     return `<div class="emo-card-head"><b style="color:${col}">${esc(f.name)}</b> <span class="dim">${esc(f.side)} ${esc(KIND_TXT[f.kind] || f.kind)}${f.category ? ' · ' + esc(f.category) : ''}${f.active ? '' : ' · OFF-AIR'}</span>
-        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-clear>Clear focus</button></span></div>
+        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button><button data-emo-clear>Clear focus</button></span></div>
       ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); darker = just audible, brighter = +10 and +20 dB above; the outline is the limit.${f.kind === 'effector' ? ' Hatched magenta: denial it causes on victim nets.' : ''}</p>` : ''}
       ${f.fix?.fix ? `<p><b style="color:${f.fix.targetable ? '#ff4646' : '#f3b23e'}">${f.fix.targetable ? 'FIXED, TARGETABLE' : 'Fixed'}: ±${f.fix.fix.error_m} m</b> <span class="dim">(cut ${f.fix.fix.cut_deg}°, ${esc(f.fix.fix.sensors.join(' + '))})</span></p>` : (heard.some((d) => d.df) ? '<p class="dim">Single line of bearing only: not fixed.</p>' : '')}
       ${tbl(`Picked up by (${heard.length})`, heard.map((d) => row(esc(d.sensor), `+${d.margin_db} dB`, d.df ? 'DF bearing' : 'intercept')))}
@@ -1557,6 +1564,40 @@
       ${tbl(`Jams (${f.jams.length})`, f.jams.map((x) => row(esc(x.victim), `J/S ${x.js_db} dB`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
       ${tbl(`Under attack (${f.jammed.length})`, f.jammed.map((x) => row(`${esc(x.effector)} → ${esc(x.victim)}`, `J/S ${x.js_db} dB`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
       ${!heard.length && !missed.length && !hears.length && !misses.length && !f.jams.length && !f.jammed.length ? '<p class="dim">No interactions on its frequencies.</p>' : ''}`;
+  }
+  function emoToggleSel(id) {
+    if (!EMO.multi) { EMO.multi = true; EMO.sel = EMO.focus ? [EMO.focus] : []; }
+    EMO.sel = EMO.sel.includes(id) ? EMO.sel.filter((x) => x !== id) : [...EMO.sel, id];
+    if (!EMO.sel.length) return emoClearFocus();
+    emoMultiRefresh();
+  }
+  async function emoMultiRefresh() {
+    EMO.focus = EMO.sel[EMO.sel.length - 1] || null;
+    emoCard('<span class="dim">Loading selection…</span>');
+    if (!EMO.res) { emoCard('<span class="dim">Waiting for the analysis to finish…</span>'); return; }
+    try {
+      await Promise.all(EMO.sel.filter((id) => !EMO.multiRes[id]).map(async (id) => { EMO.multiRes[id] = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`); }));
+      EMO.focusRes = EMO.multiRes[EMO.focus] || null;
+      emoDraw(); emoCard(emoMultiHtml());
+    } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
+  }
+  function emoMultiHtml() {
+    const r = EMO.res, sel = new Set(EMO.sel), byId = Object.fromEntries(EMO.ents.map((e) => [e.id, e]));
+    const nm = (id) => `<span style="color:${SIDE_COL[byId[id]?.side] || '#fff'}">${esc(byId[id]?.name || id)}</span>`;
+    const chips = EMO.sel.map((id) => `<span class="emo-chipsel">${nm(id)} <button data-emo-unsel="${esc(id)}" title="Remove">×</button></span>`).join(' ');
+    const det = r.detections.filter((d) => sel.has(d.sensor_id) && sel.has(d.target_id)).sort((a, b) => b.margin_db - a.margin_db);
+    const jam = r.jamming.filter((j) => sel.has(j.effector_id) && sel.has(j.victim_id));
+    const names = new Set(EMO.sel.map((id) => byId[id]?.name));
+    const fx = r.fixes.filter((f) => names.has(f.target) && f.fix);
+    const row = (a, b, c) => `<tr><td>${a}</td><td class="mono">${b}</td><td>${c || ''}</td></tr>`;
+    const tbl = (h, rows) => rows.length ? `<h4>${h}</h4><table class="grid">${rows.join('')}</table>` : '';
+    return `<div class="emo-card-head"><b>Comparing ${EMO.sel.length}</b><span class="btns"><button data-emo-done>Done</button><button data-emo-clear>Clear</button></span></div>
+      <p>${chips}</p><p class="dim">Tap symbols to add or remove${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}. Footprints of all selected are shown; lines only between them.</p>
+      ${EMO.sel.length < 2 ? '<p class="dim">Select at least one more entity.</p>' : ''}
+      ${tbl(`Who hears whom (${det.filter((d) => d.detected).length})`, det.map((d) => row(`${nm(d.sensor_id)} → ${nm(d.target_id)}`, `${d.margin_db >= 0 ? '+' : ''}${d.margin_db} dB`, d.detected ? (d.df ? 'heard, DF bearing' : 'heard') : '<span class="dim">not heard</span>')))}
+      ${tbl('Fixes on selected', fx.map((f) => row(esc(f.target), `±${f.fix.error_m} m`, `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}by ${esc(f.fix.sensors.join(' + '))}`)))}
+      ${tbl(`Who jams whom (${jam.length})`, jam.map((j) => row(`${nm(j.effector_id)} → ${nm(j.victim_id)}`, `J/S ${j.js_db} dB`, `<b style="color:${j.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(j.status)}</b>`)))}
+      ${EMO.sel.length > 1 && !det.length && !jam.length ? '<p class="dim">No interactions between these on their frequencies (different bands, or no sensor/effector among them).</p>' : ''}`;
   }
   async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
   let emoTick = null;
@@ -1569,7 +1610,7 @@
       await emoLoad();
       EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min;
       EMO.stale = EMO.pending; emoDraw(); emoResults();
-      if (EMO.focus) emoFocus(EMO.focus);
+      if (EMO.multi && EMO.sel.length) { EMO.multiRes = {}; emoMultiRefresh(); } else if (EMO.focus) emoFocus(EMO.focus);
       const fx = EMO.res.fixes.filter((f) => f.targetable).length;
       const worst = [...EMO.res.nets].sort((a, b) => b.denied_pct - a.denied_pct)[0];
       emoStatus(`EMO T+${Math.round(EMO.t)} min${EMO.pending ? ' · updating…' : ''} · ${fx} targetable fix${fx === 1 ? '' : 'es'}${worst ? ` · ${worst.net} ${worst.denied_pct}% denied` : ''} · ${EMO.res.compute_s} s`);
@@ -1783,11 +1824,16 @@
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
       <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
-      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-pos">Set receiver position to this device</button></div>
+      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-pos">Set receiver position to this device</button> <button id="sdr-ins">Insight (AI)</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       <div id="sdr-out"><span class="spinner"></span></div>`;
     openModal('SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
+    $('#sdr-ins').addEventListener('click', async () => {
+      const o = $('#sdr-insout'); o.innerHTML = '<span class="spinner"></span> reading the spectrum… (about a minute)';
+      try { const r = await api(`/api/insight/sdr?node=${encodeURIComponent(SDR.node)}`); o.innerHTML = renderMd(r.text); }
+      catch (e) { o.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+    });
     $('#sdr-pos').addEventListener('click', () => {
       if (!navigator.geolocation) return toastSDR('No location on this device');
       navigator.geolocation.getCurrentPosition(async (p) => {

@@ -244,3 +244,5 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 #emo-card .btns { margin-left: auto; display: flex; gap: 4px; }
 #emo-card table.grid td { padding: 2px 6px; }
 @media (max-width: 900px) { #emo-card { top: auto; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); right: 3vw; max-height: 45vh; } }
+.emo-chipsel { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #243040; border-radius: 12px; padding: 1px 4px 1px 8px; margin: 2px 0; }
+.emo-chipsel button { padding: 0 6px; }

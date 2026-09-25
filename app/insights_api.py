@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/insight", tags=["insight"])
 
 STYLE = ("British English, plain and concise, for a senior UK electromagnetic operations practitioner. Use only the facts "
          "given; quote names and numbers exactly; never move an item between the sorted lists. If something cannot be "
-         "judged from the facts, say so. No listening to content is involved or suggested. Under 200 words.")
+         "judged from the facts, say so. Do not speculate about causes (clutter, multipath, weather) not in the facts. Jamming degrades what receivers near the jammer receive; it does not stop emissions being heard. No listening to content is involved or suggested. Under 200 words.")
 
 
 async def _ask(system: str, facts: str) -> str:

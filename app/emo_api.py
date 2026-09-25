@@ -377,7 +377,7 @@ async def run(p: RunIn, t_min: float = 0):
             lvl = await p2p_level(e, e["pos"], x, x["pos"])
             margin = round(lvl - (x.get("sens_dbm") or p.default_sens), 1)
             det = margin >= 0
-            d = {"sensor": x["name"], "sensor_side": x["side"], "target": e["name"], "target_id": e["id"],
+            d = {"sensor": x["name"], "sensor_id": x["id"], "sensor_side": x["side"], "target": e["name"], "target_id": e["id"],
                  "category": e.get("category"), "level_dbm": round(lvl, 1), "margin_db": margin, "detected": det,
                  "df": bool(x.get("df_rms_deg")), "a": x["pos"], "b": e["pos"]}
             detections.append(d)
@@ -419,7 +419,7 @@ async def run(p: RunIn, t_min: float = 0):
                 vs = v.get("sens_dbm") or nsens
                 js = round(J - Sv, 1)
                 status = "no signal" if Sv < vs else ("denied" if js >= jsreq else "holds")
-                jamming.append({"effector": y["name"], "effector_side": y["side"], "victim": v["name"], "net": nn["name"],
+                jamming.append({"effector": y["name"], "effector_id": y["id"], "victim_id": v["id"], "effector_side": y["side"], "victim": v["name"], "net": nn["name"],
                                 "category": y.get("category"), "j_dbm": round(J, 1), "s_dbm": round(Sv, 1), "js_db": js,
                                 "js_req_db": jsreq, "bw_penalty_db": round(pen, 1), "status": status, "a": y["pos"], "b": v["pos"]})
         L[f"{nn['side']}_denied"] |= den

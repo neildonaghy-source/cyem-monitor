@@ -231,3 +231,8 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 .emo-trackbar { position: fixed; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 1500;
   background: var(--panel, #10161d); border: 1px solid var(--border, #243040); border-radius: 8px; padding: 8px 12px; display: flex; gap: 8px; align-items: center; }
 .emo-fixlbl { color: #fff; background: rgba(160, 20, 20, .85); border-radius: 3px; font: 600 10px var(--font, sans-serif); text-align: center; line-height: 16px; white-space: nowrap; }
+
+#emo-chip { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); z-index: 1100;
+  background: rgba(10,14,19,.92); color: #e6edf3; border: 1px solid #3c8cff; border-radius: 16px; padding: 5px 12px; font-size: 12px; cursor: pointer; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#emo-chip.busy { border-color: #f3b23e; }
+@media (max-width: 900px) { #emo-chip { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); } }

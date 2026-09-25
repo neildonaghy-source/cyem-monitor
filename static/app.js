@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25a';
+  const BUILD = '2026-09-25b';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1442,7 +1442,7 @@
   $('#btn-hf').addEventListener('click', () => openHF());
   // ---------------------------------------------------------------- EMO red / blue (notional scenarios)
   const EMO = { ents: [], res: null, t: 0, horizon: 0, params: { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000 }, draft: null, editId: null,
-    playing: false, busy: false, examples: null, about: '',
+    playing: false, busy: false, pending: false, stale: false, started: 0, examples: null, about: '',
     on: { blue_seen: true, red_seen: false, blue_denied: true, red_denied: true, blue_cov: false, red_cov: false, lines: true } };
   const emoLayer = L.layerGroup().addTo(map);
   const SIDE_COL = { blue: '#3c8cff', red: '#ff4646' };
@@ -1463,15 +1463,16 @@
     html = html || `<div style="width:14px;height:14px;border:2px solid #fff;background:${SIDE_COL[e.side]};${e.side === 'red' ? 'transform:rotate(45deg)' : 'border-radius:3px'}"></div>`;
     return L.divIcon({ className: 'emo-sym', html: `<div style="opacity:${dim ? 0.35 : 1}">${html}</div>`, iconSize: sz, iconAnchor: anc });
   }
-  const emoPos = (e) => EMO.res?.positions?.[e.id] || [e.lat, e.lon];
+  const emoPos = (e) => (EMO.t === 0 || !EMO.res?.positions?.[e.id]) ? [e.lat, e.lon] : EMO.res.positions[e.id];
+  const emoPosId = (id, fallback) => { const e = EMO.ents.find((x) => x.id === id); return e ? emoPos(e) : fallback; };
   function emoDraw() {
     emoLayer.clearLayers();
     const r = EMO.res;
-    for (const [k] of EMO_LAYERS) if (k !== 'lines' && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false }).addTo(emoLayer);
+    for (const [k] of EMO_LAYERS) if (k !== 'lines' && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false, opacity: EMO.stale ? 0.35 : 1 }).addTo(emoLayer);
     for (const e of EMO.ents) if (e.track?.length) L.polyline([[e.lat, e.lon], ...e.track], { color: SIDE_COL[e.side], weight: 2, dashArray: '6 6', opacity: 0.7, interactive: false }).addTo(emoLayer);
     if (EMO.on.lines && r) {
       for (const d of r.detections.filter((x) => x.detected)) {
-        L.polyline([d.a, d.b], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: 0.7, dashArray: d.df ? null : '2 5' })
+        L.polyline([emoPosId(d.sensor_id, d.a), emoPosId(d.target_id, d.b)], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: EMO.stale ? 0.35 : 0.7, dashArray: d.df ? null : '2 5' })
           .bindTooltip(`${esc(d.sensor)} hears ${esc(d.target)}: ${d.level_dbm} dBm, margin ${d.margin_db} dB${d.df ? ' (DF bearing)' : ''}`).addTo(emoLayer);
       }
       for (const f of r.fixes.filter((x) => x.fix)) {
@@ -1482,7 +1483,7 @@
       }
       for (const j of r.jamming) {
         const col = j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6';
-        L.polyline([j.a, j.b], { color: col, weight: 2.5, opacity: 0.9 })
+        L.polyline([emoPosId(j.effector_id, j.a), emoPosId(j.victim_id, j.b)], { color: col, weight: 2.5, opacity: EMO.stale ? 0.35 : 0.9 })
           .bindTooltip(`${esc(j.effector)} → ${esc(j.victim)}: J/S ${j.js_db} dB vs ${j.js_req_db} dB needed → ${esc(j.status)}${j.bw_penalty_db ? ` (bandwidth loss ${j.bw_penalty_db} dB)` : ''}`).addTo(emoLayer);
       }
     }
@@ -1490,7 +1491,8 @@
       const mk = L.marker(emoPos(e), { icon: emoIcon(e), draggable: EMO.t === 0, zIndexOffset: 1000, autoPan: true });
       mk.on('dragend', async () => {
         const ll = mk.getLatLng();
-        try { await postJson(`/api/emo/${encodeURIComponent(e.id)}/move`, { lat: +ll.lat.toFixed(5), lon: +ll.lng.toFixed(5) }); await emoLoad(); emoRun(); } catch (err) { emoToast(err.message); }
+        e.lat = +ll.lat.toFixed(5); e.lon = +ll.lng.toFixed(5); EMO.stale = true; emoDraw();
+        try { await postJson(`/api/emo/${encodeURIComponent(e.id)}/move`, { lat: e.lat, lon: e.lon }); emoRun(); } catch (err) { emoToast(err.message); }
       });
       const radiates = e.kind === 'emitter' || e.kind === 'effector' || (e.kind === 'receiver' && e.eirp_dbm != null);
       mk.bindPopup(() => `<h4 style="color:${SIDE_COL[e.side]}">${esc(e.name)}</h4>${kv([['Role', `${e.side} ${KIND_TXT[e.kind].toLowerCase()}${e.category ? ' (' + e.category + ')' : ''}`],
@@ -1509,13 +1511,28 @@
     }));
   });
   async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
+  let emoTick = null;
   async function emoRun() {
-    if (EMO.busy) return; EMO.busy = true; emoStatus('computing…');
-    try { EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min; emoDraw(); emoStatus(`T+${Math.round(EMO.t)} min · ${EMO.res.compute_s} s`); emoResults(); }
-    catch (err) { emoStatus(err.message); }
-    finally { EMO.busy = false; }
+    if (EMO.busy) { EMO.pending = true; EMO.stale = true; return; }
+    EMO.busy = true; EMO.pending = false; EMO.started = Date.now();
+    clearInterval(emoTick);
+    emoTick = setInterval(() => emoStatus(`EMO computing… ${Math.round((Date.now() - EMO.started) / 1000)} s${EMO.res ? '' : ' (first run of a scenario takes about a minute)'}`), 1000);
+    try {
+      await emoLoad();
+      EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min;
+      EMO.stale = EMO.pending; emoDraw(); emoResults();
+      const fx = EMO.res.fixes.filter((f) => f.targetable).length;
+      const worst = [...EMO.res.nets].sort((a, b) => b.denied_pct - a.denied_pct)[0];
+      emoStatus(`EMO T+${Math.round(EMO.t)} min${EMO.pending ? ' · updating…' : ''} · ${fx} targetable fix${fx === 1 ? '' : 'es'}${worst ? ` · ${worst.net} ${worst.denied_pct}% denied` : ''} · ${EMO.res.compute_s} s`);
+    } catch (err) { emoStatus(`EMO error: ${err.message}`); }
+    finally { clearInterval(emoTick); EMO.busy = false; if (EMO.pending) emoRun(); }
   }
-  function emoStatus(t) { const el = $('#emo-status'); if (el) el.textContent = t; }
+  function emoStatus(t) {
+    const el = $('#emo-status'); if (el) el.textContent = t;
+    let chip = document.getElementById('emo-chip');
+    if (!chip) { chip = document.createElement('div'); chip.id = 'emo-chip'; chip.title = 'Open EMO panel'; chip.addEventListener('click', () => openEMO()); document.body.appendChild(chip); }
+    chip.textContent = t; chip.classList.toggle('busy', /computing|updating/.test(t));
+  }
   function emoToast(t) { console.warn(t); emoStatus(t); }
   const EMO_FIELDS = [['name', 'Name', 'text'], ['side', 'Side (blue/red)', 'text'], ['kind', 'Kind (emitter/receiver/sensor/effector)', 'text'],
     ['category', 'Category (comms/radar/datalink/nav/cuas/other/es/df/rwr)', 'text'], ['lat', 'Lat', 'number'], ['lon', 'Lon', 'number'],

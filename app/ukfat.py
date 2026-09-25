@@ -11,9 +11,10 @@ from pathlib import Path
 from .config import settings
 
 UNIT = {"khz": 1e3, "mhz": 1e6, "ghz": 1e9}
-_BAND = re.compile(r"^\s*([\d.]+)\s*[–-]\s*([\d.]+)\s*(khz|mhz|ghz)\s*$", re.I)       # Ofcom PDF has e.g. "108 MHZ"
+PARSER_VERSION = 3   # bump when parse_pdf changes: forces a re-parse even if the PDF is unchanged
+_BAND = re.compile(r"^\s*([\d.]+)\s*(?:khz|mhz|ghz)?\s*[–-]\s*([\d.]+)\s*(khz|mhz|ghz)\s*$", re.I)   # also "72.8 MHz – 74.8 MHz"       # Ofcom PDF has e.g. "108 MHZ"
 _BAND_NOUNIT = re.compile(r"^\s*(\d[\d.]*)\s*[–-]\s*(\d[\d.]*)\s*$")                 # e.g. "10.45 – 10.475"
-_TXTBAND = re.compile(r"^\s*(\d[\d.]*)\s*[–-]\s*(\d[\d.]*)\s*(khz|mhz|ghz)\b(.*)$", re.I)
+_TXTBAND = re.compile(r"^\s*(\d[\d.]*)\s*(?:khz|mhz|ghz)?\s*[–-]\s*(\d[\d.]*)\s*(khz|mhz|ghz)\b(.*)$", re.I)
 _ABBR = re.compile(r"^([A-Z][A-Z0-9()\- ]{1,20}?)\s{1,}([A-Z][a-z].{3,90})$")
 _UKFN = re.compile(r"\bUK\d+(?:\.\d+)?\b")
 _CACHE: dict = {}
@@ -119,7 +120,7 @@ def parse_pdf(pdf_path: Path) -> dict:
             r["service_name"] = abbr.get(r["service"]) or abbr.get(base) or ""
             codes |= set(_UKFN.findall(r["footnotes"].replace(" ", "")))
         e["uk_footnotes"] = sorted(codes)
-    return {"entries": entries, "abbreviations": abbr, "uk_footnotes": fns}
+    return {"entries": entries, "abbreviations": abbr, "uk_footnotes": fns, "parser_version": PARSER_VERSION}
 
 
 def load() -> dict:

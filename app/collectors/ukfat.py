@@ -7,7 +7,7 @@ import json
 import re
 
 from ..config import settings
-from ..ukfat import parse_pdf, path_json
+from ..ukfat import PARSER_VERSION, parse_pdf, path_json
 from .base import Context, Result, register
 
 PAGE = "https://www.ofcom.org.uk/spectrum/frequencies/uk-fat"
@@ -28,13 +28,13 @@ async def collect_ukfat(ctx: Context) -> Result:
     d = settings.data_dir / "ofcom"
     d.mkdir(parents=True, exist_ok=True)
     snap, _ = ctx.db.get_snapshot("ukfat")
-    if snap and snap.get("sha") == digest and path_json().exists():
+    if snap and snap.get("sha") == digest and snap.get("parser") == PARSER_VERSION and path_json().exists():
         return Result(snap.get("bands", 0), f"unchanged ({snap.get('bands')} bands)")
     (d / "ukfat.pdf").write_bytes(pdf.content)
     data = await asyncio.to_thread(parse_pdf, d / "ukfat.pdf")
     if len(data["entries"]) < 300:
         raise RuntimeError(f"parse looks incomplete: {len(data['entries'])} bands")
     path_json().write_text(json.dumps(data))
-    ctx.db.set_snapshot("ukfat", {"sha": digest, "url": url.split("?")[0], "bands": len(data["entries"]),
+    ctx.db.set_snapshot("ukfat", {"sha": digest, "parser": PARSER_VERSION, "url": url.split("?")[0], "bands": len(data["entries"]),
                                   "uk_footnotes": len(data["uk_footnotes"])})
     return Result(len(data["entries"]), f"{len(data['entries'])} bands, {len(data['uk_footnotes'])} UK footnotes")

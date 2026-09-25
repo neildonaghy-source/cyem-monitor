@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25k';
+  const BUILD = '2026-09-25m';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1540,6 +1540,7 @@
     c.querySelector('[data-emo-multi]')?.addEventListener('click', () => { EMO.multi = true; EMO.sel = [EMO.focus]; emoMultiRefresh(); });
     c.querySelector('[data-emo-done]')?.addEventListener('click', () => { const last = EMO.sel[EMO.sel.length - 1]; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; if (last) emoFocus(last); else emoClearFocus(); });
     c.querySelectorAll('[data-emo-unsel]').forEach((b) => b.addEventListener('click', () => emoToggleSel(b.dataset.emoUnsel)));
+    c.querySelector('[data-emo-add]')?.addEventListener('change', (e) => { if (e.target.value) emoToggleSel(e.target.value); });
     c.querySelector('[data-emo-emcon]')?.addEventListener('click', async (x) => {
       const b = x.currentTarget; await fetch(`/api/emo/${encodeURIComponent(EMO.focus)}/active?on=${b.dataset.on === '1'}`, { method: 'POST' }); EMO.stale = true; emoRun();
     });
@@ -1592,7 +1593,11 @@
     const row = (a, b, c) => `<tr><td>${a}</td><td class="mono">${b}</td><td>${c || ''}</td></tr>`;
     const tbl = (h, rows) => rows.length ? `<h4>${h}</h4><table class="grid">${rows.join('')}</table>` : '';
     return `<div class="emo-card-head"><b>Comparing ${EMO.sel.length}</b><span class="btns"><button data-emo-done>Done</button><button data-emo-clear>Clear</button></span></div>
-      <p>${chips}</p><p class="dim">Tap symbols to add or remove${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}. Footprints of all selected are shown; lines only between them.</p>
+      <p>${chips}</p>
+      <p><select data-emo-add style="max-width:100%"><option value="">+ Add an entity…</option>
+        ${['blue', 'red'].map((sd) => `<optgroup label="${sd === 'blue' ? 'Blue' : 'Red'}">${EMO.ents.filter((e) => e.side === sd && !sel.has(e.id)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => `<option value="${esc(e.id)}">${esc(e.name)} · ${esc(KIND_TXT[e.kind] || e.kind)}${e.category ? ' · ' + esc(e.category) : ''}</option>`).join('')}</optgroup>`).join('')}
+      </select></p>
+      <p class="dim">Add from the list, or tap symbols on the map${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}; × removes. All selected footprints are shown; lines only between them.</p>
       ${EMO.sel.length < 2 ? '<p class="dim">Select at least one more entity.</p>' : ''}
       ${tbl(`Who hears whom (${det.filter((d) => d.detected).length})`, det.map((d) => row(`${nm(d.sensor_id)} → ${nm(d.target_id)}`, `${d.margin_db >= 0 ? '+' : ''}${d.margin_db} dB`, d.detected ? (d.df ? 'heard, DF bearing' : 'heard') : '<span class="dim">not heard</span>')))}
       ${tbl('Fixes on selected', fx.map((f) => row(esc(f.target), `±${f.fix.error_m} m`, `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}by ${esc(f.fix.sensors.join(' + '))}`)))}
@@ -1803,6 +1808,8 @@
   $('#btn-emo').addEventListener('click', () => openEMO());
   // ---------------------------------------------------------------- SDR nodes (live receiver + sweeps)
   const SDR = { node: null, timer: null };
+  const TIER_COL = { accounted: '#45d38a', unsure: '#f3b23e', unaccounted: '#ff4646' };
+  const TIER_TXT = { accounted: 'Accounted for', unsure: 'Unsure', unaccounted: 'Not accounted for' };
   function sdrChart(l) {
     const W = 680, H = 190, P = 28, n = l.db.length;
     const lo = Math.min(...l.db), hi = Math.max(...l.db), span = Math.max(10, hi - lo);
@@ -1811,7 +1818,7 @@
     let d = ''; l.db.forEach((v, i) => { d += `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`; });
     const ticks = [50, 100, 200, 400, 800, 1200, 1600].filter((t) => t > f(0) && t < f(n - 1))
       .map((t) => { const i = (t * 1e6 - l.f0_hz) / l.bin_hz; return `<line x1="${x(i)}" x2="${x(i)}" y1="10" y2="${H - 18}" stroke="#243040"/><text x="${x(i)}" y="${H - 4}" fill="#8593a6" font-size="10" text-anchor="middle">${t}</text>`; }).join('');
-    const pk = (l.peaks || []).slice(0, 12).map((p) => { const i = (p.f_hz - l.f0_hz) / l.bin_hz; return `<circle cx="${x(i)}" cy="${y(p.level_db)}" r="3.5" fill="#f3b23e"><title>${(p.f_hz / 1e6).toFixed(3)} MHz · ${p.level_db} dB · SNR ${p.snr_db} dB</title></circle>`; }).join('');
+    const pk = (l.peaks || []).slice(0, 25).map((p) => { const i = (p.f_hz - l.f0_hz) / l.bin_hz; return `<circle cx="${x(i)}" cy="${y(p.level_db)}" r="4" fill="${TIER_COL[p.tier] || '#f3b23e'}" stroke="#0b1016"><title>${(p.f_hz / 1e6).toFixed(3)} MHz · ${p.level_db} dB · SNR ${p.snr_db} dB</title></circle>`; }).join('');
     return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#0b1016;border-radius:6px">${ticks}<path d="${d}" fill="none" stroke="#3cc8ff" stroke-width="1.2"/>${pk}
       <text x="${P}" y="12" fill="#8593a6" font-size="10">${hi.toFixed(0)} dB</text><text x="${P}" y="${H - 20}" fill="#8593a6" font-size="10">${lo.toFixed(0)} dB</text><text x="${W - 6}" y="${H - 4}" fill="#8593a6" font-size="10" text-anchor="end">MHz</text></svg>`;
   }
@@ -1843,10 +1850,16 @@
     });
     try {
       const l = await api(`/api/sdr/latest?node=${encodeURIComponent(SDR.node)}`);
+      let c = null; try { c = await api(`/api/sdr/correlate?node=${encodeURIComponent(SDR.node)}`); } catch (e) { /* no position yet */ }
+      if (c) { const byF = Object.fromEntries(c.peaks.map((p) => [p.f_hz, p])); l.peaks = l.peaks.map((p) => byF[p.f_hz] || p); }
+      const T = c?.tiers || {};
+      const who = (p) => p.licences?.length ? `${esc(p.licences[0].who)}, ${esc(p.licences[0].what || '')}` + (p.licence_count > 1 ? ` <span class="dim">+${p.licence_count - 1} more</span>` : '') : esc(p.band || p.label || '');
+      const where = (p) => p.licences?.length ? `${p.licences[0].dist_km} km at ${p.licences[0].bearing}°` : (p.context ? esc(p.context) : '');
       $('#sdr-out').innerHTML = `<p class="dim">Sweep ${fmtZ(l.ts)} · ${(l.f0_hz / 1e6).toFixed(0)}–${((l.f0_hz + l.bin_hz * l.db.length) / 1e6).toFixed(0)} MHz · max-hold per ${(l.bin_hz / 1e3).toFixed(0)} kHz</p>${sdrChart(l)}
-        <h3 class="sec">Strongest signals (${l.peaks.length})</h3><table class="grid"><tr><th>MHz</th><th>dB</th><th>SNR</th><th>UK allocation</th></tr>
-        ${l.peaks.slice(0, 25).map((p) => `<tr><td class="mono">${(p.f_hz / 1e6).toFixed(3)}</td><td class="mono">${p.level_db}</td><td class="mono">${p.snr_db}</td><td>${esc(p.label || '')}</td></tr>`).join('')}</table>
-        <p class="dim">Levels are relative dB from the receiver (not calibrated dBm). Peaks are carriers at least 10 dB above the local noise floor.</p>`;
+        ${c ? `<p>${['accounted', 'unsure', 'unaccounted'].map((k) => `<span style="color:${TIER_COL[k]}">●</span> ${TIER_TXT[k]} <b>${T[k] || 0}</b>`).join(' &nbsp; ')}</p>` : '<p class="bad">Set the receiver position to correlate peaks with licences.</p>'}
+        <h3 class="sec">Signals (${l.peaks.length})</h3><table class="grid"><tr><th></th><th>MHz</th><th>SNR</th><th>Who / what</th><th>Where</th></tr>
+        ${l.peaks.slice(0, 40).map((p) => `<tr title="${esc(p.tier_why || p.status_text || '')}"><td><span style="color:${TIER_COL[p.tier] || '#8593a6'};font-size:16px">●</span></td><td class="mono">${(p.f_hz / 1e6).toFixed(3)}</td><td class="mono">${p.snr_db}</td><td>${who(p)}<div class="dim">${esc(p.tier_why || '')}</div></td><td>${where(p)}</td></tr>`).join('')}</table>
+        <p class="dim">${esc(c?.notes || 'Levels are relative dB (not calibrated). Peaks are carriers at least 10 dB above the local floor.')}</p>`;
     } catch (e) { $('#sdr-out').innerHTML = `<p class="dim">${esc(e.message)}</p>`; }
   }
   function toastSDR(t) { const o = $('#sdr-out'); if (o) o.insertAdjacentHTML('afterbegin', `<p class="bad">${esc(t)}</p>`); }

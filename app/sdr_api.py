@@ -56,7 +56,7 @@ def _label(f_hz: float) -> str:
             return f"{'; '.join(svc)} ({b[0].get('band', '')})"[:110]
     except Exception:  # noqa: BLE001
         pass
-    return "not in parsed UKFAT (parser gap)"
+    return "not listed in Ofcom's UKFAT table"
 
 
 @router.post("/ingest")
@@ -155,7 +155,7 @@ async def correlate(node: str, radius_km: float = 40, max_peaks: int = 40):
             ctx["cells_5km"] = len(items)
         except Exception:  # noqa: BLE001
             pass
-    out, counts = [], {}
+    out, counts, tiers = [], {}, {}
     for p in peaks:
         f = p["f_hz"]
         band = band_for(f)
@@ -187,10 +187,18 @@ async def correlate(node: str, radius_km: float = 40, max_peaks: int = 40):
         elif band and band[1].startswith("Mobile network") and "cells_5km" in ctx:
             context = f"{ctx['cells_5km']} mobile cells within 5 km"
         counts[status] = counts.get(status, 0) + 1
-        out.append({**p, "status": status, "status_text": text, "band": band[1] if band else None,
+        if status == "unexplained":
+            tier, why = "unaccounted", "No nearby licence and no band that explains it"
+        elif status == "government" or (status == "licensed" and len(uniq) > 3):
+            tier, why = "unsure", ("Government band: not in public data" if status == "government"
+                                   else f"{len(uniq)} licensed candidates in this slice: cannot say which")
+        else:
+            tier, why = "accounted", ("Licensed assignment nearby" if status == "licensed" else f"Expected: {text.lower()}")
+        tiers[tier] = tiers.get(tier, 0) + 1
+        out.append({**p, "tier": tier, "tier_why": why, "status": status, "status_text": text, "band": band[1] if band else None,
                     "licences": uniq[:5], "licence_count": len(uniq), "context": context})
     return {"node": node, "ts": r["ts"], "position": {"lat": lat, "lon": lon} if lat is not None else None,
-            "radius_km": radius_km, "tolerance_khz": round(tol / 1e3, 1), "counts": counts, "peaks": out,
+            "radius_km": radius_km, "tolerance_khz": round(tol / 1e3, 1), "counts": counts, "tiers": tiers, "peaks": out,
             "notes": "Correlation with public records only; nothing is demodulated. A licensed match means an assignment exists "
                      "within the sweep bin near you, not that it is the source. Position of licensed matches is the licensed site. "
                      "Unexplained = no nearby licence and no exempt/public band: a lead to investigate, not proof of unlicensed use."}

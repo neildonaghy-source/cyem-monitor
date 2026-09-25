@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25q';
+  const BUILD = '2026-09-25r';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1547,11 +1547,12 @@
     const e = EMO.ents.find((x) => x.id === EMO.focus); if (!e) return;
     const t0 = Date.now(); const tick = setInterval(() => { out.innerHTML = `<p><span class="spinner"></span> searching positions… ${Math.round((Date.now() - t0) / 1000)} s (1-3 min)</p>`; }, 1000);
     try {
-      const r = kind === 'net'
-        ? await postJson(`/api/emo/plan/site-net?t_min=${EMO.t}`, { net: e.name })
-        : await postJson(`/api/emo/plan/site-ea?t_min=${EMO.t}`, { effector: e.name, target_net: $('[data-emo-eatgt]').value });
+      const r = await postJson(`/api/emo/plan/map?t_min=${EMO.t}`, kind === 'net' ? { kind: 'net', name: e.name } : { kind: 'ea', name: e.name, target_net: $('[data-emo-eatgt]').value });
       clearInterval(tick);
       planLayer.clearLayers();
+      EMO.planRes = r;
+      const showLayer = (k) => { planLayer.eachLayer((l) => { if (l instanceof L.ImageOverlay) planLayer.removeLayer(l); }); L.imageOverlay(r.layers[k], r.bounds, { interactive: false, opacity: 0.75 }).addTo(planLayer); };
+      showLayer('score');
       const cur = emoPos(e);
       const fmt = (x) => kind === 'net'
         ? `${x.users_closed}/${x.of_users} users closed · margin ${x.link_margin_db >= 0 ? '+' : ''}${x.link_margin_db} dB · ${x.heard_by.length ? `heard by ${x.heard_by.length}` : 'not heard'} · J/S ${x.worst_js_db} dB`
@@ -1563,11 +1564,13 @@
       });
       if (r.relay) L.marker([r.relay.lat, r.relay.lon], { icon: L.divIcon({ className: 'emo-planpin emo-relay', html: 'R', iconSize: [22, 22], iconAnchor: [11, 11] }) })
         .bindTooltip(`Relay: ${r.relay.where}<br>reaches ${r.relay.reaches}/${r.relay.of_failing} (${esc(r.relay.serves.join(', '))})`).addTo(planLayer);
-      out.innerHTML = `<h4>${kind === 'net' ? 'Better sites for this net' : `Sites to deny ${esc(r.target_net)}`}</h4>
-        <p class="dim">Now: ${fmt(r.current)}</p>
+      out.innerHTML = `<h4>${kind === 'net' ? 'Where to site this net' : `Where to site it to deny ${esc(r.target_net)}`}</h4>
+        <p>${Object.keys(r.layers).map((k) => `<label style="margin-right:8px"><input type="radio" name="emo-planlayer" value="${k}"${k === 'score' ? ' checked' : ''}> ${k}</label>`).join('')} <span class="dim">${esc(r.legend)}</span></p>
+        ${r.unavoidable?.length ? `<p class="bad">No site within reach hides this net from ${esc(r.unavoidable.join(', '))}, even at minimum power: use EMCON windows, a directional antenna or another bearer.</p>` : ''}
         <table class="grid">${r.best.slice(0, 3).map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${esc(x.where)}<div class="dim">${fmt(x)}</div></td><td><button data-emo-moveto="${x.lat},${x.lon}">Move here</button></td></tr>`).join('')}</table>
         ${r.relay ? `<p><b>Relay R</b>: ${esc(r.relay.where)}: reaches ${r.relay.reaches}/${r.relay.of_failing} (${esc(r.relay.serves.join(', '))}), exposure ${r.relay.exposure_db} dB.</p>` : ''}
         <p class="dim">${esc(r.notes)}</p>`;
+      out.querySelectorAll('input[name=emo-planlayer]').forEach((rb) => rb.addEventListener('change', () => showLayer(rb.value)));
       out.querySelectorAll('[data-emo-moveto]').forEach((b) => b.addEventListener('click', async () => {
         const [la, lo] = b.dataset.emoMoveto.split(',').map(Number);
         e.lat = la; e.lon = lo; EMO.stale = true; planLayer.clearLayers(); emoDraw();
@@ -1696,6 +1699,7 @@
     emoTick = setInterval(() => emoStatus(`EMO computing… ${Math.round((Date.now() - EMO.started) / 1000)} s${EMO.res ? '' : ' (first run of a scenario takes about a minute)'}`), 1000);
     try {
       await emoLoad();
+      EMO.prevScore = EMO.res?.score || EMO.prevScore;
       EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min;
       EMO.stale = EMO.pending; emoDraw(); emoResults(); emoAskBar();
       if (EMO.multi && EMO.sel.length) { EMO.multiRes = {}; EMO.pairRes = {}; emoMultiRefresh(); } else if (EMO.focus) emoFocus(EMO.focus);
@@ -1768,6 +1772,9 @@
     const fx = r.fixes.filter((f) => f.fix || f.lobs);
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     out.innerHTML = `
+      ${r.score ? `<h3 class="sec">Scoreboard</h3><table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>
+        ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters heard by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Fixed by the other side'], ['targetable', 'Targetable'], ['denial_achieved', 'Denial achieved (users)'], ['collateral', 'Civil collateral'], ['net_area_denied_pct', 'Own net area denied %']]
+          .map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>` : ''}
       <h3 class="sec">ES: what each side can see and fix</h3>
       ${fx.length ? `<table class="grid"><tr><th>Target</th><th>Seen by</th><th>Fix</th></tr>${fx.map((f) => row([`<span style="color:${SIDE_COL[f.target_side]}">${esc(f.target)}</span>`, esc(f.sensors.join(', ')),
         f.fix ? `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}±${f.fix.error_m} m, cut ${f.fix.cut_deg}°` : `${f.lobs} line of bearing only`])).join('')}</table>` : '<p class="dim">No DF bearings on any emitter.</p>'}

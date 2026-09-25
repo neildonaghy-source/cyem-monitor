@@ -362,6 +362,32 @@ async def coverage_for(e: dict, pos, rx_h: float):
     return _COV[key]
 
 
+def scoreboard(ents, detections, fixes, jamming, nets) -> dict:
+    """Per-side measures of the EM fight: net availability, exposure, fix risk, denial achieved, collateral."""
+    out = {}
+    for sd in ("blue", "red"):
+        opp = "red" if sd == "blue" else "blue"
+        bad = {j["victim"] for j in jamming if j["status"] in ("denied", "no signal")}
+        rx = [e for e in ents if e["side"] == sd and e["kind"] == "receiver"]
+        avail = [e["name"] not in bad for e in rx]
+        radiating = [e for e in ents if e["side"] == sd and e["active"] and (e["kind"] in ("emitter", "effector") or e.get("eirp_dbm") is not None)
+                     and e.get("fixed_level_dbm") is None]
+        heard = {d["target"] for d in detections if d["detected"] and d["sensor_side"] == opp}
+        exposed = [e for e in radiating if e["name"] in heard]
+        margins = [d["margin_db"] for d in detections if d["detected"] and d["sensor_side"] == opp]
+        out[sd] = {
+            "net_availability_pct": round(100 * sum(avail) / len(avail), 0) if avail else None,
+            "emitters_exposed": f"{len(exposed)}/{len(radiating)}",
+            "mean_exposure_db": round(sum(margins) / len(margins), 1) if margins else None,
+            "fixed": sum(1 for f in fixes if f["target_side"] == sd and f["fix"]),
+            "targetable": sum(1 for f in fixes if f["target_side"] == sd and f["targetable"]),
+            "denial_achieved": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "denied" and not j.get("collateral")),
+            "collateral": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "denied" and j.get("collateral")),
+            "net_area_denied_pct": round(sum(n["denied_pct"] for n in nets if n["side"] == sd) / max(1, sum(1 for n in nets if n["side"] == sd)), 1),
+        }
+    return out
+
+
 def other(side: str) -> str:
     return "red" if side == "blue" else "blue"
 
@@ -482,13 +508,14 @@ async def run(p: RunIn, t_min: float = 0):
                         "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq})
 
     layers = {k: overlay_png(region_masks(m, LAYER_RGBA[k], hatched=k.endswith("_denied"))) for k, m in L.items() if m.any()}
+    score = scoreboard(ents, detections, fixes, jamming, per_net)
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]
     horizon = max([track_minutes(e) for e in ents] + [0])
     _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
                   "jamming": jamming, "params": p, "bounds": [[s, w], [n, e_]]})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
             "positions": {e["id"]: e["pos"] for e in ents}, "on_air": {e["id"]: e["active"] for e in ents}, "detections": detections, "fixes": fixes,
-            "jamming": jamming, "nets": per_net, "exposure": exposure, "params": p.model_dump(),
+            "jamming": jamming, "nets": per_net, "exposure": exposure, "score": score, "params": p.model_dump(),
             "compute_s": round(time.monotonic() - t0, 1),
             "notes": "Screening only: Deygout 3-edge on Copernicus 30 m terrain; no processing gain, hopping, nulling, clutter, "
                      "multipath or time variability. Radar modelled as an emitter for ES only. DF fix error = range x DF "
@@ -786,6 +813,29 @@ async def _plan_facts(question: str, selected: list[str] | None) -> str:
     return "\n".join(out)
 
 
+def _plan_template(plan: str) -> str:
+    """Structured answer straight from the solver: positions, effects, verdict, limits. No prose model involved."""
+    out = ["**Computed siting plan** (terrain screening model; positions to test, not a solution)", ""]
+    for line in plan.splitlines():
+        s = line.strip()
+        if s.startswith("COMPUTED PLAN"):
+            out.append("**" + s.replace("COMPUTED PLAN (EP):", "Net:").replace("COMPUTED PLAN (EA):", "Jammer:").replace("COMPUTED PLAN", "Plan") + "**")
+        elif s.startswith("Option"):
+            out.append("- " + s)
+        elif s.startswith("Relay:"):
+            out.append("- **" + s + "**")
+        elif s.startswith("VERDICT:"):
+            out.append("")
+            out.append("**Verdict.** " + s[8:].strip())
+        elif s.startswith("LIMIT:"):
+            out.append("**Limit.** " + s[6:].strip().replace(" Say this plainly.", ""))
+        elif s:
+            out.append(s)
+    out.append("")
+    out.append("_Tap Find a better site (EP) or Best site to deny it (EA) in the focus card to see these on the map._")
+    return "\n".join(out)
+
+
 class AskIn(BaseModel):
     question: str = Field(min_length=2, max_length=800)
     selected: list[str] | None = None
@@ -796,6 +846,14 @@ async def emo_ask(req: AskIn):
     from fastapi.responses import StreamingResponse
     from . import llm
     plan = await _plan_facts(req.question, req.selected)
+    if plan and not plan.startswith("COMPUTED PLAN: none"):
+        from fastapi.responses import StreamingResponse as _SR
+        text = _plan_template(plan)
+
+        async def gen_plan():
+            yield f"data: {json.dumps({'t': text})}\n\n"
+            yield "data: {\"done\": true}\n\n"
+        return _SR(gen_plan(), media_type="text/event-stream")
     msgs = [{"role": "system", "content": EMO_ASK_SYSTEM + PLAN_RULES},
             {"role": "user", "content": f"ANALYSIS\n{scenario_context(req.selected)}\n{plan}\n\nQUESTION: {req.question.strip()}"}]
 

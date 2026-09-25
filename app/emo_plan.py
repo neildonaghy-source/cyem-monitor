@@ -252,3 +252,190 @@ async def site_ea(body: SiteEAIn, t_min: float = 0):
             "current": await score(here), "best": res[:5], "candidates": len(res),
             "notes": "Score: +10 per target user denied; penalties for exposure to opposing DF on this band and heavily for "
                      "fratricide against own nets on the same band. Screening-grade: positions to test in the tool."}
+
+
+# ---- A1: reciprocity score maps ---------------------------------------------------------------------
+# Path loss is symmetric, so the level a candidate control station would deliver to user U equals the level
+# received at the candidate from a pseudo-transmitter at U with the net's EIRP. One coverage grid per user,
+# sensor and jammer therefore gives link margin, exposure and J/S at EVERY candidate point at once.
+
+class MapIn(BaseModel):
+    kind: str = Field(pattern="^(net|ea)$")
+    name: str                                       # net control (kind=net) or effector (kind=ea)
+    target_net: str | None = None                   # kind=ea
+    max_move_km: float = Field(default=30, gt=1, le=60)
+    standoff_km: float = Field(default=10, ge=0, le=50)
+    px: int = Field(default=72, ge=24, le=120)
+
+
+def _pseudo(src: dict, at: dict, at_pos, eirp: float, radius_km: float) -> dict:
+    """A transmitter at 'at' (its height) radiating on src's frequency with the given EIRP, omni."""
+    return {**src, "id": f"rcp:{src['id']}:{at['id']}", "updated_at": f"{src['updated_at']}|{at['updated_at']}",
+            "lat": at_pos[0], "lon": at_pos[1], "h_agl": at["h_agl"], "eirp_dbm": eirp, "pattern": "omni",
+            "azimuth": None, "beamwidth": None, "radius_km": min(100.0, radius_km)}
+
+
+def _axes(center, radius_km, px):
+    import math
+    import numpy as np
+    dlat = radius_km / 111.0
+    dlon = radius_km / (111.0 * max(0.2, math.cos(math.radians(center[0]))))
+    lats = center[0] + dlat - (np.arange(px) + 0.5) / px * 2 * dlat
+    lons = center[1] - dlon + (np.arange(px) + 0.5) / px * 2 * dlon
+    LA, LO = np.meshgrid(lats, lons, indexing="ij")
+    return LA, LO, [[center[0] - dlat, center[1] - dlon], [center[0] + dlat, center[1] + dlon]]
+
+
+def _mask(LA, LO, center, radius_km, own, opp, standoff_km):
+    import numpy as np
+    from .sdr_classify import haversine_km
+    ok = np.ones(LA.shape, bool)
+    # vectorised haversine to each opposing ground unit, and to the two centroids
+    def dist(lat0, lon0):
+        p1, p2 = np.radians(lat0), np.radians(LA)
+        dl = np.radians(LO - lon0)
+        a = np.sin((p2 - p1) / 2) ** 2 + np.cos(p1) * np.cos(p2) * np.sin(dl / 2) ** 2
+        return 2 * 6371.0 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+    ok &= dist(center[0], center[1]) <= radius_km
+    for o in opp:
+        ok &= dist(o[0], o[1]) >= standoff_km
+    if own and opp:
+        oc = (sum(x[0] for x in own) / len(own), sum(x[1] for x in own) / len(own))
+        pc = (sum(x[0] for x in opp) / len(opp), sum(x[1] for x in opp) / len(opp))
+        ok &= dist(*oc) <= dist(*pc)
+    return ok
+
+
+def _best_points(score, LA, LO, ok, n=5, min_sep_km=4.0):
+    """Top-n local maxima with non-maximum suppression."""
+    import numpy as np
+    from .sdr_classify import haversine_km
+    s = np.where(ok, score, -np.inf)
+    out = []
+    flat = np.argsort(s, axis=None)[::-1]
+    for idx in flat:
+        if not np.isfinite(s.flat[idx]):
+            break
+        i, j = np.unravel_index(idx, s.shape)
+        la, lo = float(LA[i, j]), float(LO[i, j])
+        if all(haversine_km(la, lo, b["lat"], b["lon"]) >= min_sep_km for b in out):
+            out.append({"lat": round(la, 4), "lon": round(lo, 4), "score": round(float(s[i, j]), 1), "ij": (int(i), int(j))})
+        if len(out) >= n:
+            break
+    return out
+
+
+def _heat_png(score, ok):
+    """Green (best) through amber to red (worst), transparent where not allowed."""
+    import base64
+    import numpy as np
+    from .coverage_core import _png
+    s = np.where(ok, score, np.nan)
+    lo, hi = np.nanpercentile(s, 5) if np.isfinite(s).any() else 0, np.nanmax(s) if np.isfinite(s).any() else 1
+    t = np.clip((s - lo) / max(1e-6, hi - lo), 0, 1)
+    img = np.zeros(s.shape + (4,), np.uint8)
+    img[..., 0] = (255 * (1 - t)).astype(np.uint8)
+    img[..., 1] = (200 * t + 40 * (1 - t)).astype(np.uint8)
+    img[..., 2] = 60
+    img[..., 3] = np.where(np.isfinite(s), 150, 0).astype(np.uint8)
+    return "data:image/png;base64," + base64.b64encode(_png(img)).decode()
+
+
+@router.post("/map")
+async def plan_map(body: MapIn, t_min: float = 0):
+    """Siting score map: heatmap over the reachable area plus the best sites, from reciprocity coverage grids."""
+    import numpy as np
+    from .ems_core import sample
+    emo_api, ents, p, pos = _ctx(t_min)
+    from .sdr_classify import haversine_km
+    if body.kind == "net":
+        net = next((e for e in ents.values() if e["name"] == body.name and e["kind"] == "emitter"), None)
+        if not net or net.get("fixed_level_dbm") is not None:
+            raise HTTPException(404, "net control not found")
+        mover, side = net, net["side"]
+    else:
+        y = next((e for e in ents.values() if e["name"] == body.name and e["kind"] == "effector"), None)
+        net = next((e for e in ents.values() if e["name"] == body.target_net and e["kind"] == "emitter"), None)
+        if not y or not net:
+            raise HTTPException(404, "effector or target net not found")
+        mover, side = y, y["side"]
+    opp = "red" if side == "blue" else "blue"
+    here = pos(mover)
+    R = body.max_move_km
+    LA, LO, bounds = _axes(here, R, body.px)
+    own_g, opp_g = _ground(ents, pos, side), _ground(ents, pos, opp)
+    ok = _mask(LA, LO, here, R, own_g, opp_g, body.standoff_km)
+    grids_needed = []
+
+    async def field(src, at, eirp, rx_h):
+        """Level raster at every candidate from a pseudo-transmitter at 'at' with 'eirp', received at rx_h."""
+        radius = haversine_km(here[0], here[1], *pos(at)) + R + 2
+        cov = await emo_api.coverage_for(_pseudo(src, at, pos(at), eirp, radius), pos(at), rx_h)
+        return sample(cov, LA, LO)
+
+    users = [e for e in ents.values() if e.get("net") == net["id"] and e["kind"] == "receiver"]
+    if body.kind == "net":
+        nsens = net.get("sens_dbm") or p.default_sens
+        jsreq = net["js_req_db"] if net.get("js_req_db") is not None else p.js_req_db
+        nb = emo_api.band(net)
+        sensors = [e for e in ents.values() if e["kind"] == "sensor" and e["side"] == opp and emo_api.overlap(*nb, *emo_api.band(e))]
+        jammers = [e for e in ents.values() if e["kind"] == "effector" and e["side"] == opp and e["active"] and emo_api.overlap(*nb, *emo_api.band(e))]
+        S = [await field(net, u, net["eirp_dbm"], net["h_agl"]) for u in users]          # control -> user, by reciprocity
+        link = np.minimum.reduce([s - nsens for s in S]) if S else np.full(LA.shape, 99.0)
+        closed = sum((s - nsens >= 6).astype(int) for s in S) if S else np.zeros(LA.shape, int)
+        E = [await field(net, x, net["eirp_dbm"], net["h_agl"]) - (x.get("sens_dbm") or p.default_sens) for x in sensors]
+        exposure = np.maximum.reduce(E) if E else np.full(LA.shape, -99.0)
+        # jamming at the users is fixed; at the control it is J(c) against the weakest user's return signal
+        J_user = {}
+        for u in users:
+            J_user[u["id"]] = max([await emo_api.p2p_level(j, pos(j), u, pos(u)) - emo_api.jam_penalty(j, net) for j in jammers], default=-999)
+        js_users = np.maximum.reduce([J_user[u["id"]] - S[i] for i, u in enumerate(users)]) if users and jammers else np.full(LA.shape, -99.0)
+        Jc = np.maximum.reduce([sample(await emo_api.coverage_for(j, pos(j), net["h_agl"]), LA, LO) - emo_api.jam_penalty(j, net) for j in jammers]) if jammers else np.full(LA.shape, -999.0)
+        back = np.minimum.reduce([S[i] + ((u.get("eirp_dbm") or net["eirp_dbm"]) - net["eirp_dbm"]) for i, u in enumerate(users)]) if users else np.full(LA.shape, 0.0)
+        js = np.maximum(js_users, Jc - back)
+        headroom = np.maximum(0.0, link - 6)
+        score = 10 * closed - 3 * np.maximum(0.0, 6 - link) - 1.5 * np.maximum(0.0, exposure + 6) - 2 * np.maximum(0.0, js - jsreq + 6)
+        ok = ok & np.isfinite(score)
+        best = _best_points(score, LA, LO, ok)
+        for b in best:
+            i, j = b.pop("ij")
+            b.update({"users_closed": int(closed[i, j]), "of_users": len(users), "link_margin_db": round(float(link[i, j]), 1),
+                      "exposure_db": round(float(exposure[i, j]), 1), "worst_js_db": round(float(js[i, j]), 1),
+                      "power_cut_db": round(float(headroom[i, j]), 1),
+                      "heard_by": [sensors[k]["name"] for k in range(len(sensors)) if E[k][i, j] >= 0],
+                      "where": _describe((b["lat"], b["lon"]), net["name"] + " (current)", here)})
+        layers = {"score": _heat_png(score, ok), "exposure": _heat_png(-exposure, ok), "link": _heat_png(link, ok)}
+        meta = {"opp_sensors": [s["name"] for s in sensors], "opp_jammers": [j["name"] for j in jammers], "users": [u["name"] for u in users],
+                "unavoidable": [sensors[k]["name"] for k in range(len(sensors)) if bool(np.all((E[k] - headroom)[ok] >= 0))] if sensors and ok.any() else []}
+    else:
+        jsreq = net["js_req_db"] if net.get("js_req_db") is not None else p.js_req_db
+        pen = emo_api.jam_penalty(y, net)
+        S_user = {u["id"]: (float(net["fixed_level_dbm"]) if net.get("fixed_level_dbm") is not None
+                            else await emo_api.p2p_level(net, pos(net), u, pos(u))) for u in users}
+        JS = [await field(y, u, y["eirp_dbm"], y["h_agl"]) - pen - S_user[u["id"]] for u in users]   # jammer -> user, by reciprocity
+        denied = sum((x >= jsreq).astype(int) for x in JS) if JS else np.zeros(LA.shape, int)
+        minjs = np.minimum.reduce(JS) if JS else np.full(LA.shape, -99.0)
+        df = [e for e in ents.values() if e["kind"] == "sensor" and e["side"] == net["side"] and e.get("df_rms_deg") and emo_api.overlap(*emo_api.band(y), *emo_api.band(e))]
+        E = [await field(y, x, y["eirp_dbm"], y["h_agl"]) - (x.get("sens_dbm") or p.default_sens) for x in df]
+        exposure = np.maximum.reduce(E) if E else np.full(LA.shape, -99.0)
+        own_nets = [n for n in ents.values() if n["kind"] == "emitter" and n["side"] == side and n["active"] and n.get("fixed_level_dbm") is None and emo_api.overlap(*emo_api.band(y), *emo_api.band(n))]
+        frat = np.zeros(LA.shape, int)
+        for n in own_nets:
+            jreq = n["js_req_db"] if n.get("js_req_db") is not None else p.js_req_db
+            for u in [u for u in ents.values() if u.get("net") == n["id"]]:
+                Sown = await emo_api.p2p_level(n, pos(n), u, pos(u))
+                frat += ((await field(y, u, y["eirp_dbm"], y["h_agl"])) - emo_api.jam_penalty(y, n) - Sown >= jreq).astype(int)
+        score = 10 * denied - 1.0 * np.maximum(0.0, exposure + 6) - 15 * frat + 0.2 * np.clip(minjs, -30, 30)
+        ok = ok & np.isfinite(score)
+        best = _best_points(score, LA, LO, ok)
+        for b in best:
+            i, j = b.pop("ij")
+            b.update({"denied": int(denied[i, j]), "of_users": len(users), "min_js_db": round(float(minjs[i, j]), 1),
+                      "exposure_db": round(float(exposure[i, j]), 1), "fratricide": int(frat[i, j]),
+                      "where": _describe((b["lat"], b["lon"]), y["name"] + " (current)", here)})
+        layers = {"score": _heat_png(score, ok), "exposure": _heat_png(-exposure, ok), "denial": _heat_png(denied.astype(float), ok)}
+        meta = {"opp_df": [d["name"] for d in df], "own_nets_same_band": [n["name"] for n in own_nets], "users": [u["name"] for u in users]}
+    return {"kind": body.kind, "name": mover["name"], "target_net": net["name"] if body.kind == "ea" else None,
+            "bounds": bounds, "layers": layers, "best": best, "allowed_km2": round(float(ok.sum()) * (2 * R / body.px) ** 2, 0),
+            **meta, "legend": "Heatmap: green = better site, red = worse; blank = outside reach, inside stand-off, or on the other side.",
+            "notes": "Reciprocity score map (screening-grade terrain). Users are kept where they are. Positions to test, not a solution."}

@@ -1012,6 +1012,7 @@ def _plan_template(plan: str) -> str:
 class AskIn(BaseModel):
     question: str = Field(min_length=2, max_length=800)
     selected: list[str] | None = None
+    viewpoint: str | None = Field(default=None, pattern="^(blue|red)$")   # answer for this side's commander
 
 
 @router.post("/ask")
@@ -1028,7 +1029,7 @@ async def emo_ask(req: AskIn):
             yield "data: {\"done\": true}\n\n"
         return _SR(gen_plan(), media_type="text/event-stream")
     msgs = [{"role": "system", "content": EMO_ASK_SYSTEM + PLAN_RULES},
-            {"role": "user", "content": f"ANALYSIS\n{scenario_context(req.selected)}\n{plan}\n\nQUESTION: {req.question.strip()}"}]
+            {"role": "user", "content": f"ANALYSIS\n{scenario_context(req.selected)}\n{plan}\n\nVIEWPOINT: answer for the {req.viewpoint or 'blue'} commander; 'own' means {req.viewpoint or 'blue'}. You command only {req.viewpoint or 'blue'} assets: never propose moving, switching off or retuning the other side's units; act with your own EP and EA.\n\nQUESTION: {req.question.strip()}"}]
 
     async def gen():
         try:
@@ -1241,3 +1242,37 @@ async def delete_coa(cid: str):
     if not n:
         raise HTTPException(404, "no such COA")
     return {"deleted": cid}
+
+
+@router.get("/coas/export.docx")
+async def coas_export():
+    """Word annex: saved courses of action side by side with the current state, both sides' measures."""
+    from io import BytesIO
+    from docx import Document
+    from docx.shared import Pt
+    from fastapi.responses import StreamingResponse as _SR
+    rows = get_db().query("SELECT name, created_at, t_min, score FROM emo_coas WHERE ws=? ORDER BY created_at", (WS.get(),))
+    cols = [("Current", _LAST.get("score"))] + [(r["name"], json.loads(r["score"]) if r["score"] else None) for r in rows]
+    keys = [("net_availability_pct", "Net availability %"), ("emitters_exposed", "Emitters detected"), ("mean_exposure_db", "Mean exposure dB"),
+            ("fixed", "Located"), ("targetable", "Target-quality fixes"), ("denial_achieved", "Outstations denied"), ("spoofed", "Outstations deceived"),
+            ("collateral", "Collateral (civil)"), ("net_area_denied_pct", "Net coverage denied %"), ("radar_tracks", "Radar tracks"), ("radar_screened", "Screened from radar")]
+    doc = Document()
+    doc.styles["Normal"].font.size = Pt(10)
+    doc.add_heading("EMO courses of action: comparison", 1)
+    doc.add_paragraph(f"Workspace {WS.get()}; {len(rows)} saved COA(s) plus the current state. Screening-grade terrain model; notional values.")
+    for side in ("blue", "red"):
+        doc.add_heading(f"{side.capitalize()} measures", 2)
+        t = doc.add_table(rows=1, cols=1 + len(cols)); t.style = "Light Grid Accent 1"
+        t.rows[0].cells[0].text = "Measure"
+        for i, (name, _) in enumerate(cols, 1):
+            t.rows[0].cells[i].text = name
+        for k, label in keys:
+            c = t.add_row().cells; c[0].text = label
+            for i, (_, sc) in enumerate(cols, 1):
+                v = (sc or {}).get(side, {}).get(k)
+                c[i].text = "" if v is None else str(v)
+    doc.add_paragraph("Unaffected, degraded, denied and deceived follow the EA effects of deny, degrade, disrupt and deceive; "
+                      "a target-quality fix is a DF fix within the scenario's targeting threshold.").runs[0].italic = True
+    buf = BytesIO(); doc.save(buf); buf.seek(0)
+    return _SR(buf, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+               headers={"Content-Disposition": "attachment; filename=emo-coa-comparison.docx"})

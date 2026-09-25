@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-26a';
+  const BUILD = '2026-09-26b';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1452,7 +1452,7 @@
   const EMO = { ents: [], res: null, t: 0, horizon: 0, params: { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000 }, draft: null, editId: null,
     playing: false, busy: false, pending: false, stale: false, started: 0, examples: null, about: '',
     on: { blue_seen: false, red_seen: false, blue_denied: false, red_denied: false, blue_cov: false, red_cov: false, lines: true, civil_lines: false },
-    focus: null, focusRes: null, multi: false, sel: [], multiRes: {}, pairRes: {} };
+    focus: null, focusRes: null, multi: false, sel: [], multiRes: {}, pairRes: {}, side: localStorage.getItem('cyem-side') || 'blue' };
   const emoLayer = L.layerGroup().addTo(map);
   const planLayer = L.layerGroup().addTo(map);
   const SIDE_COL = { blue: '#3c8cff', red: '#ff4646', grey: '#a6b0bd' };
@@ -1705,7 +1705,8 @@
   const SCORE_KEYS = [['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters detected'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Located'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['spoofed', 'Outstations deceived'], ['collateral', 'Collateral (civil)'], ['net_area_denied_pct', 'Net coverage denied %'], ['radar_tracks', 'Radar tracks'], ['radar_screened', 'Screened from radar']];
   function emoScoreTable(r) {
     if (!r?.score) return '<p class="dim">Run the analysis first.</p>';
-    return `<table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>${SCORE_KEYS.map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>`;
+    const order = EMO.side === 'red' ? ['red', 'blue'] : ['blue', 'red'];
+    return `<table class="grid"><tr><th></th>${order.map((sd) => `<th style="color:${SIDE_COL[sd]}">${sd === EMO.side ? 'Own (' + sd + ')' : sd}</th>`).join('')}</tr>${SCORE_KEYS.map(([k, l]) => `<tr><td>${l}</td>${order.map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>`;
   }
   function emoDockCard(title, html) {
     let c = document.getElementById('emo-dockcard'); if (!c) { c = document.createElement('div'); c.id = 'emo-dockcard'; document.body.appendChild(c); }
@@ -1715,6 +1716,7 @@
   }
   async function emoDockTool(tool) {
     if (tool === 'panel') { document.getElementById('emo-dockcard')?.remove(); return openEMO(); }
+    if (tool === 'side') { EMO.side = EMO.side === 'blue' ? 'red' : 'blue'; localStorage.setItem('cyem-side', EMO.side); document.getElementById('emo-dock')?.remove(); emoDock(); document.getElementById('emo-dockcard')?.remove(); return; }
     if (tool === 'layers') {
       const b = emoDockCard('Layers', EMO_LAYERS.map(([k, l, col]) => `<label style="display:block"><input type="checkbox" data-dock-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${col}">■</span> ${l}</label>`).join(''));
       b.querySelectorAll('[data-dock-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.dockLayer] = cb.checked; emoDraw(); }));
@@ -1727,7 +1729,7 @@
       b.querySelector('#emo-dockt0').addEventListener('click', () => { b.querySelector('#emo-dockslider').value = 0; set(0); });
       b.querySelector('#emo-dockplay').addEventListener('click', async () => { const sl = b.querySelector('#emo-dockslider'); for (let v = +sl.value + 10; v <= +sl.max && document.getElementById('emo-dockcard'); v += 10) { sl.value = v; await set(v); } });
     } else if (tool === 'coa') {
-      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button></p><div id="emo-dockcoalist"></div>`);
+      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button> <a href="/api/emo/coas/export.docx" download><button>Word annex</button></a></p><div id="emo-dockcoalist"></div>`);
       const list = async () => {
         const r = await api('/api/emo/coas'); const box = b.querySelector('#emo-dockcoalist');
         const keys = [['net_availability_pct', 'Avail'], ['targetable', 'TQF'], ['denial_achieved', 'Den'], ['radar_tracks', 'Rdr']];
@@ -1739,7 +1741,7 @@
       b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); });
       list();
     } else if (tool === 'red') {
-      const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside"><option value="red">Red</option><option value="blue">Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
+      const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside"><option value="red"${EMO.side === 'blue' ? ' selected' : ''}>Red</option><option value="blue"${EMO.side === 'red' ? ' selected' : ''}>Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
       b.querySelectorAll('[data-dock-coa]').forEach((x) => x.addEventListener('click', async () => {
         const side = b.querySelector('#emo-dockside').value, o = b.querySelector('#emo-dockcoaout'), kind = x.dataset.dockCoa;
         o.innerHTML = '<span class="spinner"></span> generating and applying…';
@@ -1776,7 +1778,7 @@
   function emoDock() {
     if (document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adversary'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}">${l}</button>`).join('');
+    d.innerHTML = [['side', `Side: ${EMO.side}`], ['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adversary'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -1793,7 +1795,7 @@
       $('#emo-askclose').addEventListener('click', () => card.remove());
       let text = '';
       try {
-        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel }) });
+        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
         const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
         while (true) {
           const { value, done } = await rd.read(); if (done) break;

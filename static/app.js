@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25u';
+  const BUILD = '2026-09-25v';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1510,7 +1510,7 @@
       for (const j of r.jamming.filter((x) => inv(x.effector_id, x.victim_id) || (EMO.focus && F?.kind === 'emitter' && x.net === F?.name))) {
         const col = j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6';
         L.polyline([emoPosId(j.effector_id, j.a), emoPosId(j.victim_id, j.b)], { color: col, weight: 2.5, opacity: EMO.stale ? 0.35 : 0.9 })
-          .bindTooltip(`${esc(j.effector)} → ${esc(j.victim)}: J/S ${j.js_db} dB vs ${j.js_req_db} dB needed → ${esc(j.status)}${j.bw_penalty_db ? ` (bandwidth loss ${j.bw_penalty_db} dB)` : ''}`).addTo(emoLayer);
+          .bindTooltip(`${esc(j.effector)} → ${esc(j.victim)}: J/S ${j.js_db} dB vs ${j.js_req_db} dB needed → ${esc(j.status)}${j.p != null ? ` (${j.p}% likely)` : ''}${j.bw_penalty_db ? ` (bandwidth loss ${j.bw_penalty_db} dB)` : ''}`).addTo(emoLayer);
       }
     }
     // fan out co-located symbols (e.g. a ship's radar, radio and EA) so each can be tapped
@@ -1586,6 +1586,34 @@
       }));
     } catch (err) { clearInterval(tick); out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
   }
+  async function emoTune() {
+    const out = $('#emo-planout'), e = EMO.ents.find((x) => x.id === EMO.focus); if (!out || !e) return;
+    out.innerHTML = '<p><span class="spinner"></span> computing power, antenna and channel options…</p>';
+    try {
+      const r = await postJson(`/api/emo/plan/tune?t_min=${EMO.t}`, { net: e.name });
+      const P = r.power, A = r.antenna.best_sector, O = r.antenna.omni_now, C = r.channel;
+      const apply = async (body) => { await postJson(`/api/emo/plan/tune/apply?t_min=${EMO.t}`, { net: e.name, ...body }); await emoLoad(); emoRun(); };
+      out.innerHTML = `<h4>EP options at the current position</h4>
+        <p><b>Power:</b> cut by ${P.cut_db} dB (${P.current_eirp_dbm} → ${P.recommended_eirp_dbm} dBm EIRP) keeps 6 dB margin at every user; still heard by ${P.heard_by_after.length ? esc(P.heard_by_after.join(', ')) : 'no opposing sensor'} (now: ${P.heard_by_now.length}). ${P.cut_db > 0 ? `<button data-tune-power>Apply</button>` : ''}</p>
+        <p><b>Antenna:</b> ${A ? `sector ${A.beamwidth}° at ${A.azimuth}°: ${A.users_closed}/${A.of_users} users kept, heard by ${A.heard_by.length} (omni: ${O.users_closed} kept, heard by ${O.heard_by.length}), worst exposure ${A.worst_exposure_db} dB (omni ${O.worst_exposure_db}). ${A.heard_by.length < O.heard_by.length || A.worst_exposure_db < O.worst_exposure_db - 3 ? '<button data-tune-ant>Apply</button>' : '<span class="dim">no gain over omni</span>'}` : 'n/a'}</p>
+        <p><b>Channel:</b> now ${C.current_mhz} MHz${C.current_jammed_by.length ? `, inside ${esc(C.current_jammed_by.join(', '))}` : ', clear of jammers'}. ${C.clear_of_jammers.length ? `Clear of jammers: ${C.clear_of_jammers.slice(0, 6).map((f) => `<button data-tune-freq="${f}">${f}</button>`).join(' ')} MHz` : 'No clear channel in band.'} <span class="dim">${esc(C.note)}</span></p>
+        <p class="dim">${esc(r.notes)}</p>`;
+      out.querySelector('[data-tune-power]')?.addEventListener('click', () => apply({ eirp_dbm: P.recommended_eirp_dbm }));
+      out.querySelector('[data-tune-ant]')?.addEventListener('click', () => apply({ azimuth: A.azimuth, beamwidth: A.beamwidth }));
+      out.querySelectorAll('[data-tune-freq]').forEach((b) => b.addEventListener('click', () => apply({ freq_mhz: +b.dataset.tuneFreq })));
+    } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+  }
+  async function emoJoint() {
+    const out = $('#emo-planout'), e = EMO.ents.find((x) => x.id === EMO.focus); if (!out || !e) return;
+    const t0 = Date.now(); const tick = setInterval(() => { out.innerHTML = `<p><span class="spinner"></span> re-siting users then control station… ${Math.round((Date.now() - t0) / 1000)} s</p>`; }, 1000);
+    try {
+      const r = await postJson(`/api/emo/plan/joint?t_min=${EMO.t}`, { net: e.name });
+      clearInterval(tick); planLayer.clearLayers();
+      r.moves.forEach((m) => L.polyline([m.from, m.to], { color: '#45d38a', weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer));
+      out.innerHTML = `<h4>Joint re-site</h4>${r.moves.length ? `<ul>${r.moves.map((m) => `<li><b>${esc(m.entity)}</b> → ${esc(m.where)}: ${esc(m.detail)}</li>`).join('')}</ul>` : '<p>No move is clearly better; the net is already well sited.</p>'}<p class="dim">${esc(r.notes)}</p>`;
+      EMO.prevScore = r.score_before || EMO.prevScore; await emoLoad(); EMO.res = null; await emoRun();
+    } catch (err) { clearInterval(tick); out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+  }
   function emoClearFocus() { planLayer.clearLayers(); EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; document.getElementById('emo-card')?.remove(); emoDraw(); }
   function emoCard(html) {
     let c = document.getElementById('emo-card');
@@ -1601,6 +1629,8 @@
     });
     c.querySelector('[data-emo-plannet]')?.addEventListener('click', () => emoPlan('net'));
     c.querySelector('[data-emo-planea]')?.addEventListener('click', () => emoPlan('ea'));
+    c.querySelector('[data-emo-tune]')?.addEventListener('click', () => emoTune());
+    c.querySelector('[data-emo-joint]')?.addEventListener('click', () => emoJoint());
     c.querySelector('[data-emo-editf]')?.addEventListener('click', () => { EMO.editId = EMO.focus; EMO.draft = { ...EMO.ents.find((e) => e.id === EMO.focus) }; openEMO(); });
   }
   function emoCardHtml(f) {
@@ -1612,7 +1642,7 @@
     const hears = f.hears.filter((d) => d.detected), misses = f.hears.filter((d) => !d.detected);
     const radiates = ['emitter', 'effector'].includes(f.kind) || (f.kind === 'receiver' && e.eirp_dbm != null);
     return `<div class="emo-card-head"><b style="color:${col}">${esc(f.name)}</b> <span class="dim">${esc(f.side)} ${esc(KIND_TXT[f.kind] || f.kind)}${f.category ? ' · ' + esc(f.category) : ''}${f.active ? '' : ' · OFF-AIR'}</span>
-        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button>${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<button data-emo-plannet>Find a better site (EP)</button>' : ''}<button data-emo-clear>Clear focus</button></span></div>
+        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button>${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<button data-emo-plannet>Find a better site (EP)</button> <button data-emo-tune>Tune: power, antenna, channel</button> <button data-emo-joint>Joint re-site net</button>' : ''}<button data-emo-clear>Clear focus</button></span></div>
       ${f.kind === 'effector' ? `<div class="specset"><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>Best site to deny it (EA)</button></div>` : ''}
       <div id="emo-planout"></div>
       ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); darker = just audible, brighter = +10 and +20 dB above; the outline is the limit.${f.kind === 'effector' ? ' Hatched magenta: denial it causes on victim nets.' : ''}</p>` : ''}
@@ -1621,8 +1651,8 @@
       ${tbl(`Not heard by (${missed.length})`, missed.map((d) => row(esc(d.sensor), `${d.margin_db} dB`, 'below sensitivity')))}
       ${tbl(`Hears (${hears.length})`, hears.map((d) => row(esc(d.target), `+${d.margin_db} dB`, esc(d.category || ''))))}
       ${tbl(`Misses (${misses.length})`, misses.map((d) => row(esc(d.target), `${d.margin_db} dB`, '')))}
-      ${tbl(`Jams (${f.jams.length})`, f.jams.map((x) => row(esc(x.victim), `J/S ${x.js_db} dB`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
-      ${tbl(`Under attack (${f.jammed.length})`, f.jammed.map((x) => row(`${esc(x.effector)} → ${esc(x.victim)}`, `J/S ${x.js_db} dB`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
+      ${tbl(`Jams (${f.jams.length})`, f.jams.map((x) => row(esc(x.victim), `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
+      ${tbl(`Under attack (${f.jammed.length})`, f.jammed.map((x) => row(`${esc(x.effector)} → ${esc(x.victim)}`, `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
       ${!heard.length && !missed.length && !hears.length && !misses.length && !f.jams.length && !f.jammed.length ? '<p class="dim">No interactions on its frequencies.</p>' : ''}`;
   }
   function emoToggleSel(id) {

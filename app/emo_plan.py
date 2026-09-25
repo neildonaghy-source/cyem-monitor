@@ -629,3 +629,165 @@ async def timeline(body: TimelineIn):
     return {"steps": steps, "step_min": body.step_min, "horizon_min": round(horizon, 1), "rows": rows, "board": board, "windows": windows,
             "notes": "Light analysis per step (pairwise terrain paths, no map rasters). Heard = detected by the other side's ES; "
                      "targetable = DF fix within the scenario threshold; denied = a jammer beats the user's own net at that step."}
+
+
+# ---- A5: more decision variables: power, antenna azimuth, channel, joint re-siting -------------------------------
+class TuneIn(BaseModel):
+    net: str
+
+
+@router.post("/tune")
+async def tune(body: TuneIn, t_min: float = 0):
+    """Non-positional EP options for a net at its current position: minimum power, best sector antenna, and
+    channels outside the opposing jammers' bands. Uses the pairwise terrain paths already computed (cheap)."""
+    emo_api, ents, p, pos = _ctx(t_min)
+    net = next((e for e in ents.values() if e["name"] == body.net and e["kind"] == "emitter"), None)
+    if not net or net.get("eirp_dbm") is None:
+        raise HTTPException(404, "net control not found")
+    users = [e for e in ents.values() if e.get("net") == net["id"] and e["kind"] == "receiver"]
+    opp = "red" if net["side"] == "blue" else "blue"
+    nb = emo_api.band(net)
+    sensors = [e for e in ents.values() if e["kind"] == "sensor" and e["side"] == opp and emo_api.overlap(*nb, *emo_api.band(e))]
+    jammers = [e for e in ents.values() if e["kind"] == "effector" and e["side"] == opp and e["active"]]
+    nsens = net.get("sens_dbm") or p.default_sens
+    omni = {**net, "pattern": "omni"}
+    S = {u["id"]: await emo_api.p2p_level(omni, pos(net), u, pos(u)) for u in users}          # omni levels at users
+    E = {x["id"]: await emo_api.p2p_level(omni, pos(net), x, pos(x)) - (x.get("sens_dbm") or p.default_sens) for x in sensors}
+    # 1. power: cut by the weakest user's spare margin
+    headroom = max(0.0, min((s - nsens for s in S.values()), default=0.0) - 6)
+    power = {"current_eirp_dbm": net["eirp_dbm"], "recommended_eirp_dbm": round(net["eirp_dbm"] - headroom, 1), "cut_db": round(headroom, 1),
+             "heard_by_after": [x["name"] for x in sensors if E[x["id"]] - headroom >= 0],
+             "heard_by_now": [x["name"] for x in sensors if E[x["id"]] >= 0]}
+    # 2. antenna: sector azimuth and beamwidth, scored on users kept and sensors dropped
+    from .coverage_core import sector_atten_db
+    from .link_core import bearing_deg
+    import numpy as np
+    best = None
+    here = pos(net)
+    for bw in (60, 90, 120):
+        for az in range(0, 360, 10):
+            def att(target_pos):
+                off = abs((bearing_deg(here[0], here[1], target_pos[0], target_pos[1]) - az + 180) % 360 - 180)
+                return float(sector_atten_db(np.array([off]), bw)[0])
+            closed = sum(1 for u in users if S[u["id"]] - att(pos(u)) - nsens >= 6)
+            heard = [x["name"] for x in sensors if E[x["id"]] - att(pos(x)) >= 0]
+            worst = max((E[x["id"]] - att(pos(x)) for x in sensors), default=-99.0)
+            sc = 10 * closed - 1.5 * max(0.0, worst + 6) - 0.02 * bw
+            if best is None or sc > best["score"]:
+                best = {"azimuth": az, "beamwidth": bw, "users_closed": closed, "of_users": len(users), "heard_by": heard,
+                        "worst_exposure_db": round(worst, 1), "score": round(sc, 1)}
+    omni_state = {"users_closed": sum(1 for u in users if S[u["id"]] - nsens >= 6), "heard_by": [x["name"] for x in sensors if E[x["id"]] >= 0],
+                  "worst_exposure_db": round(max(E.values(), default=-99.0), 1)}
+    # 3. channel: same band class, outside every opposing jammer's band
+    lo_c, hi_c = (30.0, 88.0) if nb[0] < 88e6 else (225.0, 400.0) if nb[0] < 400e6 else (nb[0] / 1e6 * 0.9, nb[1] / 1e6 * 1.1)
+    cands = []
+    for f in [round(lo_c + i * (hi_c - lo_c) / 40, 2) for i in range(41)]:
+        fb = (f * 1e6 - (net["bw_khz"] or 25) * 500, f * 1e6 + (net["bw_khz"] or 25) * 500)
+        jam = [j["name"] for j in jammers if emo_api.overlap(*fb, *emo_api.band(j))]
+        sens = [x["name"] for x in ents.values() if x["kind"] == "sensor" and x["side"] == opp and emo_api.overlap(*fb, *emo_api.band(x))]
+        cands.append({"freq_mhz": f, "jammed_by": jam, "sensed_by": sens})
+    clear = [c for c in cands if not c["jammed_by"]]
+    channel = {"current_mhz": net["freq_mhz"], "current_jammed_by": [j["name"] for j in jammers if emo_api.overlap(*nb, *emo_api.band(j))],
+               "clear_of_jammers": [c["freq_mhz"] for c in clear][:12], "still_sensed_by": sorted({s for c in clear for s in c["sensed_by"]}),
+               "note": "Channel changes avoid jammer bands; ES receivers usually cover the whole band, so a channel change rarely hides the net."}
+    return {"net": net["name"], "power": power, "antenna": {"omni_now": omni_state, "best_sector": best}, "channel": channel,
+            "notes": "Computed at the current position from the pairwise terrain paths. Power cut keeps 6 dB user margin. Antenna "
+                     "uses the model's sector pattern (front-to-back about 25 dB). Screening-grade."}
+
+
+class ApplyIn(BaseModel):
+    net: str
+    eirp_dbm: float | None = None
+    azimuth: float | None = None
+    beamwidth: float | None = None
+    freq_mhz: float | None = None
+
+
+@router.post("/tune/apply")
+async def tune_apply(body: ApplyIn, t_min: float = 0):
+    emo_api, ents, p, pos = _ctx(t_min)
+    net = next((e for e in ents.values() if e["name"] == body.net and e["kind"] == "emitter"), None)
+    if not net:
+        raise HTTPException(404, "net control not found")
+    from .db import get_db, now_iso
+    users = [e for e in ents.values() if e.get("net") == net["id"]]
+    with get_db().tx() as c:
+        if body.eirp_dbm is not None:
+            c.execute("UPDATE emo_entities SET eirp_dbm=?, updated_at=? WHERE id=?", (body.eirp_dbm, now_iso(), net["id"]))
+        if body.azimuth is not None:
+            c.execute("UPDATE emo_entities SET pattern='sector', azimuth=?, beamwidth=?, updated_at=? WHERE id=?",
+                      (body.azimuth, body.beamwidth or 90, now_iso(), net["id"]))
+        if body.freq_mhz is not None:
+            for e in [net] + users:
+                c.execute("UPDATE emo_entities SET freq_mhz=?, updated_at=? WHERE id=?", (body.freq_mhz, now_iso(), e["id"]))
+    return {"applied": body.model_dump(exclude_none=True), "users_retuned": len(users) if body.freq_mhz is not None else 0}
+
+
+class JointIn(BaseModel):
+    net: str
+    user_move_km: float = Field(default=10, gt=1, le=40)
+    ctrl_move_km: float = Field(default=30, gt=1, le=60)
+    standoff_km: float = Field(default=10, ge=0, le=50)
+
+
+@router.post("/joint")
+async def joint(body: JointIn, t_min: float = 0):
+    """Greedy joint re-siting of a net: each static user moves to its best nearby site (link from the control station,
+    its own exposure, jamming), then the control station is re-sited with the score map. Moves are APPLIED; the
+    result lists them with before/after scoreboards. Use a COA snapshot first if you want to compare."""
+    import numpy as np
+    from .ems_core import sample
+    from .sdr_classify import haversine_km
+    emo_api, ents, p, pos = _ctx(t_min)
+    net = next((e for e in ents.values() if e["name"] == body.net and e["kind"] == "emitter"), None)
+    if not net or net.get("fixed_level_dbm") is not None:
+        raise HTTPException(404, "net control not found")
+    opp = "red" if net["side"] == "blue" else "blue"
+    nb = emo_api.band(net)
+    nsens = net.get("sens_dbm") or p.default_sens
+    sensors = [e for e in ents.values() if e["kind"] == "sensor" and e["side"] == opp and emo_api.overlap(*nb, *emo_api.band(e))]
+    jammers = [e for e in ents.values() if e["kind"] == "effector" and e["side"] == opp and e["active"] and emo_api.overlap(*nb, *emo_api.band(e))]
+    users = [e for e in ents.values() if e.get("net") == net["id"] and e["kind"] == "receiver" and not e.get("track")]
+    own_g, opp_g = _ground(ents, pos, net["side"]), _ground(ents, pos, opp)
+    from .db import get_db, now_iso
+    before = emo_api._LAST.get("score")
+    moves = []
+    ctrl = pos(net)
+    for u in users:
+        here = pos(u)
+        R = body.user_move_km
+        LA, LO, _ = _axes(here, R, 48)
+        ok = _mask(LA, LO, here, R, own_g, opp_g, body.standoff_km)
+        rad = min(100.0, haversine_km(here[0], here[1], *ctrl) + R + 2)
+        link = sample(await emo_api.coverage_for(_pseudo(net, net, ctrl, net["eirp_dbm"], rad), ctrl, u["h_agl"]), LA, LO) - nsens
+        exp = np.full(LA.shape, -99.0)
+        if u.get("eirp_dbm") is not None:
+            for x in sensors:
+                r2 = min(100.0, haversine_km(here[0], here[1], *pos(x)) + R + 2)
+                exp = np.maximum(exp, sample(await emo_api.coverage_for(_pseudo(u, x, pos(x), u["eirp_dbm"], r2), pos(x), u["h_agl"]), LA, LO) - (x.get("sens_dbm") or p.default_sens))
+        js = np.full(LA.shape, -99.0)
+        for j in jammers:
+            js = np.maximum(js, sample(await emo_api.coverage_for(j, pos(j), u["h_agl"]), LA, LO) - emo_api.jam_penalty(j, net) - (link + nsens))
+        jsreq = net["js_req_db"] if net.get("js_req_db") is not None else p.js_req_db
+        score = 10 * (link >= 6) - 3 * np.maximum(0.0, 6 - link) - 1.5 * np.maximum(0.0, exp + 6) - 2 * np.maximum(0.0, js - jsreq + 6)
+        ok = ok & np.isfinite(score)
+        i0, j0 = LA.shape[0] // 2, LA.shape[1] // 2
+        best = _best_points(score, LA, LO, ok, n=1, min_sep_km=1.0)
+        if best and best[0]["score"] - float(score[i0, j0]) >= 5:
+            b = best[0]; i, j = b.pop("ij")
+            with get_db().tx() as c:
+                c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (b["lat"], b["lon"], now_iso(), u["id"]))
+            moves.append({"entity": u["name"], "from": here, "to": (b["lat"], b["lon"]), "where": _describe((b["lat"], b["lon"]), u["name"] + " (current)", here),
+                          "detail": f"link {float(link[i, j]):+.1f} dB (was {float(link[i0, j0]):+.1f}), exposure {float(exp[i, j]):+.1f} dB (was {float(exp[i0, j0]):+.1f}), J/S {float(js[i, j]):+.1f} dB"})
+    # control station last, against the users' new positions
+    await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
+    m = await plan_map(MapIn(kind="net", name=net["name"], max_move_km=body.ctrl_move_km, standoff_km=body.standoff_km, px=60), t_min=t_min)
+    if m["best"] and m["best"][0]["score"] - m["current"]["score"] >= 5:
+        b = m["best"][0]
+        with get_db().tx() as c:
+            c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (b["lat"], b["lon"], now_iso(), net["id"]))
+        moves.append({"entity": net["name"], "from": ctrl, "to": (b["lat"], b["lon"]), "where": b["where"],
+                      "detail": f"{b['users_closed']}/{b['of_users']} users closed, exposure {b['exposure_db']:+} dB (was {m['current']['exposure_db']:+}), J/S {b['worst_js_db']:+} dB"})
+    res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
+    return {"net": net["name"], "moves": moves, "score_before": before, "score_after": res["score"],
+            "notes": "Greedy: users first (static ones only), then the control station; each move only if clearly better (5 points). Applied to the scenario."}

@@ -103,6 +103,7 @@ class RunIn(BaseModel):
     rx_h: float = Field(default=2, ge=0, le=100)          # ground receiver / sensor height for the maps
     js_req_db: float = Field(default=0, ge=-30, le=80)     # default J/S at which a net fails
     default_sens: float = Field(default=-110, ge=-170, le=0)
+    sigma_db: float = Field(default=9, ge=1, le=30)         # combined uncertainty (sensitivity, power, terrain) for probabilities
     df_fix_good_m: float = Field(default=1000, gt=0)       # fix error below which a target is 'targetable'
 
 
@@ -484,6 +485,10 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
                 # bearings are pooled per observing side: red and blue never share a fix
                 bearings.setdefault((e["id"], x["side"]), []).append({"sensor": x["name"], "site": x["pos"], "bearing": brg,
                                                                      "sigma": x["df_rms_deg"]})
+    def _prob(margin: float) -> int:
+        return int(round(50 * (1 + math.erf(margin / (p.sigma_db * math.sqrt(2))))))
+    for d in detections:
+        d["p"] = _prob(d["margin_db"])
     fixes = []
     for (tid, by_side), bs in bearings.items():
         t = byid[tid]
@@ -530,6 +535,11 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
                         "coverage_km2": None if space else round(cov_n * km2, 1), "denied_km2": round(float(den.sum()) * km2, 1),
                         "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq})
 
+    for j in jamming:
+        j["p"] = _prob(j["js_db"] - j["js_req_db"]) if j["status"] != "no signal" else 0
+    for f in fixes:
+        ps = [d["p"] for d in detections if d["target"] == f["target"] and d["sensor"] in f["sensors"] and d["detected"]]
+        f["p"] = int(round(100 * math.prod(x / 100 for x in ps))) if len(ps) >= 2 else 0
     layers = {k: overlay_png(region_masks(m, LAYER_RGBA[k], hatched=k.endswith("_denied"))) for k, m in L.items() if m.any()}
     score = scoreboard(ents, detections, fixes, jamming, per_net)
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]

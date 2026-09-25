@@ -26,6 +26,7 @@ from .cells import router as cells_router
 from .satnogs import router as sat_router
 from .hf_api import router as hf_router
 from .emo_api import ensure_emo_schema, router as emo_router
+from .ar_api import router as ar_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -62,6 +63,7 @@ app.include_router(cells_router)
 app.include_router(sat_router)
 app.include_router(hf_router)
 app.include_router(emo_router)
+app.include_router(ar_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

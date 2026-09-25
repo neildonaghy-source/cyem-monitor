@@ -58,7 +58,7 @@ def ensure_emo_schema(db: Database) -> None:
     with db.tx() as c:
         c.executescript(SQL)
         cols = {r[1] for r in c.execute("PRAGMA table_info(emo_entities)").fetchall()}
-        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT"), ("ws", "TEXT NOT NULL DEFAULT 'default'")):
+        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT"), ("ws", "TEXT NOT NULL DEFAULT 'default'"), ("rcs_m2", "REAL"), ("radar_gain_dbi", "REAL"), ("radar_mds_dbm", "REAL")):
             if col not in cols:
                 c.execute(f"ALTER TABLE emo_entities ADD COLUMN {col} {typ}")
 
@@ -92,6 +92,9 @@ class EntityIn(BaseModel):
     hop_bw_khz: float | None = Field(default=None, gt=0, le=2_000_000)   # frequency-hopping hopset width
     pg_db: float | None = Field(default=None, ge=0, le=60)               # other processing gain / anti-jam margin
     schedule: list[list[float]] | None = None                            # on-air windows [[start_min, end_min], ...]
+    rcs_m2: float | None = Field(default=None, gt=0, le=1e6)              # radar cross-section as a target
+    radar_gain_dbi: float | None = Field(default=None, ge=0, le=60)      # radar antenna gain (emitter category radar)
+    radar_mds_dbm: float | None = Field(default=None, ge=-170, le=0)     # radar minimum detectable echo after processing
 
 
 class MoveIn(BaseModel):
@@ -425,7 +428,7 @@ async def coverage_for(e: dict, pos, rx_h: float):
     return _COV[key]
 
 
-def scoreboard(ents, detections, fixes, jamming, nets) -> dict:
+def scoreboard(ents, detections, fixes, jamming, nets, radar=None) -> dict:
     """Per-side measures of the EM fight: net availability, exposure, fix risk, denial achieved, collateral."""
     out = {}
     for sd in ("blue", "red"):
@@ -447,7 +450,73 @@ def scoreboard(ents, detections, fixes, jamming, nets) -> dict:
             "denial_achieved": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "denied" and not j.get("collateral")),
             "collateral": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "denied" and j.get("collateral")),
             "net_area_denied_pct": round(sum(n["denied_pct"] for n in nets if n["side"] == sd) / max(1, sum(1 for n in nets if n["side"] == sd)), 1),
+            "radar_tracks": sum(1 for r in (radar or []) if r["radar_side"] == sd and r["tracked"]),
+            "radar_screened": sum(1 for r in (radar or []) if r["target_side"] == sd and r["detected"] and not r["tracked"]),
         }
+    return out
+
+
+def _platform(e: dict) -> str:
+    sidc = (e.get("sidc") or "")
+    if len(sidc) > 2 and sidc[2] == "A" or e["h_agl"] >= 300:
+        return "air"
+    if len(sidc) > 2 and sidc[2] == "S":
+        return "sea"
+    return "ground"
+
+
+def _default_rcs(e: dict) -> float:
+    n = e["name"].lower(); pf = _platform(e)
+    if pf == "sea":
+        return 5000.0
+    if pf == "air":
+        return 0.1 if "uav" in n or "drone" in n else 1.0 if "fighter" in n else 30.0 if "aew" in n or "mpa" in n or "ea" in n else 50.0 if "airliner" in n else 5.0
+    return 10.0
+
+
+async def radar_picture(ents, radiating, effectors, p, prob) -> list[dict]:
+    """Radar range equation per radar and opposing air/sea platform, with terrain excess loss counted twice, and
+    noise jamming from effectors of category radar (mainlobe when on the target's bearing or self-screening,
+    sidelobe -30 dB otherwise). Screened when the noise beats the echo; burn-through range reported."""
+    from .link_core import bearing_deg, haversine_m
+    out = []
+    radars = [e for e in radiating if e.get("category") == "radar" and e["kind"] == "emitter"]
+    platforms = {}
+    for e in sorted(ents, key=lambda x: x["kind"] == "effector"):        # a pod is carried: name the platform after the aircraft
+        if e["side"] == "grey" or _platform(e) != "ground":
+            key = (e["side"], round(e["pos"][0], 3), round(e["pos"][1], 3), _platform(e))
+            platforms.setdefault(key, e)               # one target per platform position (a fighter's radio and GNSS are one aircraft)
+    for rd in radars:
+        gr = rd.get("radar_gain_dbi") or 30.0
+        mds = rd.get("radar_mds_dbm") or -100.0
+        lam = 3e8 / (rd["freq_mhz"] * 1e6)
+        jams = [y for y in effectors if y.get("category") == "radar" and y["side"] != rd["side"] and overlap(*band(rd), *band(y))]
+        for tg in platforms.values():
+            if tg["side"] == rd["side"] or _platform(tg) == "ground":
+                continue
+            R = max(200.0, haversine_m(*rd["pos"], *tg["pos"]))
+            fspl = 20 * math.log10(R) + 20 * math.log10(rd["freq_mhz"] * 1e6) - 147.55
+            one_way = await p2p_level(rd, rd["pos"], tg, tg["pos"])          # includes pattern and terrain
+            excess = max(0.0, rd["eirp_dbm"] - one_way - fspl)
+            rcs = tg.get("rcs_m2") or _default_rcs(tg)
+            echo = rd["eirp_dbm"] + gr + 10 * math.log10(rcs * lam * lam / (4 * math.pi) ** 3) - 40 * math.log10(R) - 2 * excess
+            margin = echo - mds
+            best = None
+            for y in jams:
+                same_bearing = abs((bearing_deg(*rd["pos"], *tg["pos"]) - bearing_deg(*rd["pos"], *y["pos"]) + 180) % 360 - 180) < 5
+                selfp = haversine_m(*y["pos"], *tg["pos"]) < 1500
+                gain = gr if (same_bearing or selfp) else gr - 30
+                J = await p2p_level(y, y["pos"], rd, rd["pos"]) + gain - jam_penalty(y, rd)
+                js = J - echo
+                if best is None or js > best["js_db"]:
+                    best = {"jammer": y["name"], "mode": "self-screening" if selfp else "mainlobe" if same_bearing else "stand-off (sidelobe)",
+                            "js_db": round(js, 1), "burnthrough_km": round(R / 1000 / (10 ** (js / 40)), 1) if js > 0 else None}
+            detected = margin >= 0
+            screened = bool(detected and best and best["js_db"] >= 0)     # only a detectable target can be screened
+            out.append({"radar": rd["name"], "radar_side": rd["side"], "target": tg["name"], "target_side": tg["side"], "platform": _platform(tg),
+                        "range_km": round(R / 1000, 1), "rcs_m2": rcs, "echo_dbm": round(echo, 1), "mds_dbm": mds, "margin_db": round(margin, 1),
+                        "detected": detected, "p": prob(margin), "screened": screened, "tracked": detected and not screened, "jam": best,
+                        "pos_radar": rd["pos"], "pos_target": tg["pos"]})
     return out
 
 
@@ -575,21 +644,22 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
                         "coverage_km2": None if space else round(cov_n * km2, 1), "denied_km2": round(float(den.sum()) * km2, 1),
                         "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq})
 
+    radar = await radar_picture(ents, radiating, effectors, p, _prob)
     for j in jamming:
         j["p"] = _prob(j["js_db"] - j["js_req_db"]) if j["status"] != "no signal" else 0
     for f in fixes:
         ps = [d["p"] for d in detections if d["target"] == f["target"] and d["sensor"] in f["sensors"] and d["detected"]]
         f["p"] = int(round(100 * math.prod(x / 100 for x in ps))) if len(ps) >= 2 else 0
     layers = {k: overlay_png(region_masks(m, LAYER_RGBA[k], hatched=k.endswith("_denied"))) for k, m in L.items() if m.any()}
-    score = scoreboard(ents, detections, fixes, jamming, per_net)
+    score = scoreboard(ents, detections, fixes, jamming, per_net, radar)
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]
     horizon = max([track_minutes(e) for e in ents] + [0])
     if keep:
         _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
-                      "jamming": jamming, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
+                      "jamming": jamming, "radar": radar, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
             "positions": {e["id"]: e["pos"] for e in ents}, "on_air": {e["id"]: e["active"] for e in ents}, "detections": detections, "fixes": fixes,
-            "jamming": jamming, "nets": per_net, "exposure": exposure, "score": score, "params": p.model_dump(),
+            "jamming": jamming, "nets": per_net, "exposure": exposure, "score": score, "radar": radar, "params": p.model_dump(),
             "compute_s": round(time.monotonic() - t0, 1),
             "notes": "Screening only: Deygout 3-edge on Copernicus 30 m terrain; no processing gain, hopping, nulling, clutter, "
                      "multipath or time variability. Radar modelled as an emitter for ES only. DF fix error = range x DF "
@@ -777,6 +847,9 @@ def scenario_context(selected: list[str] | None = None) -> str:
                                                                           for j in hold if j["effector_side"] != side) or "none"))
     det = sorted([d for d in _LAST["detections"] if d["detected"] and d["sensor_side"] == "red"], key=lambda d: -d["margin_db"])[:12]
     L.append("LOUDEST BLUE EMISSIONS HEARD BY RED: " + ("; ".join(f"{d['target']} heard by {d['sensor']} at +{d['margin_db']} dB" for d in det) or "none"))
+    rp = _LAST.get("radar") or []
+    L.append("RADAR TRACKS: " + ("; ".join(f"{r['radar']} tracks {r['target']} at {r['range_km']} km ({r['margin_db']:+} dB)" for r in rp if r["tracked"]) or "none"))
+    L.append("RADAR SCREENED BY EA: " + ("; ".join(f"{r['target']} hidden from {r['radar']} by {r['jam']['jammer']} ({r['jam']['mode']}, J/S {r['jam']['js_db']:+} dB, burn-through {r['jam']['burnthrough_km']} km)" for r in rp if r["screened"] and r["detected"]) or "none"))
     col = [j for j in _LAST["jamming"] if j.get("collateral") and j["status"] == "denied"]
     L.append("CIVIL (GREY) USERS DENIED AS COLLATERAL: " + ("; ".join(f"{j['victim']} by {j['effector']} (J/S {j['js_db']} dB)" for j in col) or "none"))
     if selected:

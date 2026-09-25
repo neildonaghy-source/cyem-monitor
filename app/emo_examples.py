@@ -442,3 +442,17 @@ EXAMPLES["brecon-siting"]["entities"].append(es("Blue ES/DF (Pen y Fan)", B, 51.
 # Solent: ES receivers cover 30-3000 MHz, so civil marine VHF and the ferry are heard too
 for _n in ("Blue shore ES/DF (Portsdown)", "Blue shore ES/DF (Needles)", "Red ES vessel"):
     _set("solent-maritime", _n, freq_mhz=30, f_hi_mhz=3000)
+
+
+# ---- radar EA (2026-09-25): noise jammers against radars, self-protection and stand-off ----
+EXAMPLES["suwalki-mdo"]["entities"] += [
+    ea("Blue stand-off radar jammer", B, "radar", 54.30, 22.60, 9000, 3000, 200000, 80, sidc=FA, track=[[54.10, 22.40], [54.30, 22.60]], speed_kmh=500,
+       notes="Airborne noise jammer against the red SAM radar (S-band); stand-off, so it enters the radar sidelobes"),
+    ea("Red radar jammer (ground)", R, "radar", 54.55, 23.55, 15, 3000, 200000, 75, notes="Against the blue AEW radar; sidelobe unless on a target bearing"),
+]
+EXAMPLES["littoral-a2ad"]["entities"] += [
+    ea("Blue fighter EA pod", B, "radar", 67.700, 13.200, 8000, 9800, 500000, 60, sidc=FA, track=[[68.100, 14.100], [67.700, 13.200]], speed_kmh=700,
+       notes="Self-protection pod on the fighter pair against the red targeting radar (X-band): mainlobe, self-screening"),
+    ea("Blue stand-off radar jammer", B, "radar", 67.500, 13.000, 9000, 3000, 200000, 80, sidc=FA, track=[[67.600, 13.800], [67.500, 13.000]], speed_kmh=500,
+       notes="Against the red SAM radar (S-band) from stand-off"),
+]

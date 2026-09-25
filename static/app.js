@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25x';
+  const BUILD = '2026-09-25y';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1651,8 +1651,8 @@
       ${tbl(`Not heard by (${missed.length})`, missed.map((d) => row(esc(d.sensor), `${d.margin_db} dB`, 'below sensitivity')))}
       ${tbl(`Hears (${hears.length})`, hears.map((d) => row(esc(d.target), `+${d.margin_db} dB`, esc(d.category || ''))))}
       ${tbl(`Misses (${misses.length})`, misses.map((d) => row(esc(d.target), `${d.margin_db} dB`, '')))}
-      ${tbl(`Jams (${f.jams.length})`, f.jams.map((x) => row(esc(x.victim), `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
-      ${tbl(`Under attack (${f.jammed.length})`, f.jammed.map((x) => row(`${esc(x.effector)} → ${esc(x.victim)}`, `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(x.status)}</b>`)))}
+      ${tbl(`Jams (${f.jams.length})`, f.jams.map((x) => row(esc(x.victim), `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : x.status === 'spoofed' ? '#c58cff' : '#45d38a'}">${esc(x.status)}</b>`)))}
+      ${tbl(`Under attack (${f.jammed.length})`, f.jammed.map((x) => row(`${esc(x.effector)} → ${esc(x.victim)}`, `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : x.status === 'spoofed' ? '#c58cff' : '#45d38a'}">${esc(x.status)}</b>`)))}
       ${!heard.length && !missed.length && !hears.length && !misses.length && !f.jams.length && !f.jammed.length ? '<p class="dim">No interactions on its frequencies.</p>' : ''}`;
   }
   function emoToggleSel(id) {
@@ -1760,7 +1760,7 @@
     ['bw_khz', 'Bandwidth kHz', 'number'], ['eirp_dbm', 'EIRP dBm (blank = receive only)', 'number'], ['sens_dbm', 'Sensitivity dBm', 'number'],
     ['js_req_db', 'Net fails at J/S dB', 'number'], ['df_rms_deg', 'DF accuracy ° RMS (sensor)', 'number'], ['fixed_level_dbm', 'Space signal dBm (GNSS)', 'number'],
     ['pattern', 'Antenna omni/sector', 'text'], ['azimuth', 'Sector azimuth °', 'number'], ['beamwidth', 'Beamwidth °', 'number'],
-    ['rcs_m2', 'RCS m² (as a radar target)', 'number'], ['radar_gain_dbi', 'Radar antenna gain dBi', 'number'], ['radar_mds_dbm', 'Radar min detectable echo dBm', 'number'],
+    ['ea_mode', 'EA mode noise/spoof (effector)', 'text'], ['rcs_m2', 'RCS m² (as a radar target)', 'number'], ['radar_gain_dbi', 'Radar antenna gain dBi', 'number'], ['radar_mds_dbm', 'Radar min detectable echo dBm', 'number'],
     ['radius_km', 'Footprint radius km (≤100, blank = auto)', 'number'], ['hop_bw_khz', 'Hopset width kHz (frequency hopping)', 'number'],
     ['pg_db', 'Processing gain dB (anti-jam)', 'number'], ['speed_kmh', 'Track speed km/h', 'number'], ['sidc', 'APP-6 SIDC', 'text'], ['notes', 'Notes', 'text']];
   const EMO_TPL = [
@@ -1812,7 +1812,7 @@
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     out.innerHTML = `
       ${r.score ? `<h3 class="sec">Scoreboard</h3><table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>
-        ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters heard by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Fixed by the other side'], ['targetable', 'Targetable'], ['denial_achieved', 'Denial achieved (users)'], ['collateral', 'Civil collateral'], ['net_area_denied_pct', 'Own net area denied %'], ['radar_tracks', 'Radar tracks held'], ['radar_screened', 'Own platforms screened from radar']]
+        ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters heard by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Fixed by the other side'], ['targetable', 'Targetable'], ['denial_achieved', 'Denial achieved (users)'], ['spoofed', 'Spoofed (users)'], ['collateral', 'Civil collateral'], ['net_area_denied_pct', 'Own net area denied %'], ['radar_tracks', 'Radar tracks held'], ['radar_screened', 'Own platforms screened from radar']]
           .map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>` : ''}
       ${r.radar?.length ? `<h3 class="sec">Radar: tracks and screening</h3><table class="grid"><tr><th>Radar</th><th>Target</th><th>km</th><th>Echo margin</th><th>Result</th></tr>${r.radar.filter((x) => x.detected || x.jam).map((x) => `<tr><td style="color:${SIDE_COL[x.radar_side]}">${esc(x.radar)}</td><td style="color:${SIDE_COL[x.target_side]}">${esc(x.target)} <span class="dim">${x.rcs_m2} m²</span></td><td class="mono">${x.range_km}</td><td class="mono">${x.margin_db >= 0 ? '+' : ''}${x.margin_db} dB · ${x.p}%</td><td>${x.tracked ? '<b style="color:#45d38a">tracked</b>' : x.screened ? `<b style="color:#dc3cdc">screened</b> by ${esc(x.jam.jammer)} (${esc(x.jam.mode)}, J/S ${x.jam.js_db} dB, burn-through ${x.jam.burnthrough_km} km)` : 'no track'}</td></tr>`).join('')}</table>` : ''}
       <h3 class="sec">ES: what each side can see and fix</h3>

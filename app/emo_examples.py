@@ -456,3 +456,9 @@ EXAMPLES["littoral-a2ad"]["entities"] += [
     ea("Blue stand-off radar jammer", B, "radar", 67.500, 13.000, 9000, 3000, 200000, 80, sidc=FA, track=[[67.600, 13.800], [67.500, 13.000]], speed_kmh=500,
        notes="Against the red SAM radar (S-band) from stand-off"),
 ]
+
+
+# ---- GNSS spoofing (2026-09-25): a spoofer on the A303 alongside the jammer ----
+_sp = ea("Red GNSS spoofer (van)", R, "nav", 51.160, -1.980, 2, 1575.42, 2046, 20, notes="Low power: aims to be accepted, not to deny")
+_sp["ea_mode"] = "spoof"
+EXAMPLES["a303-gnss"]["entities"].append(_sp)

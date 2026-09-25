@@ -58,7 +58,7 @@ def ensure_emo_schema(db: Database) -> None:
     with db.tx() as c:
         c.executescript(SQL)
         cols = {r[1] for r in c.execute("PRAGMA table_info(emo_entities)").fetchall()}
-        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT"), ("ws", "TEXT NOT NULL DEFAULT 'default'"), ("rcs_m2", "REAL"), ("radar_gain_dbi", "REAL"), ("radar_mds_dbm", "REAL")):
+        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT"), ("ws", "TEXT NOT NULL DEFAULT 'default'"), ("rcs_m2", "REAL"), ("radar_gain_dbi", "REAL"), ("radar_mds_dbm", "REAL"), ("ea_mode", "TEXT")):
             if col not in cols:
                 c.execute(f"ALTER TABLE emo_entities ADD COLUMN {col} {typ}")
 
@@ -93,6 +93,7 @@ class EntityIn(BaseModel):
     pg_db: float | None = Field(default=None, ge=0, le=60)               # other processing gain / anti-jam margin
     schedule: list[list[float]] | None = None                            # on-air windows [[start_min, end_min], ...]
     rcs_m2: float | None = Field(default=None, gt=0, le=1e6)              # radar cross-section as a target
+    ea_mode: str | None = Field(default=None, pattern="^(noise|spoof)$")   # effector: noise jamming (default) or GNSS/datalink spoofing
     radar_gain_dbi: float | None = Field(default=None, ge=0, le=60)      # radar antenna gain (emitter category radar)
     radar_mds_dbm: float | None = Field(default=None, ge=-170, le=0)     # radar minimum detectable echo after processing
 
@@ -433,7 +434,7 @@ def scoreboard(ents, detections, fixes, jamming, nets, radar=None) -> dict:
     out = {}
     for sd in ("blue", "red"):
         opp = "red" if sd == "blue" else "blue"
-        bad = {j["victim"] for j in jamming if j["status"] in ("denied", "no signal")}
+        bad = {j["victim"] for j in jamming if j["status"] in ("denied", "no signal", "spoofed")}
         rx = [e for e in ents if e["side"] == sd and e["kind"] == "receiver"]
         avail = [e["name"] not in bad for e in rx]
         radiating = [e for e in ents if e["side"] == sd and e["active"] and (e["kind"] in ("emitter", "effector") or e.get("eirp_dbm") is not None)
@@ -448,6 +449,7 @@ def scoreboard(ents, detections, fixes, jamming, nets, radar=None) -> dict:
             "fixed": sum(1 for f in fixes if f["target_side"] == sd and f["fix"]),
             "targetable": sum(1 for f in fixes if f["target_side"] == sd and f["targetable"]),
             "denial_achieved": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "denied" and not j.get("collateral")),
+            "spoofed": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "spoofed" and not j.get("collateral")),
             "collateral": sum(1 for j in jamming if j["effector_side"] == sd and j["status"] == "denied" and j.get("collateral")),
             "net_area_denied_pct": round(sum(n["denied_pct"] for n in nets if n["side"] == sd) / max(1, sum(1 for n in nets if n["side"] == sd)), 1),
             "radar_tracks": sum(1 for r in (radar or []) if r["radar_side"] == sd and r["tracked"]),
@@ -633,7 +635,10 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
                 Sv = float(nn["fixed_level_dbm"]) if space else await p2p_level(nn, nn["pos"], v, v["pos"])
                 vs = v.get("sens_dbm") or nsens
                 js = round(J - Sv, 1)
-                status = "no signal" if Sv < vs else ("denied" if js >= jsreq else "holds")
+                if y.get("ea_mode") == "spoof":
+                    status = "no signal" if Sv < vs else ("spoofed" if 3 <= js <= 30 else "denied" if js > 30 else "holds")
+                else:
+                    status = "no signal" if Sv < vs else ("denied" if js >= jsreq else "holds")
                 jamming.append({"effector": y["name"], "effector_id": y["id"], "victim_id": v["id"], "effector_side": y["side"], "victim": v["name"], "net": nn["name"],
                                 "collateral": nn["side"] == "grey",
                                 "category": y.get("category"), "j_dbm": round(J, 1), "s_dbm": round(Sv, 1), "js_db": js,
@@ -646,7 +651,7 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
 
     radar = await radar_picture(ents, radiating, effectors, p, _prob)
     for j in jamming:
-        j["p"] = _prob(j["js_db"] - j["js_req_db"]) if j["status"] != "no signal" else 0
+        j["p"] = _prob(j["js_db"] - (3 if j["status"] == "spoofed" else j["js_req_db"])) if j["status"] != "no signal" else 0
     for f in fixes:
         ps = [d["p"] for d in detections if d["target"] == f["target"] and d["sensor"] in f["sensors"] and d["detected"]]
         f["p"] = int(round(100 * math.prod(x / 100 for x in ps))) if len(ps) >= 2 else 0
@@ -847,6 +852,8 @@ def scenario_context(selected: list[str] | None = None) -> str:
                                                                           for j in hold if j["effector_side"] != side) or "none"))
     det = sorted([d for d in _LAST["detections"] if d["detected"] and d["sensor_side"] == "red"], key=lambda d: -d["margin_db"])[:12]
     L.append("LOUDEST BLUE EMISSIONS HEARD BY RED: " + ("; ".join(f"{d['target']} heard by {d['sensor']} at +{d['margin_db']} dB" for d in det) or "none"))
+    sp = [j for j in _LAST["jamming"] if j["status"] == "spoofed"]
+    L.append("SPOOFED (false signal accepted, position or data corrupted): " + ("; ".join(f"{j['victim']} by {j['effector']} (J/S {j['js_db']:+} dB)" for j in sp) or "none"))
     rp = _LAST.get("radar") or []
     L.append("RADAR TRACKS: " + ("; ".join(f"{r['radar']} tracks {r['target']} at {r['range_km']} km ({r['margin_db']:+} dB)" for r in rp if r["tracked"]) or "none"))
     L.append("RADAR SCREENED BY EA: " + ("; ".join(f"{r['target']} hidden from {r['radar']} by {r['jam']['jammer']} ({r['jam']['mode']}, J/S {r['jam']['js_db']:+} dB, burn-through {r['jam']['burnthrough_km']} km)" for r in rp if r["screened"] and r["detected"]) or "none"))

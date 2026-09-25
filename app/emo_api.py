@@ -287,6 +287,7 @@ def df_fix(target_pos, bearings: list[dict]) -> dict | None:
 
 # ---- analysis ---------------------------------------------------------------------------------
 _COV: dict[tuple, object] = {}
+_LAST: dict = {}
 LAYER_RGBA = {
     "blue_cov": (60, 140, 255, 55), "red_cov": (255, 90, 90, 45),
     "blue_seen": (255, 70, 70, 70),    # blue emissions detectable by red ES
@@ -431,6 +432,8 @@ async def run(p: RunIn, t_min: float = 0):
     layers = {k: overlay_png([(m, LAYER_RGBA[k])]) for k, m in L.items() if m.any()}
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red")]
     horizon = max([track_minutes(e) for e in ents] + [0])
+    _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
+                  "jamming": jamming, "params": p})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
             "positions": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
             "jamming": jamming, "nets": per_net, "exposure": exposure, "params": p.model_dump(),
@@ -467,3 +470,58 @@ async def load_example(name: str):
     _COV.clear(); _P2P.clear()
     return {"loaded": name, "title": ex["title"], "about": ex["about"], "centre": ex["centre"], "zoom": ex["zoom"],
             "entities": _all()}
+
+
+# ---- focus on one entity ----------------------------------------------------------------
+BANDS = {"blue": [(60, 200, 255, 55), (60, 200, 255, 95), (60, 200, 255, 140)],
+         "red": [(255, 90, 90, 55), (255, 90, 90, 95), (255, 90, 90, 140)]}
+
+
+@router.get("/focus/{eid}")
+async def focus(eid: str, t_min: float = 0):
+    """One entity's picture: its footprint (strength bands against the opposing sensors' sensitivity), who hears
+    it, what it hears, what it jams or is jammed by. Uses the last run; run first if positions have changed."""
+    if not _LAST or abs(_LAST.get("t", -1) - t_min) > 1e-6:
+        raise HTTPException(409, "run the analysis first")
+    ents = {e["id"]: e for e in _all()}
+    e = ents.get(eid)
+    if not e:
+        raise HTTPException(404, "no such entity")
+    p: RunIn = _LAST["params"]
+    pos = _LAST["pos"].get(eid, (e["lat"], e["lon"]))
+    radiates = e["active"] and e.get("eirp_dbm") is not None and e.get("fixed_level_dbm") is None and (
+        e["kind"] in ("emitter", "effector") or e["kind"] == "receiver")
+    out = {"id": eid, "name": e["name"], "side": e["side"], "kind": e["kind"], "category": e.get("category"),
+           "active": e["active"], "overlay": None, "legend": None}
+    if radiates:
+        cov = await coverage_for(e, pos, p.rx_h)
+        watchers = [x for x in ents.values() if x["kind"] == "sensor" and x["side"] != e["side"] and overlap(*band(e), *band(x))]
+        thr = min([x.get("sens_dbm") or p.default_sens for x in watchers], default=p.default_sens)
+        s_, w_, n_, e2 = cov.bounds()
+        LA, LO = raster_axes(s_, w_, n_, e2, px=480)
+        lv = sample(cov, LA, LO)
+        masks = [(lv >= thr, BANDS[e["side"]][0]), (lv >= thr + 10, BANDS[e["side"]][1]), (lv >= thr + 20, BANDS[e["side"]][2])]
+        if e["kind"] == "effector":
+            # the denial it causes on each victim net inside that net's coverage
+            for nn in [x for x in ents.values() if x["kind"] == "emitter" and x["side"] != e["side"] and x["active"]
+                       and overlap(*band(nn := x), *band(e)) and any(r.get("net") == x["id"] for r in ents.values())]:
+                pen = bw_penalty_db(band(e)[1] - band(e)[0], band(nn)[1] - band(nn)[0])
+                jsreq = nn["js_req_db"] if nn.get("js_req_db") is not None else p.js_req_db
+                if nn.get("fixed_level_dbm") is not None:
+                    S = np.full(LA.shape, float(nn["fixed_level_dbm"])); covd = np.ones(LA.shape, bool)
+                else:
+                    S = sample(await coverage_for(nn, _LAST["pos"].get(nn["id"], (nn["lat"], nn["lon"])), p.rx_h), LA, LO)
+                    covd = S >= (nn.get("sens_dbm") or p.default_sens)
+                with np.errstate(invalid="ignore"):
+                    masks.append((covd & ((lv - pen - S) >= jsreq), (220, 60, 220, 150)))
+        out["overlay"] = {"png": overlay_png(masks), "bounds": [[s_, w_], [n_, e2]]}
+        out["legend"] = {"threshold_dbm": round(thr, 1), "bands_db": [0, 10, 20],
+                         "basis": "opposing sensors' best sensitivity" if watchers else "default sensitivity (no opposing sensor on this band)"}
+    det, jam = _LAST["detections"], _LAST["jamming"]
+    out["heard_by"] = sorted([d for d in det if d["target_id"] == eid], key=lambda d: -d["margin_db"])
+    out["hears"] = sorted([d for d in det if d.get("sensor_id") == eid], key=lambda d: -d["margin_db"])
+    out["jams"] = [j for j in jam if j.get("effector_id") == eid]
+    out["jammed"] = [j for j in jam if j.get("victim_id") == eid or (e["kind"] == "emitter" and j["net"] == e["name"])]
+    fx = [f for f in _LAST["fixes"] if f["target"] == e["name"]]
+    out["fix"] = fx[0] if fx else None
+    return out

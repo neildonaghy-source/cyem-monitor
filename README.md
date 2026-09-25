@@ -276,3 +276,5 @@ EMO button (and phone Tools sheet). Notional scenarios only. Symmetric model: bo
 - Performance: first run of the vignette about 48 s (terrain grids and paths computed 3 at a time; cyem container
   raised to 4 CPUs), later steps 10 to 20 s; results cached per position.
 Code: `app/emo_api.py`, `app/emo_examples.py`, `app/ems_core.py`; tests `tests/test_emo.py`.
+
+- **Focus (added 2026-09-25):** tap a symbol to see only that entity: its footprint in strength bands against the opposing sensors, who picks it up (margin, DF), what it hears, what it jams or is jammed by, and its fix. Whole-picture washes are off by default (tick boxes in the panel). Footprints stop at the entity compute radius (Edit to change).

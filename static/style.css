@@ -236,3 +236,11 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
   background: rgba(10,14,19,.92); color: #e6edf3; border: 1px solid #3c8cff; border-radius: 16px; padding: 5px 12px; font-size: 12px; cursor: pointer; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #emo-chip.busy { border-color: #f3b23e; }
 @media (max-width: 900px) { #emo-chip { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); } }
+
+#emo-card { position: fixed; right: 12px; top: 60px; width: min(380px, 94vw); max-height: 70vh; overflow: auto; z-index: 1150;
+  background: rgba(10,14,19,.95); border: 1px solid var(--border, #243040); border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+#emo-card h4 { margin: 10px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted, #8593a6); }
+#emo-card .emo-card-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+#emo-card .btns { margin-left: auto; display: flex; gap: 4px; }
+#emo-card table.grid td { padding: 2px 6px; }
+@media (max-width: 900px) { #emo-card { top: auto; bottom: calc(100px + env(safe-area-inset-bottom, 0px)); right: 3vw; max-height: 45vh; } }

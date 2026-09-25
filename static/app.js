@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25e';
+  const BUILD = '2026-09-25f';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1453,7 +1453,8 @@
   const KIND_TXT = { emitter: 'Emitter', receiver: 'Net user', sensor: 'ES sensor', effector: 'EA effector' };
   function emoIcon(e) {
     const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : 'SHGPU----------');
-    const dim = e.kind !== 'sensor' && e.kind !== 'receiver' && !e.active;
+    const air = EMO.res?.on_air?.[e.id] ?? e.active;
+    const dim = e.kind !== 'sensor' && (e.kind !== 'receiver' || e.eirp_dbm != null) && !air;
     let html = null, sz = [16, 16], anc = [8, 8];
     if (window.ms) {
       try {
@@ -1588,24 +1589,48 @@
     ['bw_khz', 'Bandwidth kHz', 'number'], ['eirp_dbm', 'EIRP dBm (blank = receive only)', 'number'], ['sens_dbm', 'Sensitivity dBm', 'number'],
     ['js_req_db', 'Net fails at J/S dB', 'number'], ['df_rms_deg', 'DF accuracy ° RMS (sensor)', 'number'], ['fixed_level_dbm', 'Space signal dBm (GNSS)', 'number'],
     ['pattern', 'Antenna omni/sector', 'text'], ['azimuth', 'Sector azimuth °', 'number'], ['beamwidth', 'Beamwidth °', 'number'],
-    ['radius_km', 'Footprint radius km (≤100, blank = auto)', 'number'], ['speed_kmh', 'Track speed km/h', 'number'], ['sidc', 'APP-6 SIDC', 'text'], ['notes', 'Notes', 'text']];
+    ['radius_km', 'Footprint radius km (≤100, blank = auto)', 'number'], ['hop_bw_khz', 'Hopset width kHz (frequency hopping)', 'number'],
+    ['pg_db', 'Processing gain dB (anti-jam)', 'number'], ['speed_kmh', 'Track speed km/h', 'number'], ['sidc', 'APP-6 SIDC', 'text'], ['notes', 'Notes', 'text']];
+  const EMO_TPL = [
+    ['CNR manpack VHF, 5 W, hopping', { kind: 'receiver', category: 'comms', freq_mhz: 45, bw_khz: 25, eirp_dbm: 37, hop_bw_khz: 58000, h_agl: 2 }],
+    ['CNR vehicle VHF, 50 W, hopping (net control)', { kind: 'emitter', category: 'comms', freq_mhz: 45, bw_khz: 25, eirp_dbm: 47, hop_bw_khz: 58000, sens_dbm: -110, js_req_db: 0, h_agl: 4 }],
+    ['VHF single-channel net control, 50 W', { kind: 'emitter', category: 'comms', freq_mhz: 45, bw_khz: 25, eirp_dbm: 47, hop_bw_khz: null, sens_dbm: -110, js_req_db: 0, h_agl: 4 }],
+    ['UHF tactical, 25 kHz, 10 W', { kind: 'emitter', category: 'comms', freq_mhz: 300, bw_khz: 25, eirp_dbm: 40, sens_dbm: -110, js_req_db: 0, h_agl: 4 }],
+    ['Link 16 class terminal (3 MHz hops, 960-1215 MHz)', { kind: 'emitter', category: 'datalink', freq_mhz: 1087.5, bw_khz: 3000, hop_bw_khz: 255000, eirp_dbm: 50, sens_dbm: -100, js_req_db: 10 }],
+    ['Tactical SATCOM terminal (X-band, dish)', { kind: 'emitter', category: 'comms', freq_mhz: 7950, bw_khz: 5000, eirp_dbm: 70, pattern: 'sector', azimuth: 170, beamwidth: 3, h_agl: 3 }],
+    ['UAS datalink (S-band)', { kind: 'emitter', category: 'datalink', freq_mhz: 2350, bw_khz: 5000, eirp_dbm: 40, sens_dbm: -95, js_req_db: 6, h_agl: 5 }],
+    ['Ground surveillance radar (X-band)', { kind: 'emitter', category: 'radar', freq_mhz: 9500, bw_khz: 10000, eirp_dbm: 85, pattern: 'sector', beamwidth: 90, h_agl: 6 }],
+    ['Air-defence radar (S-band)', { kind: 'emitter', category: 'radar', freq_mhz: 3000, bw_khz: 10000, eirp_dbm: 95, pattern: 'omni', h_agl: 8 }],
+    ['Counter-battery radar (S/C-band)', { kind: 'emitter', category: 'radar', freq_mhz: 3300, bw_khz: 5000, eirp_dbm: 88, pattern: 'sector', beamwidth: 90, h_agl: 6 }],
+    ['ES/DF site, 20-3000 MHz, mast', { kind: 'sensor', category: 'df', freq_mhz: 20, f_hi_mhz: 3000, sens_dbm: -118, df_rms_deg: 2, h_agl: 15 }],
+    ['Airborne ES, 20-18000 MHz', { kind: 'sensor', category: 'df', freq_mhz: 20, f_hi_mhz: 18000, sens_dbm: -115, df_rms_deg: 3, h_agl: 9000 }],
+    ['VHF barrage jammer, 20 MHz, 2 kW', { kind: 'effector', category: 'comms', freq_mhz: 45, bw_khz: 20000, eirp_dbm: 63, h_agl: 10 }],
+    ['VHF spot jammer, 500 W', { kind: 'effector', category: 'comms', freq_mhz: 45, bw_khz: 25, eirp_dbm: 57, h_agl: 8 }],
+    ['GNSS L1 jammer, 10 W', { kind: 'effector', category: 'nav', freq_mhz: 1575.42, bw_khz: 2046, eirp_dbm: 40, h_agl: 3 }],
+    ['C-UAS jammer, 2.4 GHz', { kind: 'effector', category: 'cuas', freq_mhz: 2400, bw_khz: 100000, eirp_dbm: 50, h_agl: 5 }],
+    ['GPS L1 space signal (net for GNSS users)', { kind: 'emitter', category: 'nav', freq_mhz: 1575.42, bw_khz: 2046, eirp_dbm: null, fixed_level_dbm: -128, js_req_db: 35, sens_dbm: -140 }],
+  ];
+  const schedTxt = (s) => (s || []).map(([a, b]) => `${a}-${b}`).join(', ');
+  const schedParse = (v) => { const out = []; for (const m of (v || '').matchAll(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/g)) out.push([+m[1], +m[2]]); return out.length ? out : null; };
   function emoForm(d) {
     d = d || { side: 'blue', kind: 'emitter', category: 'comms', h_agl: 3, bw_khz: 25, pattern: 'omni', radius_km: 20 };
     const nets = EMO.ents.filter((e) => e.kind === 'emitter');
     return `<div class="specform">${EMO_FIELDS.map(([k, l, t]) => `<label${k === 'name' || k === 'notes' ? ' class="wide"' : ''}>${esc(l)}<input id="emo-${k}" type="${t}" step="any" value="${esc(d[k] ?? '')}"></label>`).join('')}
       <label class="wide">Net (for net users)<select id="emo-net"><option value="">none</option>${nets.map((n) => `<option value="${esc(n.id)}"${d.net === n.id ? ' selected' : ''}>${esc(n.name)} (${n.side})</option>`).join('')}</select></label>
       <label class="wide"><span><input id="emo-active" type="checkbox"${d.active === false ? '' : ' checked'}> On air (untick for EMCON)</span></label>
+      <label class="wide">On-air windows, minutes (blank = always), e.g. 0-20, 45-90<input id="emo-sched" value="${esc(schedTxt(d.schedule))}"></label>
+      <label class="wide">Template<select id="emo-tpl"><option value="">Apply a template…</option>${EMO_TPL.map(([n], i) => `<option value="${i}">${esc(n)}</option>`).join('')}</select></label>
       <div class="wide dim">Track: ${d.track?.length ? `${d.track.length} waypoint(s)` : 'none'} <button id="emo-trk">Draw track on map</button> <button id="emo-trk-clear">Clear track</button></div>
       <div class="wide btns"><button id="emo-pick">Pick position on map</button> <button id="emo-save" class="primary">${EMO.editId ? 'Update' : 'Add'}</button> <button id="emo-new">New</button>${EMO.editId ? ' <button id="emo-del">Delete</button>' : ''} <span id="emo-err" class="bad"></span></div></div>`;
   }
   function emoRead() {
     const o = { ...(EMO.draft || {}) };
     for (const [k, , t] of EMO_FIELDS) { const v = $(`#emo-${k}`).value.trim(); o[k] = t === 'number' ? (v === '' ? null : Number(v)) : (v || null); }
-    o.net = $('#emo-net').value || null; o.active = $('#emo-active').checked;
+    o.net = $('#emo-net').value || null; o.active = $('#emo-active').checked; o.schedule = schedParse($('#emo-sched').value);
     return o;
   }
   function emoBody(o) {
-    const keep = [...EMO_FIELDS.map(([k]) => k), 'net', 'active', 'track'];
+    const keep = [...EMO_FIELDS.map(([k]) => k), 'net', 'active', 'track', 'schedule'];
     const b = {}; for (const k of keep) if (o[k] !== null && o[k] !== undefined && o[k] !== '') b[k] = o[k];
     return b;
   }
@@ -1624,12 +1649,14 @@
       <p class="dim">${esc(r.notes)}</p>`;
   }
   async function openEMO() {
-    try { if (!EMO.examples) EMO.examples = (await api('/api/emo/examples')).examples; await emoLoad(); } catch (err) { return openModal('EMO', `<p class="bad">${esc(err.message)}</p>`); }
+    try { if (!EMO.examples) EMO.examples = (await api('/api/emo/examples')).examples; await emoLoad(); EMO.scen = (await api('/api/emo/scenarios')).scenarios; } catch (err) { return openModal('EMO', `<p class="bad">${esc(err.message)}</p>`); }
     const list = EMO.ents.length ? `<table class="grid"><tr><th>Entity</th><th>Role</th><th>MHz</th><th></th></tr>${EMO.ents.map((e) => `<tr class="${e.id === EMO.editId ? 'sel' : ''}"><td style="color:${SIDE_COL[e.side]}">${esc(e.name)}${e.active || e.kind === 'sensor' || e.kind === 'receiver' ? '' : ' <span class="dim">(off-air)</span>'}</td><td class="dim">${esc(KIND_TXT[e.kind])}${e.category ? ' · ' + esc(e.category) : ''}</td><td class="mono">${e.freq_mhz}${e.f_hi_mhz ? '–' + e.f_hi_mhz : ''}</td><td><button data-emo-edit="${esc(e.id)}">Edit</button></td></tr>`).join('')}</table>` : '<p class="dim">No entities: load an example.</p>';
     const H = Math.max(EMO.horizon, 0);
     openModal('EMO: red / blue in the spectrum', `<p class="dim">Notional scenarios. ES: who can hear and fix whom. EA: whose nets are denied. EP: EMCON, siting, antennas. Drag units on the map at T+0.</p>
       <div class="specset"><select id="emo-ex"><option value="">Load example…</option>${EMO.examples.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</select> <button id="emo-ex-go">Load</button></div>
       ${EMO.about ? `<p class="dim">${esc(EMO.about)}</p>` : ''}
+      <div class="specset">Save current as <input id="emo-sc-name" placeholder="scenario name" style="width:180px"> <button id="emo-sc-save">Save</button>
+        ${(EMO.scen || []).map((x) => `<span style="white-space:nowrap">${esc(x.name)} <span class="dim">(${x.entities})</span> <button data-sc-load="${esc(x.id)}">Load</button><button data-sc-del="${esc(x.id)}">×</button></span>`).join(' ')}</div>
       <div class="specset">Time T+<b id="emo-tv">${Math.round(EMO.t)}</b> min <input id="emo-t" type="range" min="0" max="${Math.max(1, Math.ceil(H))}" step="1" value="${EMO.t}" style="flex:1;min-width:140px">
         <button id="emo-run" class="primary">Run</button> <button id="emo-play">${EMO.playing ? 'Stop' : 'Play'}</button> <span id="emo-status" class="dim"></span></div>
       <div class="specset">${EMO_LAYERS.map(([k, l, c]) => `<label style="white-space:nowrap"><input type="checkbox" data-emo-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${c}">■</span> ${esc(l)}</label>`).join(' ')}</div>
@@ -1662,6 +1689,14 @@
     body.querySelectorAll('input[data-emo-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.emoLayer] = cb.checked; emoDraw(); }));
     body.querySelectorAll('button[data-emo-edit]').forEach((b) => b.addEventListener('click', () => { EMO.editId = b.dataset.emoEdit; EMO.draft = { ...EMO.ents.find((e) => e.id === EMO.editId) }; openEMO(); }));
     $('#emo-new').addEventListener('click', () => { EMO.editId = null; EMO.draft = null; openEMO(); });
+    $('#emo-tpl').addEventListener('change', (ev) => { const tp = EMO_TPL[+ev.target.value]; if (!tp) return; const cur = emoRead();
+      EMO.draft = { ...cur, ...tp[1], name: cur.name || tp[0], side: cur.side || 'blue' }; openEMO(); });
+    $('#emo-sc-save').addEventListener('click', async () => { const nm = $('#emo-sc-name').value.trim(); if (!nm) return;
+      try { await postJson('/api/emo/scenarios', { name: nm }); openEMO(); } catch (err) { emoStatus(err.message); } });
+    body.querySelectorAll('button[data-sc-load]').forEach((b) => b.addEventListener('click', async () => {
+      await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
+    body.querySelectorAll('button[data-sc-del]').forEach((b) => b.addEventListener('click', async () => {
+      if (!confirm('Delete this saved scenario?')) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
     $('#emo-del')?.addEventListener('click', async () => {
       if (!confirm('Delete this entity?')) return;
       await fetch(`/api/emo/${encodeURIComponent(EMO.editId)}`, { method: 'DELETE' }); EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();

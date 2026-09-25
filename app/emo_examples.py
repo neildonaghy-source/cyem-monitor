@@ -155,7 +155,8 @@ BV, RV = 40.500, 45.200          # notional blue and red VHF nets (MHz)
 L16 = 1087.5                     # Link 16 band centre (960-1215 MHz), modelled as one 255 MHz wide channel
 MDO = [
     # ---- blue land (south-east)
-    em("Blue Bde HQ", B, "comms", 57.600, -4.600, 10, BV, 25, 47, sens_dbm=-110, js_req_db=0),
+    em("Blue Bde HQ", B, "comms", 57.600, -4.600, 10, BV, 25, 47, sens_dbm=-110, js_req_db=0, hop_bw_khz=58000,
+       notes="Frequency-hopping over 30-88 MHz (EP)"),
     rx("Blue BG 1", B, "Blue Bde HQ", 57.800, -4.850, 3, BV, 25, 44, track=[[57.900, -4.950], [57.960, -5.000]], speed_kmh=15,
        notes="Advances north-west"),
     rx("Blue BG 2", B, "Blue Bde HQ", 57.700, -5.100, 3, BV, 25, 44),
@@ -169,14 +170,15 @@ MDO = [
     em("Blue SATCOM (HQ)", B, "comms", 57.480, -4.220, 3, 7950, 5000, 70, pattern="sector", azimuth=170, beamwidth=3),
     # ---- blue air
     em("Blue AEW radar", B, "radar", 57.600, -3.800, 9000, 1300, 5000, 90, sidc=FA, pattern="sector", azimuth=315, beamwidth=120),
-    em("Blue Link 16 (AEW)", B, "datalink", 57.600, -3.800, 9000, L16, 255000, 50, sens_dbm=-100, js_req_db=10, sidc=FA),
-    rx("Blue fighter pair", B, "Blue Link 16 (AEW)", 57.950, -5.000, 8000, L16, 255000, 43, sidc=FA,
+    em("Blue Link 16 (AEW)", B, "datalink", 57.600, -3.800, 9000, L16, 3000, 50, sens_dbm=-100, js_req_db=10, hop_bw_khz=255000,
+       sidc=FA, notes="3 MHz hops across 960-1215 MHz"),
+    rx("Blue fighter pair", B, "Blue Link 16 (AEW)", 57.950, -5.000, 8000, L16, 3000, 43, sidc=FA,
        track=[[58.150, -5.250], [57.950, -5.450], [57.950, -5.000]], speed_kmh=700),
     es("Blue airborne ES", B, 57.700, -6.100, 10000, 20, 18000, -115, df=3, sidc=FA,
        track=[[58.050, -6.200], [57.600, -6.200], [58.050, -6.200]], speed_kmh=600),
     # ---- blue maritime
     em("Blue frigate radar", B, "radar", 57.750, -5.950, 25, 3000, 10000, 92, sidc=FS, track=[[58.000, -5.900]], speed_kmh=30),
-    rx("Blue frigate (Link 16)", B, "Blue Link 16 (AEW)", 57.750, -5.950, 25, L16, 255000, 43, sidc=FS,
+    rx("Blue frigate (Link 16)", B, "Blue Link 16 (AEW)", 57.750, -5.950, 25, L16, 3000, 43, sidc=FS,
        track=[[58.000, -5.900]], speed_kmh=30),
     # ---- space
     em("GPS L1 (space)", B, "nav", 57.800, -5.000, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140),
@@ -209,8 +211,8 @@ EXAMPLES = {"mdo-operational": {
     "title": "0. Operational-level MDO in the EME (NW Scotland and the Minches)",
     "about": "Notional joint force (south-east) against an opposing force (north-west) across land, maritime, air and space, "
              "about 250 km across in a Joint Warrior-style area. Things to look for: airborne ES out-hears ground ES; radars "
-             "are the loudest emitters and are fixed first; the L-band barrage hits Link 16 (modelled as one "
-             "wideband channel: hopping and processing gain are not modelled, so blue J/S is pessimistic); the red VHF barrage "
-             "loses about 29 dB spreading over 20 MHz; GNSS jamming from high ground reaches aircraft, the frigate and precision fires; blue EA denies the red "
+             "are the loudest emitters and are fixed first; the L-band barrage loses about 19 dB against Link 16 "
+             "(3 MHz hops over 255 MHz); blue's VHF net hops over 30-88 MHz (about 34 dB against a spot jammer) while red's "
+             "single-channel net is denied by blue's spot jammer: the EP lesson; GNSS jamming from high ground reaches aircraft, the frigate and precision fires; blue EA denies the red "
              "VHF net. Tap any symbol to focus on it. First run takes a couple of minutes (new terrain tiles).",
     "centre": [57.95, -5.10], "zoom": 8, "entities": MDO}, **EXAMPLES}

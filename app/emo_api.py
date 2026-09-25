@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from .coverage_api import SiteIn, _compute
 from .db import Database, get_db, now_iso
-from .ems_core import band_masks, bw_penalty_db, cell_km2, overlap, overlay_png, raster_axes, region_masks, sample, union_bounds
+from .ems_core import band_masks, cell_km2, overlap, overlay_png, raster_axes, region_masks, sample, union_bounds
 
 router = APIRouter(prefix="/api/emo", tags=["emo"])
 
@@ -43,8 +43,10 @@ CREATE TABLE IF NOT EXISTS emo_entities (
   eirp_dbm REAL, fixed_level_dbm REAL, sens_dbm REAL, js_req_db REAL, df_rms_deg REAL,
   pattern TEXT NOT NULL DEFAULT 'omni', azimuth REAL, beamwidth REAL,
   net TEXT, active INTEGER NOT NULL DEFAULT 1, radius_km REAL NOT NULL DEFAULT 30,
-  sidc TEXT, track TEXT, speed_kmh REAL, notes TEXT, updated_at TEXT NOT NULL
+  sidc TEXT, track TEXT, speed_kmh REAL, notes TEXT, updated_at TEXT NOT NULL,
+  hop_bw_khz REAL, pg_db REAL, schedule TEXT
 );
+CREATE TABLE IF NOT EXISTS emo_scenarios (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, entities TEXT NOT NULL);
 """
 CATS = "^(comms|radar|datalink|nav|cuas|other|es|df|rwr)$"
 
@@ -52,6 +54,10 @@ CATS = "^(comms|radar|datalink|nav|cuas|other|es|df|rwr)$"
 def ensure_emo_schema(db: Database) -> None:
     with db.tx() as c:
         c.executescript(SQL)
+        cols = {r[1] for r in c.execute("PRAGMA table_info(emo_entities)").fetchall()}
+        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT")):
+            if col not in cols:
+                c.execute(f"ALTER TABLE emo_entities ADD COLUMN {col} {typ}")
 
 
 class EntityIn(BaseModel):
@@ -80,6 +86,9 @@ class EntityIn(BaseModel):
     track: list[list[float]] | None = None
     speed_kmh: float | None = Field(default=None, ge=0, le=2000)
     notes: str | None = Field(default=None, max_length=300)
+    hop_bw_khz: float | None = Field(default=None, gt=0, le=2_000_000)   # frequency-hopping hopset width
+    pg_db: float | None = Field(default=None, ge=0, le=60)               # other processing gain / anti-jam margin
+    schedule: list[list[float]] | None = None                            # on-air windows [[start_min, end_min], ...]
 
 
 class MoveIn(BaseModel):
@@ -98,6 +107,7 @@ def _decode(row: dict) -> dict:
     r = dict(row)
     r["track"] = json.loads(r["track"]) if r.get("track") else None
     r["active"] = bool(r.get("active", 1))
+    r["schedule"] = json.loads(r["schedule"]) if r.get("schedule") else None
     return r
 
 
@@ -115,6 +125,7 @@ def _upsert(b: EntityIn, eid: str | None) -> dict:
     if d.get("radius_km") is None:
         d["radius_km"] = auto_radius(d["freq_mhz"], d["h_agl"])
     d["track"] = json.dumps(d["track"]) if d.get("track") else None
+    d["schedule"] = json.dumps(d["schedule"]) if d.get("schedule") else None
     d["active"] = 1 if d["active"] else 0
     cols = list(d)
     with db.tx() as c:
@@ -206,9 +217,35 @@ def track_minutes(e: dict) -> float:
     return sum(haversine_m(a[0], a[1], b[0], b[1]) for a, b in zip(pts, pts[1:])) / (e["speed_kmh"] * 1000 / 60)
 
 
+def on_air(e: dict, t_min: float) -> bool:
+    """EMCON flag and, if set, the on-air windows."""
+    if not e.get("active", True):
+        return False
+    sch = e.get("schedule")
+    return not sch or any(a <= t_min < b for a, b in sch)
+
+
+def victim_band(n: dict) -> tuple[float, float]:
+    """Band a jammer must overlap to affect a net: its hopset if hopping, else its channel."""
+    if n.get("hop_bw_khz"):
+        f, half = n["freq_mhz"] * 1e6, n["hop_bw_khz"] * 1e3 / 2
+        return f - half, f + half
+    return band(n)
+
+
+def jam_penalty(y: dict, n: dict) -> float:
+    """dB by which jammer power is diluted against a net: 10 log(max(Bj, Bhop, Bch) / Bch) + processing gain.
+    Spot jammer vs hopper: only 1/N of hops hit; barrage: power spread over its width."""
+    ylo, yhi = band(y)
+    bj = max(yhi - ylo, 1.0)
+    bch = max((n.get("bw_khz") or 25) * 1e3, 1.0)
+    bhop = (n.get("hop_bw_khz") or 0) * 1e3
+    return 10 * math.log10(max(bj, bhop, bch) / bch) + (n.get("pg_db") or 0)
+
+
 def band(e: dict) -> tuple[float, float]:
     f = e["freq_mhz"] * 1e6
-    if e["kind"] == "sensor" and e.get("f_hi_mhz"):
+    if e.get("kind") == "sensor" and e.get("f_hi_mhz"):
         return f, e["f_hi_mhz"] * 1e6
     half = (e.get("bw_khz") or 0) * 1e3 / 2
     return f - half, f + half
@@ -336,6 +373,7 @@ async def run(p: RunIn, t_min: float = 0):
     byid = {e["id"]: e for e in ents}
     for e in ents:
         e["pos"] = position_at(e, t_min)
+        e["active"] = on_air(e, t_min)
     # everything that radiates: emitters, effectors, and net users that transmit (receivers with EIRP)
     radiating = [e for e in ents if e["active"] and (e["kind"] in ("emitter", "effector")
                                                   or (e["kind"] == "receiver" and e.get("eirp_dbm") is not None))]
@@ -408,7 +446,7 @@ async def run(p: RunIn, t_min: float = 0):
     effectors = [e for e in radiating if e["kind"] == "effector"]
     for nn in nets:
         space = nn.get("fixed_level_dbm") is not None
-        nlo, nhi = band(nn)
+        nlo, nhi = victim_band(nn)
         jsreq = nn["js_req_db"] if nn.get("js_req_db") is not None else p.js_req_db
         nsens = nn.get("sens_dbm") or p.default_sens
         S = np.full(LA.shape, float(nn["fixed_level_dbm"])) if space else lv[nn["id"]]
@@ -419,8 +457,7 @@ async def run(p: RunIn, t_min: float = 0):
         for y in effectors:
             if y["side"] == nn["side"] or not overlap(nlo, nhi, *band(y)) or y["id"] not in lv:
                 continue
-            ylo, yhi = band(y)
-            pen = bw_penalty_db(yhi - ylo, nhi - nlo)
+            pen = jam_penalty(y, nn)
             with np.errstate(invalid="ignore"):
                 den |= covd & ((lv[y["id"]] - pen - S) >= jsreq)
             for v in [r for r in receivers if r.get("net") == nn["id"]]:
@@ -444,7 +481,7 @@ async def run(p: RunIn, t_min: float = 0):
     _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
                   "jamming": jamming, "params": p})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
-            "positions": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
+            "positions": {e["id"]: e["pos"] for e in ents}, "on_air": {e["id"]: e["active"] for e in ents}, "detections": detections, "fixes": fixes,
             "jamming": jamming, "nets": per_net, "exposure": exposure, "params": p.model_dump(),
             "compute_s": round(time.monotonic() - t0, 1),
             "notes": "Screening only: Deygout 3-edge on Copernicus 30 m terrain; no processing gain, hopping, nulling, clutter, "
@@ -498,6 +535,8 @@ async def focus(eid: str, t_min: float = 0):
     e = ents.get(eid)
     if not e:
         raise HTTPException(404, "no such entity")
+    for x in ents.values():
+        x["active"] = on_air(x, _LAST["t"])
     p: RunIn = _LAST["params"]
     pos = _LAST["pos"].get(eid, (e["lat"], e["lon"]))
     radiates = e["active"] and e.get("eirp_dbm") is not None and e.get("fixed_level_dbm") is None and (
@@ -515,8 +554,8 @@ async def focus(eid: str, t_min: float = 0):
         if e["kind"] == "effector":
             # the denial it causes on each victim net inside that net's coverage
             for nn in [x for x in ents.values() if x["kind"] == "emitter" and x["side"] != e["side"] and x["active"]
-                       and overlap(*band(nn := x), *band(e)) and any(r.get("net") == x["id"] for r in ents.values())]:
-                pen = bw_penalty_db(band(e)[1] - band(e)[0], band(nn)[1] - band(nn)[0])
+                       and overlap(*victim_band(x), *band(e)) and any(r.get("net") == x["id"] for r in ents.values())]:
+                pen = jam_penalty(e, nn)
                 jsreq = nn["js_req_db"] if nn.get("js_req_db") is not None else p.js_req_db
                 if nn.get("fixed_level_dbm") is not None:
                     S = np.full(LA.shape, float(nn["fixed_level_dbm"])); covd = np.ones(LA.shape, bool)
@@ -536,3 +575,53 @@ async def focus(eid: str, t_min: float = 0):
     fx = [f for f in _LAST["fixes"] if f["target"] == e["name"]]
     out["fix"] = fx[0] if fx else None
     return out
+
+
+# ---- saved scenarios --------------------------------------------------------------------------
+class SaveIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+@router.get("/scenarios")
+async def list_scenarios():
+    rows = get_db().query("SELECT id, name, created_at, entities FROM emo_scenarios ORDER BY created_at DESC")
+    return {"scenarios": [{"id": r["id"], "name": r["name"], "created_at": r["created_at"],
+                           "entities": len(json.loads(r["entities"]))} for r in rows]}
+
+
+@router.post("/scenarios")
+async def save_scenario(body: SaveIn):
+    """Snapshot the current entities (with their ids and net links) under a name."""
+    ents = [dict(r) for r in get_db().query("SELECT * FROM emo_entities")]
+    if not ents:
+        raise HTTPException(400, "nothing to save")
+    sid = uuid.uuid4().hex[:8]
+    with get_db().tx() as c:
+        c.execute("INSERT INTO emo_scenarios (id, name, created_at, entities) VALUES (?,?,?,?)",
+                  (sid, body.name.strip(), now_iso(), json.dumps(ents)))
+    return {"id": sid, "name": body.name.strip(), "entities": len(ents)}
+
+
+@router.post("/scenarios/{sid}/load")
+async def load_scenario(sid: str):
+    row = get_db().one("SELECT entities FROM emo_scenarios WHERE id=?", (sid,))
+    if not row:
+        raise HTTPException(404, "no such scenario")
+    ents = json.loads(row["entities"])
+    with get_db().tx() as c:
+        c.execute("DELETE FROM emo_entities")
+        for e in ents:
+            e["updated_at"] = now_iso()
+            cols = list(e)
+            c.execute(f"INSERT INTO emo_entities ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [e[k] for k in cols])
+    _COV.clear(); _P2P.clear(); _LAST.clear()
+    return {"loaded": sid, "entities": _all()}
+
+
+@router.delete("/scenarios/{sid}")
+async def delete_scenario(sid: str):
+    with get_db().tx() as c:
+        n = c.execute("DELETE FROM emo_scenarios WHERE id=?", (sid,)).rowcount
+    if not n:
+        raise HTTPException(404, "no such scenario")
+    return {"deleted": sid}

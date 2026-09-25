@@ -55,3 +55,25 @@ def test_df_fix_geometry():
     s3 = (51.30, -1.905)                                           # nearly the same line as s1: poor cut
     assert df_fix(tgt, [{"sensor": "a", "site": s1, "bearing": b1, "sigma": 2},
                         {"sensor": "c", "site": s3, "bearing": bearing_deg(*s3, *tgt), "sigma": 2}]) is None
+
+
+def test_jam_penalty_hopping_and_processing_gain():
+    from app.emo_api import jam_penalty
+    spot = {"freq_mhz": 45.0, "bw_khz": 25}
+    barrage = {"freq_mhz": 45.0, "bw_khz": 20000}
+    single = {"freq_mhz": 45.0, "bw_khz": 25}
+    hopper = {"freq_mhz": 59.0, "bw_khz": 25, "hop_bw_khz": 58000}
+    assert jam_penalty(spot, single) == 0                                          # spot on a fixed channel
+    assert math.isclose(jam_penalty(barrage, single), 29.03, abs_tol=0.01)          # 20 MHz over 25 kHz
+    assert math.isclose(jam_penalty(spot, hopper), 33.65, abs_tol=0.01)             # hits 1 hop in 2320
+    assert math.isclose(jam_penalty(barrage, hopper), 33.65, abs_tol=0.01)          # partial-band barrage: same dilution
+    l16 = {"freq_mhz": 1087.5, "bw_khz": 3000, "hop_bw_khz": 255000, "pg_db": 5}
+    assert math.isclose(jam_penalty({"freq_mhz": 1087.5, "bw_khz": 255000}, l16), 19.29 + 5, abs_tol=0.01)
+
+
+def test_on_air_windows():
+    from app.emo_api import on_air
+    e = {"active": True, "schedule": [[0, 20], [45, 90]]}
+    assert on_air(e, 10) and not on_air(e, 30) and on_air(e, 45) and not on_air(e, 90)
+    assert on_air({"active": True, "schedule": None}, 500)
+    assert not on_air({"active": False, "schedule": None}, 0)

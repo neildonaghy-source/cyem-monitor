@@ -67,6 +67,18 @@ app.include_router(cells_router)
 app.include_router(sat_router)
 app.include_router(hf_router)
 app.include_router(emo_router)
+
+
+@app.middleware("http")
+async def cyem_ws_middleware(request, call_next):
+    """Scenario workspace for EMO: 'default' is shared; a device can use its own via the X-CyEM-WS header."""
+    from .emo_api import WS
+    ws = (request.headers.get("x-cyem-ws") or "default").strip()[:40]
+    token = WS.set(ws if ws.replace("-", "").isalnum() else "default")
+    try:
+        return await call_next(request)
+    finally:
+        WS.reset(token)
 app.include_router(ar_router)
 app.include_router(sdr_router)
 app.include_router(insight_router)

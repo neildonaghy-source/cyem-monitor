@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25t';
+  const BUILD = '2026-09-25u';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -17,6 +17,14 @@
     return `${Math.floor(d / 86400)}d`;
   };
   const fmtZ = (iso) => iso ? iso.replace('T', ' ').replace(/:\d\dZ$/, 'Z') : '';
+  // EMO scenario space: 'default' is shared across devices; 'device' keeps a private space on this device
+  function wsId() {
+    if (localStorage.getItem('cyem-ws-mode') !== 'device') return 'default';
+    let v = localStorage.getItem('cyem-ws'); if (!v) { v = 'd' + Math.random().toString(36).slice(2, 9); localStorage.setItem('cyem-ws', v); }
+    return v;
+  }
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };
   async function api(path, opts) {
     const r = await fetch(path, opts);
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
@@ -1802,6 +1810,9 @@
       <div id="emo-askout" class="md"></div>
       <div class="specset">Briefing phases (minutes) <input id="emo-phases" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
         <a id="emo-export" class="btnlink" href="#">Export briefing (Word)</a> <span class="dim">one section per phase; takes a minute per new phase</span></div>
+      <div class="specset">Scenario space: <select id="emo-ws"><option value="default"${wsId() === 'default' ? ' selected' : ''}>Shared (all devices)</option><option value="device"${wsId() !== 'default' ? ' selected' : ''}>This device only</option></select>
+        <span class="dim">Courses of action:</span> <input id="emo-coaname" placeholder="COA name" style="width:120px"> <button id="emo-coasave">Save current as COA</button></div>
+      <div id="emo-coalist"></div>
       <div class="specset">Timeline: step <input id="emo-tlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-tlnet"><option value="">(none)</option>${EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id)).map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
         <button id="emo-tl">Run timeline</button> <span id="emo-tlstatus" class="dim"></span></div>
       <div id="emo-tlout"></div>
@@ -1824,6 +1835,29 @@
         await emoLoad(); EMO.prevScore = r.score_before || EMO.prevScore; EMO.res = null; await emoRun();
       } catch (err) { o.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
     };
+    $('#emo-ws').addEventListener('change', async (e) => { localStorage.setItem('cyem-ws-mode', e.target.value === 'device' ? 'device' : 'shared'); EMO.res = null; EMO.ents = []; emoClearFocus(); await openEMO(); });
+    const coaList = async () => {
+      const box = $('#emo-coalist'); if (!box) return;
+      try {
+        const r = await api('/api/emo/coas');
+        if (!r.coas.length) { box.innerHTML = ''; return; }
+        const keys = [['net_availability_pct', 'Avail %'], ['targetable', 'Targetable'], ['denial_achieved', 'Denied (users)'], ['collateral', 'Collateral'], ['net_area_denied_pct', 'Area denied %']];
+        const cell = (sc, sd, k) => sc?.[sd]?.[k] ?? '–';
+        const rowOf = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${cell(sc, sd, k)}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
+        box.innerHTML = `<table class="grid"><tr><th>COA</th>${['Blue', 'Red'].map((sd) => keys.map(([, l]) => `<th style="color:${SIDE_COL[sd.toLowerCase()]}">${sd} ${l}</th>`).join('')).join('')}<th></th></tr>
+          ${r.current ? rowOf('<i>current</i>', r.current, '') : ''}
+          ${r.coas.map((c) => rowOf(esc(c.name), c.score, `<button data-coa-load="${c.id}">Load</button> <button data-coa-del="${c.id}">×</button>`)).join('')}</table>`;
+        box.querySelectorAll('[data-coa-load]').forEach((b) => b.addEventListener('click', async () => {
+          const r2 = await postJson(`/api/emo/coas/${b.dataset.coaLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); await openEMO(); emoRun();
+        }));
+        box.querySelectorAll('[data-coa-del]').forEach((b) => b.addEventListener('click', async () => { await fetch(`/api/emo/coas/${b.dataset.coaDel}`, { method: 'DELETE' }); coaList(); }));
+      } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+    };
+    coaList();
+    $('#emo-coasave').addEventListener('click', async () => {
+      const name = $('#emo-coaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`;
+      try { await postJson('/api/emo/coas', { name }); $('#emo-coaname').value = ''; coaList(); } catch (e) { emoStatus(e.message); }
+    });
     $('#emo-tl').addEventListener('click', async () => {
       const out = $('#emo-tlout'), st = $('#emo-tlstatus'); EMO.tlNet = $('#emo-tlnet').value || null;
       const t0 = Date.now(); const tick = setInterval(() => { st.textContent = `stepping… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);

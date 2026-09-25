@@ -20,6 +20,7 @@ multipath or time variability. Notional scenarios only.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import math
 import time
@@ -47,6 +48,8 @@ CREATE TABLE IF NOT EXISTS emo_entities (
   hop_bw_khz REAL, pg_db REAL, schedule TEXT
 );
 CREATE TABLE IF NOT EXISTS emo_scenarios (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, entities TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS emo_coas (id TEXT PRIMARY KEY, ws TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, t_min REAL,
+  params TEXT, score TEXT, entities TEXT NOT NULL);
 """
 CATS = "^(comms|radar|datalink|nav|cuas|other|es|df|rwr)$"
 
@@ -55,7 +58,7 @@ def ensure_emo_schema(db: Database) -> None:
     with db.tx() as c:
         c.executescript(SQL)
         cols = {r[1] for r in c.execute("PRAGMA table_info(emo_entities)").fetchall()}
-        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT")):
+        for col, typ in (("hop_bw_khz", "REAL"), ("pg_db", "REAL"), ("schedule", "TEXT"), ("ws", "TEXT NOT NULL DEFAULT 'default'")):
             if col not in cols:
                 c.execute(f"ALTER TABLE emo_entities ADD COLUMN {col} {typ}")
 
@@ -127,6 +130,7 @@ def _upsert(b: EntityIn, eid: str | None) -> dict:
     d["track"] = json.dumps(d["track"]) if d.get("track") else None
     d["schedule"] = json.dumps(d["schedule"]) if d.get("schedule") else None
     d["active"] = 1 if d["active"] else 0
+    d["ws"] = WS.get()
     cols = list(d)
     with db.tx() as c:
         c.execute(f"INSERT INTO emo_entities (id, {','.join(cols)}, updated_at) VALUES (?,{','.join('?' * len(cols))},?) "
@@ -141,7 +145,7 @@ def _check(b: EntityIn):
 
 
 def _all() -> list[dict]:
-    return [_decode(r) for r in get_db().query("SELECT * FROM emo_entities ORDER BY side, kind, name")]
+    return [_decode(r) for r in get_db().query("SELECT * FROM emo_entities WHERE ws=? ORDER BY side, kind, name", (WS.get(),))]
 
 
 @router.get("")
@@ -333,7 +337,25 @@ def df_fix(target_pos, bearings: list[dict]) -> dict | None:
 
 # ---- analysis ---------------------------------------------------------------------------------
 _COV: dict[tuple, object] = {}
-_LAST: dict = {}
+WS: contextvars.ContextVar = contextvars.ContextVar("cyem_ws", default="default")   # per-request workspace (X-CyEM-WS)
+_LAST_BY_WS: dict[str, dict] = {}
+
+
+class _LastProxy:
+    """Mapping-like view of the saved analysis for the current workspace."""
+    def _d(self) -> dict:
+        return _LAST_BY_WS.setdefault(WS.get(), {})
+    def __getitem__(self, k): return self._d()[k]
+    def __setitem__(self, k, v): self._d()[k] = v
+    def __contains__(self, k): return k in self._d()
+    def __len__(self): return len(self._d())
+    def __bool__(self): return bool(self._d())
+    def get(self, k, default=None): return self._d().get(k, default)
+    def update(self, m): self._d().update(m)
+    def clear(self): self._d().clear()
+
+
+_LAST = _LastProxy()
 LAYER_RGBA = {
     "blue_cov": (60, 140, 255, 70), "red_cov": (255, 90, 90, 60),
     "blue_seen": (255, 70, 70, 110),    # blue emissions detectable by red ES
@@ -540,7 +562,7 @@ async def load_example(name: str):
     if not ex:
         raise HTTPException(404, "no such example")
     with get_db().tx() as c:
-        c.execute("DELETE FROM emo_entities")
+        c.execute("DELETE FROM emo_entities WHERE ws=?", (WS.get(),))
     ids = {}
     for d in ex["entities"]:
         dd = {k: v for k, v in d.items() if k != "net"}
@@ -628,7 +650,7 @@ async def list_scenarios():
 @router.post("/scenarios")
 async def save_scenario(body: SaveIn):
     """Snapshot the current entities (with their ids and net links) under a name."""
-    ents = [dict(r) for r in get_db().query("SELECT * FROM emo_entities")]
+    ents = [dict(r) for r in get_db().query("SELECT * FROM emo_entities WHERE ws=?", (WS.get(),))]
     if not ents:
         raise HTTPException(400, "nothing to save")
     sid = uuid.uuid4().hex[:8]
@@ -638,19 +660,29 @@ async def save_scenario(body: SaveIn):
     return {"id": sid, "name": body.name.strip(), "entities": len(ents)}
 
 
+def _restore_entities(ents: list[dict]) -> None:
+    """Replace this workspace's entities with a saved set, remapping ids so several workspaces can hold the same scenario."""
+    remap = {e["id"]: uuid.uuid4().hex[:8] for e in ents}
+    with get_db().tx() as c:
+        c.execute("DELETE FROM emo_entities WHERE ws=?", (WS.get(),))
+        for e in ents:
+            e = dict(e)
+            e["id"] = remap[e["id"]]
+            if e.get("net"):
+                e["net"] = remap.get(e["net"], e["net"])
+            e["ws"] = WS.get()
+            e["updated_at"] = now_iso()
+            cols = list(e)
+            c.execute(f"INSERT INTO emo_entities ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [e[k] for k in cols])
+    _COV.clear(); _P2P.clear(); _LAST.clear()
+
+
 @router.post("/scenarios/{sid}/load")
 async def load_scenario(sid: str):
     row = get_db().one("SELECT entities FROM emo_scenarios WHERE id=?", (sid,))
     if not row:
         raise HTTPException(404, "no such scenario")
-    ents = json.loads(row["entities"])
-    with get_db().tx() as c:
-        c.execute("DELETE FROM emo_entities")
-        for e in ents:
-            e["updated_at"] = now_iso()
-            cols = list(e)
-            c.execute(f"INSERT INTO emo_entities ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [e[k] for k in cols])
-    _COV.clear(); _P2P.clear(); _LAST.clear()
+    _restore_entities(json.loads(row["entities"]))
     return {"loaded": sid, "entities": _all()}
 
 
@@ -1023,3 +1055,50 @@ async def pair(a: str, b: str, t_min: float = 0):
                               f"the actual {se['name']} at its position and height: {'hears it' if d and d['detected'] else 'does not hear it'}"
                               + (f" ({d['margin_db']:+} dB)." if d else ".")}
     return {"kind": "none", "overlay": None, "legend": "No direct interaction: different bands, same side, or neither is a sensor or effector."}
+
+
+
+# ---- A7: courses of action: named snapshots with their scoreboard, for side-by-side comparison ----------------
+class CoaSaveIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+
+
+@router.get("/coas")
+async def list_coas():
+    rows = get_db().query("SELECT id, name, created_at, t_min, score, entities FROM emo_coas WHERE ws=? ORDER BY created_at", (WS.get(),))
+    return {"coas": [{"id": r["id"], "name": r["name"], "created_at": r["created_at"], "t_min": r["t_min"],
+                      "score": json.loads(r["score"]) if r["score"] else None, "entities": len(json.loads(r["entities"]))} for r in rows],
+            "current": _LAST.get("score")}
+
+
+@router.post("/coas")
+async def save_coa(body: CoaSaveIn):
+    ents = [dict(r) for r in get_db().query("SELECT * FROM emo_entities WHERE ws=?", (WS.get(),))]
+    if not ents:
+        raise HTTPException(400, "nothing to save")
+    cid = uuid.uuid4().hex[:8]
+    with get_db().tx() as c:
+        c.execute("INSERT INTO emo_coas (id, ws, name, created_at, t_min, params, score, entities) VALUES (?,?,?,?,?,?,?,?)",
+                  (cid, WS.get(), body.name.strip(), now_iso(), _LAST.get("t"),
+                   json.dumps(_LAST["params"].model_dump()) if _LAST else None,
+                   json.dumps(_LAST.get("score")) if _LAST.get("score") else None, json.dumps(ents)))
+    return {"id": cid, "name": body.name.strip(), "score": _LAST.get("score")}
+
+
+@router.post("/coas/{cid}/load")
+async def load_coa(cid: str):
+    row = get_db().one("SELECT * FROM emo_coas WHERE id=? AND ws=?", (cid, WS.get()))
+    if not row:
+        raise HTTPException(404, "no such COA")
+    _restore_entities(json.loads(row["entities"]))
+    return {"loaded": cid, "name": row["name"], "t_min": row["t_min"], "params": json.loads(row["params"]) if row["params"] else None,
+            "entities": _all()}
+
+
+@router.delete("/coas/{cid}")
+async def delete_coa(cid: str):
+    with get_db().tx() as c:
+        n = c.execute("DELETE FROM emo_coas WHERE id=? AND ws=?", (cid, WS.get())).rowcount
+    if not n:
+        raise HTTPException(404, "no such COA")
+    return {"deleted": cid}

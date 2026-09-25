@@ -514,7 +514,7 @@ async def red_coa(body: CoaIn, t_min: float = 0):
     target = _hq_net(ents, opp)
     if not target:
         raise HTTPException(400, f"{opp} has no net to target")
-    _SNAP[side] = {e["id"]: (e["lat"], e["lon"]) for e in ents.values() if e["side"] == side}
+    _SNAP[(emo_api.WS.get(), side)] = {e["id"]: (e["lat"], e["lon"]) for e in ents.values() if e["side"] == side}
     moves = []
     # jammers: against the opposing net they can affect, preferring the HQ net
     for y in [e for e in ents.values() if e["side"] == side and e["kind"] == "effector" and e["active"]]:
@@ -556,7 +556,7 @@ async def red_coa(body: CoaIn, t_min: float = 0):
 @router.post("/coa/revert")
 async def coa_revert(side: str = "red", t_min: float = 0):
     emo_api, ents, p, pos = _ctx(t_min)
-    snap = _SNAP.pop(side, None)
+    snap = _SNAP.pop((emo_api.WS.get(), side), None)
     if not snap:
         raise HTTPException(404, "nothing to revert")
     from .db import get_db, now_iso

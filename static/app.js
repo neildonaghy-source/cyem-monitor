@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25y';
+  const BUILD = '2026-09-26a';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1459,7 +1459,7 @@
   const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
     ['blue_denied', 'Blue nets denied', '#dc3cdc'], ['red_denied', 'Red nets denied', '#ffa028'], ['blue_cov', 'Blue net coverage', '#3c8cff'],
     ['red_cov', 'Red net coverage', '#ff5a5a'], ['grey_seen', 'Civil emissions heard', '#c8ccd4'], ['grey_denied', 'Civil users denied (collateral)', '#ffffff'], ['civil_lines', 'Lines to civil emitters', '#a6b0bd'], ['lines', 'Detections, bearings, J/S lines', '#c8d3e0']];
-  const KIND_TXT = { emitter: 'Emitter', receiver: 'Net user', sensor: 'ES sensor', effector: 'EA effector' };
+  const KIND_TXT = { emitter: 'Emitter', receiver: 'Outstation', sensor: 'ES sensor', effector: 'EA effector' };
   function emoIcon(e, off = [0, 0]) {
     const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : e.side === 'grey' ? 'SNGPU----------' : 'SHGPU----------');
     const air = EMO.res?.on_air?.[e.id] ?? e.active;
@@ -1563,7 +1563,7 @@
       showLayer('score');
       const cur = emoPos(e);
       const fmt = (x) => kind === 'net'
-        ? `${x.users_closed}/${x.of_users} users closed · margin ${x.link_margin_db >= 0 ? '+' : ''}${x.link_margin_db} dB · ${x.heard_by.length ? `heard by ${x.heard_by.length}` : 'not heard'} · J/S ${x.worst_js_db} dB`
+        ? `${x.users_closed}/${x.of_users} outstations linked · margin ${x.link_margin_db >= 0 ? '+' : ''}${x.link_margin_db} dB · ${x.heard_by.length ? `detected by ${x.heard_by.length}` : 'not detected'} · J/S ${x.worst_js_db} dB`
         : `denies ${x.denied}/${x.of_users} · worst J/S ${x.min_js_db} dB · exposure ${x.exposure_db >= 0 ? '+' : ''}${x.exposure_db} dB${x.fratricide ? ` · <b class="bad">fratricide ${x.fratricide}</b>` : ''}`;
       r.best.slice(0, 3).forEach((x, i) => {
         L.polyline([cur, [x.lat, x.lon]], { color: '#45d38a', weight: 2, dashArray: '5 6', opacity: 0.8, interactive: false }).addTo(planLayer);
@@ -1572,7 +1572,7 @@
       });
       if (r.relay) L.marker([r.relay.lat, r.relay.lon], { icon: L.divIcon({ className: 'emo-planpin emo-relay', html: 'R', iconSize: [22, 22], iconAnchor: [11, 11] }) })
         .bindTooltip(`Relay: ${r.relay.where}<br>reaches ${r.relay.reaches}/${r.relay.of_failing} (${esc(r.relay.serves.join(', '))})`).addTo(planLayer);
-      out.innerHTML = `<h4>${kind === 'net' ? 'Where to site this net' : `Where to site it to deny ${esc(r.target_net)}`}</h4>
+      out.innerHTML = `<h4>${kind === 'net' ? 'EP siting for this net' : `EA siting to deny ${esc(r.target_net)}`}</h4>
         <p>${Object.keys(r.layers).map((k) => `<label style="margin-right:8px"><input type="radio" name="emo-planlayer" value="${k}"${k === 'score' ? ' checked' : ''}> ${k}</label>`).join('')} <span class="dim">${esc(r.legend)}</span></p>
         ${r.unavoidable?.length ? `<p class="bad">No site within reach hides this net from ${esc(r.unavoidable.join(', '))}, even at minimum power: use EMCON windows, a directional antenna or another bearer.</p>` : ''}
         <table class="grid">${r.best.slice(0, 3).map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${esc(x.where)}<div class="dim">${fmt(x)}</div></td><td><button data-emo-moveto="${x.lat},${x.lon}">Move here</button></td></tr>`).join('')}</table>
@@ -1593,9 +1593,9 @@
       const r = await postJson(`/api/emo/plan/tune?t_min=${EMO.t}`, { net: e.name });
       const P = r.power, A = r.antenna.best_sector, O = r.antenna.omni_now, C = r.channel;
       const apply = async (body) => { await postJson(`/api/emo/plan/tune/apply?t_min=${EMO.t}`, { net: e.name, ...body }); await emoLoad(); emoRun(); };
-      out.innerHTML = `<h4>EP options at the current position</h4>
-        <p><b>Power:</b> cut by ${P.cut_db} dB (${P.current_eirp_dbm} → ${P.recommended_eirp_dbm} dBm EIRP) keeps 6 dB margin at every user; still heard by ${P.heard_by_after.length ? esc(P.heard_by_after.join(', ')) : 'no opposing sensor'} (now: ${P.heard_by_now.length}). ${P.cut_db > 0 ? `<button data-tune-power>Apply</button>` : ''}</p>
-        <p><b>Antenna:</b> ${A ? `sector ${A.beamwidth}° at ${A.azimuth}°: ${A.users_closed}/${A.of_users} users kept, heard by ${A.heard_by.length} (omni: ${O.users_closed} kept, heard by ${O.heard_by.length}), worst exposure ${A.worst_exposure_db} dB (omni ${O.worst_exposure_db}). ${A.heard_by.length < O.heard_by.length || A.worst_exposure_db < O.worst_exposure_db - 3 ? '<button data-tune-ant>Apply</button>' : '<span class="dim">no gain over omni</span>'}` : 'n/a'}</p>
+      out.innerHTML = `<h4>EP measures at the current position</h4>
+        <p><b>Power:</b> cut by ${P.cut_db} dB (${P.current_eirp_dbm} → ${P.recommended_eirp_dbm} dBm EIRP) keeps 6 dB margin at every user; still detected by ${P.heard_by_after.length ? esc(P.heard_by_after.join(', ')) : 'no opposing sensor'} (now: ${P.heard_by_now.length}). ${P.cut_db > 0 ? `<button data-tune-power>Apply</button>` : ''}</p>
+        <p><b>Antenna:</b> ${A ? `sector ${A.beamwidth}° at ${A.azimuth}°: ${A.users_closed}/${A.of_users} outstations kept, detected by ${A.heard_by.length} (omni: ${O.users_closed} kept, detected by ${O.heard_by.length}), worst exposure ${A.worst_exposure_db} dB (omni ${O.worst_exposure_db}). ${A.heard_by.length < O.heard_by.length || A.worst_exposure_db < O.worst_exposure_db - 3 ? '<button data-tune-ant>Apply</button>' : '<span class="dim">no gain over omni</span>'}` : 'n/a'}</p>
         <p><b>Channel:</b> now ${C.current_mhz} MHz${C.current_jammed_by.length ? `, inside ${esc(C.current_jammed_by.join(', '))}` : ', clear of jammers'}. ${C.clear_of_jammers.length ? `Clear of jammers: ${C.clear_of_jammers.slice(0, 6).map((f) => `<button data-tune-freq="${f}">${f}</button>`).join(' ')} MHz` : 'No clear channel in band.'} <span class="dim">${esc(C.note)}</span></p>
         <p class="dim">${esc(r.notes)}</p>`;
       out.querySelector('[data-tune-power]')?.addEventListener('click', () => apply({ eirp_dbm: P.recommended_eirp_dbm }));
@@ -1642,13 +1642,13 @@
     const hears = f.hears.filter((d) => d.detected), misses = f.hears.filter((d) => !d.detected);
     const radiates = ['emitter', 'effector'].includes(f.kind) || (f.kind === 'receiver' && e.eirp_dbm != null);
     return `<div class="emo-card-head"><b style="color:${col}">${esc(f.name)}</b> <span class="dim">${esc(f.side)} ${esc(KIND_TXT[f.kind] || f.kind)}${f.category ? ' · ' + esc(f.category) : ''}${f.active ? '' : ' · OFF-AIR'}</span>
-        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button>${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<button data-emo-plannet>Find a better site (EP)</button> <button data-emo-tune>Tune: power, antenna, channel</button> <button data-emo-joint>Joint re-site net</button>' : ''}<button data-emo-clear>Clear focus</button></span></div>
-      ${f.kind === 'effector' ? `<div class="specset"><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>Best site to deny it (EA)</button></div>` : ''}
+        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button>${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<button data-emo-plannet>EP siting</button> <button data-emo-tune>EP measures: power, antenna, channel</button> <button data-emo-joint>Re-site net (joint)</button>' : ''}<button data-emo-clear>Clear focus</button></span></div>
+      ${f.kind === 'effector' ? `<div class="specset"><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
       <div id="emo-planout"></div>
       ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); darker = just audible, brighter = +10 and +20 dB above; the outline is the limit.${f.kind === 'effector' ? ' Hatched magenta: denial it causes on victim nets.' : ''}</p>` : ''}
       ${f.fix?.fix ? `<p><b style="color:${f.fix.targetable ? '#ff4646' : '#f3b23e'}">${f.fix.targetable ? 'FIXED, TARGETABLE' : 'Fixed'}: ±${f.fix.fix.error_m} m</b> <span class="dim">(cut ${f.fix.fix.cut_deg}°, ${esc(f.fix.fix.sensors.join(' + '))})</span></p>` : (heard.some((d) => d.df) ? '<p class="dim">Single line of bearing only: not fixed.</p>' : '')}
       ${tbl(`Picked up by (${heard.length})`, heard.map((d) => row(esc(d.sensor), `+${d.margin_db} dB`, d.df ? 'DF bearing' : 'intercept')))}
-      ${tbl(`Not heard by (${missed.length})`, missed.map((d) => row(esc(d.sensor), `${d.margin_db} dB`, 'below sensitivity')))}
+      ${tbl(`Not detected by (${missed.length})`, missed.map((d) => row(esc(d.sensor), `${d.margin_db} dB`, 'below sensitivity')))}
       ${tbl(`Hears (${hears.length})`, hears.map((d) => row(esc(d.target), `+${d.margin_db} dB`, esc(d.category || ''))))}
       ${tbl(`Misses (${misses.length})`, misses.map((d) => row(esc(d.target), `${d.margin_db} dB`, '')))}
       ${tbl(`Jams (${f.jams.length})`, f.jams.map((x) => row(esc(x.victim), `J/S ${x.js_db} dB${x.p != null ? ` · ${x.p}%` : ''}`, `<b style="color:${x.status === 'denied' ? '#dc3cdc' : x.status === 'spoofed' ? '#c58cff' : '#45d38a'}">${esc(x.status)}</b>`)))}
@@ -1694,12 +1694,91 @@
       <p class="dim">Add from the list, or tap symbols on the map${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}; × removes. All selected footprints are shown; lines only between them.</p>
       ${EMO.sel.length < 2 ? '<p class="dim">Select at least one more entity.</p>' : ''}
       ${Object.values(EMO.pairRes).filter(Boolean).map((P) => P.kind === 'jam'
-        ? `<div class="emo-pair"><b>${esc(P.effector)} vs ${esc(P.net)}</b>: ${P.space ? `denies ${P.denied_km2} km²` : `denies <b>${P.denied_pct}%</b> of the net's coverage (${P.denied_km2} of ${P.coverage_km2} km²)`}; fails at J/S ${P.js_req_db} dB.${P.users.length ? '<br>' + P.users.map((u) => `${esc(u.victim)}: J/S ${u.js_db} dB, <b style="color:${u.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(u.status)}</b>`).join(' · ') : ''}<div class="dim">${esc(P.legend)}</div></div>`
+        ? `<div class="emo-pair"><b>${esc(P.effector)} vs ${esc(P.net)}</b>: ${P.space ? `denies ${P.denied_km2} km²` : `denies <b>${P.denied_pct}%</b> of the net's coverage (${P.denied_km2} of ${P.coverage_km2} km²)`}; fails at J/S ${P.js_req_db} dB.${P.users.length ? '<br>' + P.users.map((u) => `${esc(u.victim)}: J/S ${u.js_db} dB, <b style="color:${u.status === 'denied' ? '#dc3cdc' : u.status === 'degraded' ? '#f3b23e' : '#45d38a'}">${esc(u.status)}</b>`).join(' · ') : ''}<div class="dim">${esc(P.legend)}</div></div>`
         : `<div class="emo-pair"><b>${esc(P.sensor)} ${P.detected ? 'hears' : 'does not hear'} ${esc(P.emitter)}</b>${P.margin_db != null ? ` (${P.margin_db >= 0 ? '+' : ''}${P.margin_db} dB)` : ''}<div class="dim">${esc(P.legend)}</div></div>`).join('')}
-      ${tbl(`Who hears whom (${det.filter((d) => d.detected).length})`, det.map((d) => row(`${nm(d.sensor_id)} → ${nm(d.target_id)}`, `${d.margin_db >= 0 ? '+' : ''}${d.margin_db} dB`, d.detected ? (d.df ? 'heard, DF bearing' : 'heard') : '<span class="dim">not heard</span>')))}
+      ${tbl(`Who hears whom (${det.filter((d) => d.detected).length})`, det.map((d) => row(`${nm(d.sensor_id)} → ${nm(d.target_id)}`, `${d.margin_db >= 0 ? '+' : ''}${d.margin_db} dB`, d.detected ? (d.df ? 'heard, DF bearing' : 'heard') : '<span class="dim">not detected</span>')))}
       ${tbl('Fixes on selected', fx.map((f) => row(esc(f.target), `±${f.fix.error_m} m`, `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}by ${esc(f.fix.sensors.join(' + '))}`)))}
       ${tbl(`Who jams whom (${jam.length})`, jam.map((j) => row(`${nm(j.effector_id)} → ${nm(j.victim_id)}`, `J/S ${j.js_db} dB`, `<b style="color:${j.status === 'denied' ? '#dc3cdc' : '#45d38a'}">${esc(j.status)}</b>`)))}
       ${EMO.sel.length > 1 && !det.length && !jam.length ? '<p class="dim">No interactions between these on their frequencies (different bands, or no sensor/effector among them).</p>' : ''}`;
+  }
+  // ---- EMO dock: the planning tools on the map, each in a small floating card
+  const SCORE_KEYS = [['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters detected'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Located'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['spoofed', 'Outstations deceived'], ['collateral', 'Collateral (civil)'], ['net_area_denied_pct', 'Net coverage denied %'], ['radar_tracks', 'Radar tracks'], ['radar_screened', 'Screened from radar']];
+  function emoScoreTable(r) {
+    if (!r?.score) return '<p class="dim">Run the analysis first.</p>';
+    return `<table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>${SCORE_KEYS.map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>`;
+  }
+  function emoDockCard(title, html) {
+    let c = document.getElementById('emo-dockcard'); if (!c) { c = document.createElement('div'); c.id = 'emo-dockcard'; document.body.appendChild(c); }
+    c.innerHTML = `<div class="emo-card-head"><b>${title}</b><span class="btns"><button id="emo-dockclose">×</button></span></div><div id="emo-dockbody">${html}</div>`;
+    c.querySelector('#emo-dockclose').addEventListener('click', () => c.remove());
+    return c.querySelector('#emo-dockbody');
+  }
+  async function emoDockTool(tool) {
+    if (tool === 'panel') { document.getElementById('emo-dockcard')?.remove(); return openEMO(); }
+    if (tool === 'layers') {
+      const b = emoDockCard('Layers', EMO_LAYERS.map(([k, l, col]) => `<label style="display:block"><input type="checkbox" data-dock-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${col}">■</span> ${l}</label>`).join(''));
+      b.querySelectorAll('[data-dock-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.dockLayer] = cb.checked; emoDraw(); }));
+    } else if (tool === 'score') {
+      emoDockCard('Scoreboard', emoScoreTable(EMO.res) + (EMO.stale ? '<p class="dim">Stale: run again after moves.</p>' : ''));
+    } else if (tool === 'time') {
+      const b = emoDockCard('Time', `<p>T+<b id="emo-docktime">${EMO.t}</b> min of ${EMO.horizon || 0}</p><input id="emo-dockslider" type="range" min="0" max="${Math.max(1, Math.round(EMO.horizon || 0))}" step="5" value="${EMO.t}" style="width:100%"><p><button id="emo-dockplay">Play</button> <button id="emo-dockt0">T+0</button></p>`);
+      const set = async (v) => { EMO.t = +v; $('#emo-docktime').textContent = EMO.t; EMO.stale = true; emoDraw(); await emoRun(); };
+      b.querySelector('#emo-dockslider').addEventListener('change', (e) => set(e.target.value));
+      b.querySelector('#emo-dockt0').addEventListener('click', () => { b.querySelector('#emo-dockslider').value = 0; set(0); });
+      b.querySelector('#emo-dockplay').addEventListener('click', async () => { const sl = b.querySelector('#emo-dockslider'); for (let v = +sl.value + 10; v <= +sl.max && document.getElementById('emo-dockcard'); v += 10) { sl.value = v; await set(v); } });
+    } else if (tool === 'coa') {
+      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button></p><div id="emo-dockcoalist"></div>`);
+      const list = async () => {
+        const r = await api('/api/emo/coas'); const box = b.querySelector('#emo-dockcoalist');
+        const keys = [['net_availability_pct', 'Avail'], ['targetable', 'TQF'], ['denial_achieved', 'Den'], ['radar_tracks', 'Rdr']];
+        const row = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${sc?.[sd]?.[k] ?? '–'}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
+        box.innerHTML = r.coas.length || r.current ? `<table class="grid"><tr><th></th>${['B', 'R'].map((s) => keys.map(([, l]) => `<th>${s} ${l}</th>`).join('')).join('')}<th></th></tr>${r.current ? row('<i>now</i>', r.current, '') : ''}${r.coas.map((c) => row(esc(c.name), c.score, `<button data-dock-load="${c.id}">Load</button> <button data-dock-del="${c.id}">×</button>`)).join('')}</table>` : '<p class="dim">No COAs saved.</p>';
+        box.querySelectorAll('[data-dock-load]').forEach((x) => x.addEventListener('click', async () => { const r2 = await postJson(`/api/emo/coas/${x.dataset.dockLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); emoDraw(); await emoRun(); list(); }));
+        box.querySelectorAll('[data-dock-del]').forEach((x) => x.addEventListener('click', async () => { await fetch(`/api/emo/coas/${x.dataset.dockDel}`, { method: 'DELETE' }); list(); }));
+      };
+      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); });
+      list();
+    } else if (tool === 'red') {
+      const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside"><option value="red">Red</option><option value="blue">Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
+      b.querySelectorAll('[data-dock-coa]').forEach((x) => x.addEventListener('click', async () => {
+        const side = b.querySelector('#emo-dockside').value, o = b.querySelector('#emo-dockcoaout'), kind = x.dataset.dockCoa;
+        o.innerHTML = '<span class="spinner"></span> generating and applying…';
+        try {
+          const r = kind === 'revert' ? await postJson(`/api/emo/plan/coa/revert?side=${side}&t_min=${EMO.t}`, {}) : await postJson(`/api/emo/plan/coa?t_min=${EMO.t}`, { side, coa: kind });
+          planLayer.clearLayers();
+          (r.moves || []).forEach((m) => L.polyline([m.from, m.to], { color: SIDE_COL[side], weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer));
+          o.innerHTML = kind === 'revert' ? `reverted ${r.reverted} positions` : (r.moves.length ? `${r.coa.toUpperCase()} against ${esc(r.target)}:<br>${r.moves.map((m) => `<b>${esc(m.entity)}</b> ${esc(m.where)}<br><span class="dim">${esc(m.detail)}</span>`).join('<br>')}` : `${r.coa.toUpperCase()}: no move clearly improves ${side}'s laydown`);
+          EMO.prevScore = r.score_before || EMO.prevScore; await emoLoad(); EMO.res = null; await emoRun();
+        } catch (err) { o.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+      }));
+    } else if (tool === 'timeline') {
+      const nets = EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id));
+      const b = emoDockCard('Timeline', `<p>step <input id="emo-docktlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-docktlnet"><option value="">(none)</option>${nets.map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select> <button id="emo-docktl">Run</button> <span id="emo-docktlst" class="dim"></span></p><div id="emo-docktlout"></div>`);
+      b.querySelector('#emo-docktl').addEventListener('click', async () => {
+        const out = b.querySelector('#emo-docktlout'), st = b.querySelector('#emo-docktlst'); EMO.tlNet = b.querySelector('#emo-docktlnet').value || null;
+        const t0 = Date.now(); const tick = setInterval(() => { st.textContent = `stepping… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+        try {
+          const r = await postJson('/api/emo/plan/timeline', { step_min: +b.querySelector('#emo-docktlstep').value || 10, net: EMO.tlNet });
+          clearInterval(tick); st.textContent = `${r.steps.length} steps to T+${r.horizon_min} min`;
+          out.innerHTML = emoTimelineHtml(r);
+        } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+      });
+    }
+  }
+  function emoTimelineHtml(r) {
+    const names = Object.keys(r.rows).filter((n) => r.rows[n].tracked || r.rows[n].heard.some(Boolean) || r.rows[n].denied.some(Boolean)).sort((a, b) => (r.rows[a].side + a).localeCompare(r.rows[b].side + b));
+    const W = 680, lab = 150, cw = Math.max(6, Math.floor((W - lab - 10) / r.steps.length)), rh = 14, H = 20 + names.length * rh;
+    const cell = (row, i) => row.denied[i] ? '#dc3cdc' : row.targetable[i] ? '#ff4646' : row.heard[i] ? '#f3b23e' : '#45d38a';
+    const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#0b1016;border-radius:6px;font:10px sans-serif">${r.steps.map((s, i) => i % Math.ceil(r.steps.length / 8) === 0 ? `<text x="${lab + i * cw}" y="12" fill="#8593a6">T+${s}</text>` : '').join('')}${names.map((n, k) => `<text x="4" y="${20 + k * rh + 10}" fill="${SIDE_COL[r.rows[n].side] || '#aaa'}">${esc(n.slice(0, 24))}</text>` + r.steps.map((s, i) => `<rect x="${lab + i * cw}" y="${20 + k * rh + 2}" width="${cw - 1}" height="${rh - 3}" fill="${cell(r.rows[n], i)}"><title>${esc(n)} T+${s}: ${r.rows[n].denied[i] ? 'denied' : r.rows[n].targetable[i] ? 'target-quality fix' : r.rows[n].heard[i] ? 'detected by ' + esc(r.rows[n].heard_by[i].join(', ')) : 'undetected'}</title></rect>`).join('')).join('')}</svg>`;
+    const w = r.windows;
+    return `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}${w ? `<p><b>${esc(w.net)}</b>: ${esc(w.summary)}${w.advantage.length ? `<br>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}` : '<br><span class="bad">No window: siting alone gives none; use EMCON or another bearer.</span>'}</p>` : ''}`;
+  }
+  function emoDock() {
+    if (document.getElementById('emo-dock') || !EMO.ents.length) return;
+    const d = document.createElement('div'); d.id = 'emo-dock';
+    d.innerHTML = [['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adversary'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}">${l}</button>`).join('');
+    document.body.appendChild(d);
+    d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
   function emoAskBar() {
     if (document.getElementById('emo-askbar') || !EMO.ents.length) return;
@@ -1739,11 +1818,11 @@
       await emoLoad();
       EMO.prevScore = EMO.res?.score || EMO.prevScore;
       EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min;
-      EMO.stale = EMO.pending; emoDraw(); emoResults(); emoAskBar();
+      EMO.stale = EMO.pending; emoDraw(); emoResults(); emoAskBar(); emoDock();
       if (EMO.multi && EMO.sel.length) { EMO.multiRes = {}; EMO.pairRes = {}; emoMultiRefresh(); } else if (EMO.focus) emoFocus(EMO.focus);
       const fx = EMO.res.fixes.filter((f) => f.targetable).length;
       const worst = [...EMO.res.nets].sort((a, b) => b.denied_pct - a.denied_pct)[0];
-      emoStatus(`EMO T+${Math.round(EMO.t)} min${EMO.pending ? ' · updating…' : ''} · ${fx} targetable fix${fx === 1 ? '' : 'es'}${worst ? ` · ${worst.net} ${worst.denied_pct}% denied` : ''} · ${EMO.res.compute_s} s`);
+      emoStatus(`EMO T+${Math.round(EMO.t)} min${EMO.pending ? ' · updating…' : ''} · ${fx} target-quality fix${fx === 1 ? '' : 'es'}${worst ? ` · ${worst.net} ${worst.denied_pct}% denied` : ''} · ${EMO.res.compute_s} s`);
     } catch (err) { emoStatus(`EMO error: ${err.message}`); }
     finally { clearInterval(emoTick); EMO.busy = false; if (EMO.pending) emoRun(); }
   }
@@ -1812,13 +1891,13 @@
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     out.innerHTML = `
       ${r.score ? `<h3 class="sec">Scoreboard</h3><table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>
-        ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters heard by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Fixed by the other side'], ['targetable', 'Targetable'], ['denial_achieved', 'Denial achieved (users)'], ['spoofed', 'Spoofed (users)'], ['collateral', 'Civil collateral'], ['net_area_denied_pct', 'Own net area denied %'], ['radar_tracks', 'Radar tracks held'], ['radar_screened', 'Own platforms screened from radar']]
+        ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters detected by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Located by the other side'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['spoofed', 'Outstations deceived'], ['collateral', 'Collateral (civil)'], ['net_area_denied_pct', 'Own net coverage denied %'], ['radar_tracks', 'Radar tracks held'], ['radar_screened', 'Own platforms screened from radar']]
           .map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>` : ''}
       ${r.radar?.length ? `<h3 class="sec">Radar: tracks and screening</h3><table class="grid"><tr><th>Radar</th><th>Target</th><th>km</th><th>Echo margin</th><th>Result</th></tr>${r.radar.filter((x) => x.detected || x.jam).map((x) => `<tr><td style="color:${SIDE_COL[x.radar_side]}">${esc(x.radar)}</td><td style="color:${SIDE_COL[x.target_side]}">${esc(x.target)} <span class="dim">${x.rcs_m2} m²</span></td><td class="mono">${x.range_km}</td><td class="mono">${x.margin_db >= 0 ? '+' : ''}${x.margin_db} dB · ${x.p}%</td><td>${x.tracked ? '<b style="color:#45d38a">tracked</b>' : x.screened ? `<b style="color:#dc3cdc">screened</b> by ${esc(x.jam.jammer)} (${esc(x.jam.mode)}, J/S ${x.jam.js_db} dB, burn-through ${x.jam.burnthrough_km} km)` : 'no track'}</td></tr>`).join('')}</table>` : ''}
       <h3 class="sec">ES: what each side can see and fix</h3>
       ${fx.length ? `<table class="grid"><tr><th>Target</th><th>Seen by</th><th>Fix</th></tr>${fx.map((f) => row([`<span style="color:${SIDE_COL[f.target_side]}">${esc(f.target)}</span>`, esc(f.sensors.join(', ')),
         f.fix ? `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}±${f.fix.error_m} m, cut ${f.fix.cut_deg}°` : `${f.lobs} line of bearing only`])).join('')}</table>` : '<p class="dim">No DF bearings on any emitter.</p>'}
-      <p class="dim">Detections: ${r.detections.filter((d) => d.detected && d.sensor_side === 'red').length} blue emissions heard by red, ${r.detections.filter((d) => d.detected && d.sensor_side === 'blue').length} red emissions heard by blue. Exposure area (ground sensors): blue ${r.exposure.find((x) => x.side === 'blue')?.km2} km², red ${r.exposure.find((x) => x.side === 'red')?.km2} km².</p>
+      <p class="dim">Detections: ${r.detections.filter((d) => d.detected && d.sensor_side === 'red').length} blue emissions detected by red, ${r.detections.filter((d) => d.detected && d.sensor_side === 'blue').length} red emissions detected by blue. Exposure area (ground sensors): blue ${r.exposure.find((x) => x.side === 'blue')?.km2} km², red ${r.exposure.find((x) => x.side === 'red')?.km2} km².</p>
       <h3 class="sec">EA: nets under attack</h3>
       ${r.nets.length ? `<table class="grid"><tr><th>Net</th><th>Coverage</th><th>Denied</th><th>Fails at</th></tr>${r.nets.map((n) => row([`<span style="color:${SIDE_COL[n.side]}">${esc(n.net)}</span>`, n.space ? 'space signal' : `${n.coverage_km2} km²`, `<b>${n.denied_pct}%</b> (${n.denied_km2} km²)`, `J/S ${n.js_req_db} dB`])).join('')}</table>` : ''}
       ${r.jamming.length ? `<table class="grid"><tr><th>Effector</th><th>Victim</th><th>J/S</th><th>Result</th></tr>${r.jamming.map((j) => row([esc(j.effector), esc(j.victim), `${j.js_db} dB`, `<b style="color:${j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6'}">${esc(j.status)}</b>`])).join('')}</table>` : '<p class="dim">No EA against any net.</p>'}
@@ -1848,7 +1927,7 @@
       <div class="specset">Timeline: step <input id="emo-tlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-tlnet"><option value="">(none)</option>${EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id)).map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
         <button id="emo-tl">Run timeline</button> <span id="emo-tlstatus" class="dim"></span></div>
       <div id="emo-tlout"></div>
-      <div class="specset">Other side's response: <select id="emo-coaside"><option value="red">Red</option><option value="blue">Blue</option></select>
+      <div class="specset">Adversary COA: <select id="emo-coaside"><option value="red">Red</option><option value="blue">Blue</option></select>
         <button id="emo-coa-ml" title="Most likely: at most two modest moves">MLCOA</button> <button id="emo-coa-md" title="Most dangerous: every jammer and DF site re-sited for effect">MDCOA</button>
         <button id="emo-coa-rev">Revert</button> <span id="emo-coaout" class="dim"></span></div>
       <div id="emo-results"></div>
@@ -1873,7 +1952,7 @@
       try {
         const r = await api('/api/emo/coas');
         if (!r.coas.length) { box.innerHTML = ''; return; }
-        const keys = [['net_availability_pct', 'Avail %'], ['targetable', 'Targetable'], ['denial_achieved', 'Denied (users)'], ['collateral', 'Collateral'], ['net_area_denied_pct', 'Area denied %']];
+        const keys = [['net_availability_pct', 'Avail %'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['collateral', 'Collateral'], ['net_area_denied_pct', 'Area denied %']];
         const cell = (sc, sd, k) => sc?.[sd]?.[k] ?? '–';
         const rowOf = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${cell(sc, sd, k)}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
         box.innerHTML = `<table class="grid"><tr><th>COA</th>${['Blue', 'Red'].map((sd) => keys.map(([, l]) => `<th style="color:${SIDE_COL[sd.toLowerCase()]}">${sd} ${l}</th>`).join('')).join('')}<th></th></tr>
@@ -1903,10 +1982,10 @@
         const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#0b1016;border-radius:6px;font:10px sans-serif">
           ${r.steps.map((s, i) => i % Math.ceil(r.steps.length / 8) === 0 ? `<text x="${lab + i * cw}" y="12" fill="#8593a6">T+${s}</text>` : '').join('')}
           ${names.map((n, k) => `<text x="4" y="${20 + k * rh + 10}" fill="${SIDE_COL[r.rows[n].side] || '#aaa'}">${esc(n.slice(0, 24))}</text>` +
-            r.steps.map((s, i) => `<rect x="${lab + i * cw}" y="${20 + k * rh + 2}" width="${cw - 1}" height="${rh - 3}" fill="${cell(r.rows[n], i)}"><title>${esc(n)} T+${s}: ${r.rows[n].denied[i] ? 'denied' : r.rows[n].targetable[i] ? 'targetable' : r.rows[n].heard[i] ? 'heard by ' + esc(r.rows[n].heard_by[i].join(', ')) : 'clear'}</title></rect>`).join('')).join('')}</svg>`;
+            r.steps.map((s, i) => `<rect x="${lab + i * cw}" y="${20 + k * rh + 2}" width="${cw - 1}" height="${rh - 3}" fill="${cell(r.rows[n], i)}"><title>${esc(n)} T+${s}: ${r.rows[n].denied[i] ? 'denied' : r.rows[n].targetable[i] ? 'target-quality fix' : r.rows[n].heard[i] ? 'detected by ' + esc(r.rows[n].heard_by[i].join(', ')) : 'undetected'}</title></rect>`).join('')).join('')}</svg>`;
         const w = r.windows;
-        out.innerHTML = `<p><span style="color:#45d38a">■</span> clear <span style="color:#f3b23e">■</span> heard <span style="color:#ff4646">■</span> targetable <span style="color:#dc3cdc">■</span> denied</p>${svg}
-          ${w ? `<h4>Advantage windows for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Unheard and undenied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
+        out.innerHTML = `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}
+          ${w ? `<h4>Windows of EM advantage for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
           <p class="dim">${esc(r.notes)}</p>`;
       } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
     });

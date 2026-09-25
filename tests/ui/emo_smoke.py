@@ -47,7 +47,7 @@ async def main():
         chip = await wait_chip(pg); rec("scenario loads and runs", bool(chip), chip or "")
         rec("scoreboard rendered", bool(await wait_text(pg, "#emo-results", "Scoreboard", 30)))
         await pg.fill("#emo-tlstep", "40"); await pg.click("#emo-tl")
-        rec("timeline renders", bool(await wait_text(pg, "#emo-tlout", "clear", 200)))
+        rec("timeline renders", bool(await wait_text(pg, "#emo-tlout", "undetected", 200)))
         await pg.fill("#emo-coaname", "smoke"); await pg.click("#emo-coasave")
         rec("COA saved and listed", bool(await wait_text(pg, "#emo-coalist", "smoke", 30)))
         await pg.select_option("#emo-coaside", "red"); await pg.click("#emo-coa-ml")

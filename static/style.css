@@ -257,3 +257,10 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 .emo-fixlbl.emo-loc { background: rgba(120, 128, 140, .85); }
 .emo-planpin { background: #45d38a; color: #0b1016; border-radius: 50%; font: 700 12px/22px sans-serif; text-align: center; border: 2px solid #fff; }
 .emo-planpin.emo-relay { background: #f3b23e; }
+
+#emo-dock { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); z-index: 1100; display: flex; flex-direction: column; gap: 4px; }
+#emo-dock button { min-width: 64px; font-size: 12px; padding: 6px 8px; background: rgba(10,14,19,.92); border: 1px solid #3c8cff; color: #e6edf3; border-radius: 6px; }
+#emo-dockcard { position: fixed; left: 80px; top: 50%; transform: translateY(-50%); width: min(460px, 80vw); max-height: 70vh; overflow: auto; z-index: 1110;
+  background: rgba(10,14,19,.96); border: 1px solid #3c8cff; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+@media (max-width: 900px) { #emo-dock { left: 0; right: 0; top: auto; bottom: 56px; transform: none; flex-direction: row; overflow-x: auto; padding: 4px 6px; gap: 6px; }
+  #emo-dock button { min-width: 0; white-space: nowrap; } #emo-dockcard { left: 3vw; width: 94vw; top: auto; bottom: 96px; transform: none; max-height: 50vh; } }

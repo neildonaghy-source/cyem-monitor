@@ -462,7 +462,7 @@ _SNAP: dict = {}     # side -> {entity id: (lat, lon)} before the last COA, for 
 
 
 def _hq_net(ents, side):
-    """The opposing side's highest-value net: an emitter with users; prefer names containing HQ, then most users."""
+    """The opposing side's highest-value net: an emitter with outstations; prefer names containing HQ, then most users."""
     nets = [e for e in ents.values() if e["side"] == side and e["kind"] == "emitter" and e.get("fixed_level_dbm") is None
             and any(u.get("net") == e["id"] for u in ents.values())]
     if not nets:
@@ -578,7 +578,7 @@ class TimelineIn(BaseModel):
 async def timeline(body: TimelineIn):
     """Step the scenario in time with the light analysis (pairwise only) and record, for every emitter and net user,
     whether it was heard, targetable or denied at each step. Windows: intervals when the chosen net's control
-    station is unheard and none of its users is denied."""
+    station is undetected and none of its users is denied."""
     from . import emo_api
     ents = {e["id"]: e for e in emo_api._all()}
     if not ents:
@@ -613,7 +613,7 @@ async def timeline(body: TimelineIn):
         net_id = next(e["id"] for e in ents.values() if e["name"] == body.net)
         users = [n for n, e in ((x["name"], x) for x in ents.values()) if e.get("net") == net_id and n in rows]
         good = [not ctrl["heard"][i] and not any(rows[u]["denied"][i] for u in users) for i in range(len(steps))]
-        unheard = [not ctrl["heard"][i] for i in range(len(steps))]
+        undetected = [not ctrl["heard"][i] for i in range(len(steps))]
         undenied = [not any(rows[u]["denied"][i] for u in users) for i in range(len(steps))]
         def spans(flags):
             out, start = [], None
@@ -623,12 +623,12 @@ async def timeline(body: TimelineIn):
                 if not f and start is not None:
                     out.append({"from_min": steps[start], "to_min": steps[min(i, len(steps) - 1)], "steps": i - start}); start = None
             return out
-        windows = {"net": body.net, "users": users, "advantage": spans(good), "unheard": spans(unheard), "undenied": spans(undenied),
-                   "summary": f"{sum(good)}/{len(steps)} steps with the control station unheard and no user denied; "
-                              f"{sum(unheard)}/{len(steps)} unheard; {sum(undenied)}/{len(steps)} with no user denied."}
+        windows = {"net": body.net, "users": users, "advantage": spans(good), "undetected": spans(undetected), "undenied": spans(undenied),
+                   "summary": f"{sum(good)}/{len(steps)} steps with the control station undetected and no outstation denied; "
+                              f"{sum(undetected)}/{len(steps)} undetected; {sum(undenied)}/{len(steps)} with no outstation denied."}
     return {"steps": steps, "step_min": body.step_min, "horizon_min": round(horizon, 1), "rows": rows, "board": board, "windows": windows,
-            "notes": "Light analysis per step (pairwise terrain paths, no map rasters). Heard = detected by the other side's ES; "
-                     "targetable = DF fix within the scenario threshold; denied = a jammer beats the user's own net at that step."}
+            "notes": "Light analysis per step (pairwise terrain paths, no map rasters). Detected = detected by the other side's ES; "
+                     "target-quality fix = DF fix within the targeting threshold; denied = a jammer beats the user's own net at that step."}
 
 
 # ---- A5: more decision variables: power, antenna azimuth, channel, joint re-siting -------------------------------
@@ -751,7 +751,7 @@ async def joint(body: JointIn, t_min: float = 0):
     own_g, opp_g = _ground(ents, pos, net["side"]), _ground(ents, pos, opp)
     from .db import get_db, now_iso
     before = emo_api._LAST.get("score")
-    bad_before = {j["victim"] for j in emo_api._LAST["jamming"] if j["net"] == net["name"] and j["status"] in ("denied", "no signal")}
+    bad_before = {j["victim"] for j in emo_api._LAST["jamming"] if j["net"] == net["name"] and j["status"] in ("denied", "no link")}
     moves = []
     ctrl = pos(net)
     for u in users:
@@ -788,10 +788,10 @@ async def joint(body: JointIn, t_min: float = 0):
         with get_db().tx() as c:
             c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (b["lat"], b["lon"], now_iso(), net["id"]))
         moves.append({"entity": net["name"], "from": ctrl, "to": (b["lat"], b["lon"]), "where": b["where"],
-                      "detail": f"{b['users_closed']}/{b['of_users']} users closed, exposure {b['exposure_db']:+} dB (was {m['current']['exposure_db']:+}), J/S {b['worst_js_db']:+} dB"})
+                      "detail": f"{b['users_closed']}/{b['of_users']} outstations linked, exposure {b['exposure_db']:+} dB (was {m['current']['exposure_db']:+}), J/S {b['worst_js_db']:+} dB"})
     # verify with the exact pairwise model: no user of this net may end up newly denied or without signal
     def bad(r):
-        return {j["victim"] for j in r["jamming"] if j["net"] == net["name"] and j["status"] in ("denied", "no signal")}
+        return {j["victim"] for j in r["jamming"] if j["net"] == net["name"] and j["status"] in ("denied", "no link")}
     res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
     rejected = []
     newly = bad(res) - bad_before

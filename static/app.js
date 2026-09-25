@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25d';
+  const BUILD = '2026-09-25e';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1547,7 +1547,7 @@
     const radiates = ['emitter', 'effector'].includes(f.kind) || (f.kind === 'receiver' && e.eirp_dbm != null);
     return `<div class="emo-card-head"><b style="color:${col}">${esc(f.name)}</b> <span class="dim">${esc(f.side)} ${esc(KIND_TXT[f.kind] || f.kind)}${f.category ? ' · ' + esc(f.category) : ''}${f.active ? '' : ' · OFF-AIR'}</span>
         <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-clear>Clear focus</button></span></div>
-      ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); bands at +0, +10 and +20 dB.${f.kind === 'effector' ? ' Magenta: denial it causes on victim nets.' : ''}</p>` : ''}
+      ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); darker = just audible, brighter = +10 and +20 dB above; the outline is the limit.${f.kind === 'effector' ? ' Hatched magenta: denial it causes on victim nets.' : ''}</p>` : ''}
       ${f.fix?.fix ? `<p><b style="color:${f.fix.targetable ? '#ff4646' : '#f3b23e'}">${f.fix.targetable ? 'FIXED, TARGETABLE' : 'Fixed'}: ±${f.fix.fix.error_m} m</b> <span class="dim">(cut ${f.fix.fix.cut_deg}°, ${esc(f.fix.fix.sensors.join(' + '))})</span></p>` : (heard.some((d) => d.df) ? '<p class="dim">Single line of bearing only: not fixed.</p>' : '')}
       ${tbl(`Picked up by (${heard.length})`, heard.map((d) => row(esc(d.sensor), `+${d.margin_db} dB`, d.df ? 'DF bearing' : 'intercept')))}
       ${tbl(`Not heard by (${missed.length})`, missed.map((d) => row(esc(d.sensor), `${d.margin_db} dB`, 'below sensitivity')))}

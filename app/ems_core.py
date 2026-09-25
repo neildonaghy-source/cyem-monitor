@@ -82,3 +82,38 @@ def overlay_png(masks: list[tuple[np.ndarray, tuple[int, int, int, int]]]) -> st
 BLUE_COV = (60, 140, 255, 70)
 RED_EXPO = (255, 70, 70, 95)
 DENIED = (220, 60, 220, 150)
+
+
+# ---- high-contrast rendering ----------------------------------------------------------------
+PALETTE = {  # weak -> strong, then the edge line; brighter means stronger
+    "blue": [(35, 80, 190, 150), (55, 190, 255, 160), (205, 245, 255, 185), (130, 225, 255, 255)],
+    "red": [(130, 20, 20, 150), (255, 70, 70, 160), (255, 205, 205, 185), (255, 130, 130, 255)],
+}
+
+
+def edge(mask: np.ndarray) -> np.ndarray:
+    """Pixels on the boundary of a mask (4-neighbour)."""
+    inner = mask.copy()
+    for ax in (0, 1):
+        for sh in (1, -1):
+            inner &= np.roll(mask, sh, axis=ax)
+    return mask & ~inner
+
+
+def hatch(shape, period: int = 8, width: int = 3) -> np.ndarray:
+    i, j = np.indices(shape)
+    return ((i + j) % period) < width
+
+
+def band_masks(lv: np.ndarray, thr: float, side: str) -> list:
+    p = PALETTE[side]
+    base = lv >= thr
+    return [(base, p[0]), (lv >= thr + 10, p[1]), (lv >= thr + 20, p[2]), (edge(base), p[3])]
+
+
+def region_masks(mask: np.ndarray, rgba: tuple, hatched: bool = False, edge_rgba: tuple | None = None) -> list:
+    if not mask.any():
+        return []
+    out = [(mask & hatch(mask.shape), rgba), (mask & ~hatch(mask.shape), rgba[:3] + (max(30, rgba[3] // 3),))] if hatched else [(mask, rgba)]
+    out.append((edge(mask), edge_rgba or rgba[:3] + (255,)))
+    return out

@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from .coverage_api import SiteIn, _compute
 from .db import Database, get_db, now_iso
-from .ems_core import bw_penalty_db, cell_km2, overlap, overlay_png, raster_axes, sample, union_bounds
+from .ems_core import band_masks, bw_penalty_db, cell_km2, overlap, overlay_png, raster_axes, region_masks, sample, union_bounds
 
 router = APIRouter(prefix="/api/emo", tags=["emo"])
 
@@ -298,10 +298,10 @@ def df_fix(target_pos, bearings: list[dict]) -> dict | None:
 _COV: dict[tuple, object] = {}
 _LAST: dict = {}
 LAYER_RGBA = {
-    "blue_cov": (60, 140, 255, 55), "red_cov": (255, 90, 90, 45),
-    "blue_seen": (255, 70, 70, 70),    # blue emissions detectable by red ES
-    "red_seen": (60, 200, 255, 65),    # red emissions detectable by blue ES
-    "blue_denied": (220, 60, 220, 95), "red_denied": (255, 160, 40, 95),
+    "blue_cov": (60, 140, 255, 70), "red_cov": (255, 90, 90, 60),
+    "blue_seen": (255, 70, 70, 110),    # blue emissions detectable by red ES
+    "red_seen": (60, 200, 255, 110),    # red emissions detectable by blue ES
+    "blue_denied": (235, 40, 235, 210), "red_denied": (255, 170, 30, 210),
 }
 
 
@@ -438,7 +438,7 @@ async def run(p: RunIn, t_min: float = 0):
                         "coverage_km2": None if space else round(cov_n * km2, 1), "denied_km2": round(float(den.sum()) * km2, 1),
                         "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq})
 
-    layers = {k: overlay_png([(m, LAYER_RGBA[k])]) for k, m in L.items() if m.any()}
+    layers = {k: overlay_png(region_masks(m, LAYER_RGBA[k], hatched=k.endswith("_denied"))) for k, m in L.items() if m.any()}
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red")]
     horizon = max([track_minutes(e) for e in ents] + [0])
     _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
@@ -511,7 +511,7 @@ async def focus(eid: str, t_min: float = 0):
         s_, w_, n_, e2 = cov.bounds()
         LA, LO = raster_axes(s_, w_, n_, e2, px=480)
         lv = sample(cov, LA, LO)
-        masks = [(lv >= thr, BANDS[e["side"]][0]), (lv >= thr + 10, BANDS[e["side"]][1]), (lv >= thr + 20, BANDS[e["side"]][2])]
+        masks = band_masks(lv, thr, e["side"])
         if e["kind"] == "effector":
             # the denial it causes on each victim net inside that net's coverage
             for nn in [x for x in ents.values() if x["kind"] == "emitter" and x["side"] != e["side"] and x["active"]
@@ -524,7 +524,7 @@ async def focus(eid: str, t_min: float = 0):
                     S = sample(await coverage_for(nn, _LAST["pos"].get(nn["id"], (nn["lat"], nn["lon"])), p.rx_h), LA, LO)
                     covd = S >= (nn.get("sens_dbm") or p.default_sens)
                 with np.errstate(invalid="ignore"):
-                    masks.append((covd & ((lv - pen - S) >= jsreq), (220, 60, 220, 150)))
+                    masks += region_masks(covd & ((lv - pen - S) >= jsreq), (235, 40, 235, 210), hatched=True)
         out["overlay"] = {"png": overlay_png(masks), "bounds": [[s_, w_], [n_, e2]]}
         out["legend"] = {"threshold_dbm": round(thr, 1), "bands_db": [0, 10, 20],
                          "basis": "opposing sensors' best sensitivity" if watchers else "default sensitivity (no opposing sensor on this band)"}

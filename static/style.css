@@ -255,3 +255,5 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 .emo-pair { border-left: 3px solid #dc3cdc; padding: 4px 8px; margin: 6px 0; background: rgba(220,60,220,.07); }
 @media (max-width: 900px) { #emo-askbar { top: 52px; } #emo-askcard { top: 96px; left: 3vw; max-height: 45vh; } }
 .emo-fixlbl.emo-loc { background: rgba(120, 128, 140, .85); }
+.emo-planpin { background: #45d38a; color: #0b1016; border-radius: 50%; font: 700 12px/22px sans-serif; text-align: center; border: 2px solid #fff; }
+.emo-planpin.emo-relay { background: #f3b23e; }

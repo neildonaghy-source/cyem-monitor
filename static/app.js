@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25p';
+  const BUILD = '2026-09-25q';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1446,6 +1446,7 @@
     on: { blue_seen: false, red_seen: false, blue_denied: false, red_denied: false, blue_cov: false, red_cov: false, lines: true, civil_lines: false },
     focus: null, focusRes: null, multi: false, sel: [], multiRes: {}, pairRes: {} };
   const emoLayer = L.layerGroup().addTo(map);
+  const planLayer = L.layerGroup().addTo(map);
   const SIDE_COL = { blue: '#3c8cff', red: '#ff4646', grey: '#a6b0bd' };
   const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
     ['blue_denied', 'Blue nets denied', '#dc3cdc'], ['red_denied', 'Red nets denied', '#ffa028'], ['blue_cov', 'Blue net coverage', '#3c8cff'],
@@ -1541,7 +1542,40 @@
       emoDraw(); emoCard(emoCardHtml(EMO.focusRes));
     } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
   }
-  function emoClearFocus() { EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; document.getElementById('emo-card')?.remove(); emoDraw(); }
+  async function emoPlan(kind) {
+    const out = $('#emo-planout'); if (!out) return;
+    const e = EMO.ents.find((x) => x.id === EMO.focus); if (!e) return;
+    const t0 = Date.now(); const tick = setInterval(() => { out.innerHTML = `<p><span class="spinner"></span> searching positions… ${Math.round((Date.now() - t0) / 1000)} s (1-3 min)</p>`; }, 1000);
+    try {
+      const r = kind === 'net'
+        ? await postJson(`/api/emo/plan/site-net?t_min=${EMO.t}`, { net: e.name })
+        : await postJson(`/api/emo/plan/site-ea?t_min=${EMO.t}`, { effector: e.name, target_net: $('[data-emo-eatgt]').value });
+      clearInterval(tick);
+      planLayer.clearLayers();
+      const cur = emoPos(e);
+      const fmt = (x) => kind === 'net'
+        ? `${x.users_closed}/${x.of_users} users closed · margin ${x.link_margin_db >= 0 ? '+' : ''}${x.link_margin_db} dB · ${x.heard_by.length ? `heard by ${x.heard_by.length}` : 'not heard'} · J/S ${x.worst_js_db} dB`
+        : `denies ${x.denied}/${x.of_users} · worst J/S ${x.min_js_db} dB · exposure ${x.exposure_db >= 0 ? '+' : ''}${x.exposure_db} dB${x.fratricide ? ` · <b class="bad">fratricide ${x.fratricide}</b>` : ''}`;
+      r.best.slice(0, 3).forEach((x, i) => {
+        L.polyline([cur, [x.lat, x.lon]], { color: '#45d38a', weight: 2, dashArray: '5 6', opacity: 0.8, interactive: false }).addTo(planLayer);
+        L.marker([x.lat, x.lon], { icon: L.divIcon({ className: 'emo-planpin', html: `${i + 1}`, iconSize: [22, 22], iconAnchor: [11, 11] }) })
+          .bindTooltip(`Option ${i + 1}: ${x.where}<br>${fmt(x)}`).addTo(planLayer);
+      });
+      if (r.relay) L.marker([r.relay.lat, r.relay.lon], { icon: L.divIcon({ className: 'emo-planpin emo-relay', html: 'R', iconSize: [22, 22], iconAnchor: [11, 11] }) })
+        .bindTooltip(`Relay: ${r.relay.where}<br>reaches ${r.relay.reaches}/${r.relay.of_failing} (${esc(r.relay.serves.join(', '))})`).addTo(planLayer);
+      out.innerHTML = `<h4>${kind === 'net' ? 'Better sites for this net' : `Sites to deny ${esc(r.target_net)}`}</h4>
+        <p class="dim">Now: ${fmt(r.current)}</p>
+        <table class="grid">${r.best.slice(0, 3).map((x, i) => `<tr><td><b>${i + 1}</b></td><td>${esc(x.where)}<div class="dim">${fmt(x)}</div></td><td><button data-emo-moveto="${x.lat},${x.lon}">Move here</button></td></tr>`).join('')}</table>
+        ${r.relay ? `<p><b>Relay R</b>: ${esc(r.relay.where)}: reaches ${r.relay.reaches}/${r.relay.of_failing} (${esc(r.relay.serves.join(', '))}), exposure ${r.relay.exposure_db} dB.</p>` : ''}
+        <p class="dim">${esc(r.notes)}</p>`;
+      out.querySelectorAll('[data-emo-moveto]').forEach((b) => b.addEventListener('click', async () => {
+        const [la, lo] = b.dataset.emoMoveto.split(',').map(Number);
+        e.lat = la; e.lon = lo; EMO.stale = true; planLayer.clearLayers(); emoDraw();
+        await postJson(`/api/emo/${encodeURIComponent(e.id)}/move`, { lat: la, lon: lo }); emoRun();
+      }));
+    } catch (err) { clearInterval(tick); out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+  }
+  function emoClearFocus() { planLayer.clearLayers(); EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; document.getElementById('emo-card')?.remove(); emoDraw(); }
   function emoCard(html) {
     let c = document.getElementById('emo-card');
     if (!c) { c = document.createElement('div'); c.id = 'emo-card'; document.body.appendChild(c); }
@@ -1554,6 +1588,8 @@
     c.querySelector('[data-emo-emcon]')?.addEventListener('click', async (x) => {
       const b = x.currentTarget; await fetch(`/api/emo/${encodeURIComponent(EMO.focus)}/active?on=${b.dataset.on === '1'}`, { method: 'POST' }); EMO.stale = true; emoRun();
     });
+    c.querySelector('[data-emo-plannet]')?.addEventListener('click', () => emoPlan('net'));
+    c.querySelector('[data-emo-planea]')?.addEventListener('click', () => emoPlan('ea'));
     c.querySelector('[data-emo-editf]')?.addEventListener('click', () => { EMO.editId = EMO.focus; EMO.draft = { ...EMO.ents.find((e) => e.id === EMO.focus) }; openEMO(); });
   }
   function emoCardHtml(f) {
@@ -1565,7 +1601,9 @@
     const hears = f.hears.filter((d) => d.detected), misses = f.hears.filter((d) => !d.detected);
     const radiates = ['emitter', 'effector'].includes(f.kind) || (f.kind === 'receiver' && e.eirp_dbm != null);
     return `<div class="emo-card-head"><b style="color:${col}">${esc(f.name)}</b> <span class="dim">${esc(f.side)} ${esc(KIND_TXT[f.kind] || f.kind)}${f.category ? ' · ' + esc(f.category) : ''}${f.active ? '' : ' · OFF-AIR'}</span>
-        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button><button data-emo-clear>Clear focus</button></span></div>
+        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button>${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<button data-emo-plannet>Find a better site (EP)</button>' : ''}<button data-emo-clear>Clear focus</button></span></div>
+      ${f.kind === 'effector' ? `<div class="specset"><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>Best site to deny it (EA)</button></div>` : ''}
+      <div id="emo-planout"></div>
       ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); darker = just audible, brighter = +10 and +20 dB above; the outline is the limit.${f.kind === 'effector' ? ' Hatched magenta: denial it causes on victim nets.' : ''}</p>` : ''}
       ${f.fix?.fix ? `<p><b style="color:${f.fix.targetable ? '#ff4646' : '#f3b23e'}">${f.fix.targetable ? 'FIXED, TARGETABLE' : 'Fixed'}: ±${f.fix.fix.error_m} m</b> <span class="dim">(cut ${f.fix.fix.cut_deg}°, ${esc(f.fix.fix.sensors.join(' + '))})</span></p>` : (heard.some((d) => d.df) ? '<p class="dim">Single line of bearing only: not fixed.</p>' : '')}
       ${tbl(`Picked up by (${heard.length})`, heard.map((d) => row(esc(d.sensor), `+${d.margin_db} dB`, d.df ? 'DF bearing' : 'intercept')))}

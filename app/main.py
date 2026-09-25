@@ -29,6 +29,7 @@ from .emo_api import ensure_emo_schema, router as emo_router
 from .ar_api import router as ar_router
 from .sdr_api import ensure_sdr_schema, router as sdr_router
 from .insights_api import router as insight_router
+from .emo_plan import router as emo_plan_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -69,6 +70,7 @@ app.include_router(emo_router)
 app.include_router(ar_router)
 app.include_router(sdr_router)
 app.include_router(insight_router)
+app.include_router(emo_plan_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

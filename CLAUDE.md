@@ -50,3 +50,12 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 
 - Clients: native CyEM apps on the Mac and iPhone (source ~/cyem-app on the Mac) embed Tailscale and load https://trade.tail013324.ts.net:8443; keep that URL and the Tailscale serve on 8443 stable.
 - EMO (`emo_api.py`): symmetric red/blue ES/EA/EP on terrain; reuses coverage_api._compute (power capped at 70 dBm, offset added for higher EIRP) and link_core.analyse for per-pair paths; heavy work limited by asyncio.Semaphore(3); cyem container cpus 4.0. Notional data only.
+
+## EMO planning layer (added 2026-09-25)
+- app/emo_plan.py: score maps (reciprocity coverage grids), tune (power/antenna/channel), joint re-site (verified), MLCOA/MDCOA
+  course-of-action generator with revert, timeline (light per-step runs). app/emo_api.py: workspaces (X-CyEM-WS, contextvar WS,
+  _LAST is a per-workspace proxy), COAs (emo_coas table), scoreboard, probabilities (sigma_db), radar_picture(), spoofing (ea_mode).
+- Operator guide and endpoint list: docs/EMO.md. Browser smoke test: tests/ui/run.sh (private workspace uitest1, ~3 min).
+- Conventions: every solver proposes then verifies with the exact pairwise model; stand-off 10 km and own-side rule; civil (grey)
+  is located, never targetable; planning answers in Ask bypass the language model.
+- Release: bump BUILD in static/app.js, ?v= in index.html/sw.js, cache name in sw.js; commit; push; docker compose up -d --build cyem.

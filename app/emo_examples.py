@@ -215,4 +215,4 @@ EXAMPLES = {"mdo-operational": {
              "(3 MHz hops over 255 MHz); blue's VHF net hops over 30-88 MHz (about 34 dB against a spot jammer) while red's "
              "single-channel net is denied by blue's spot jammer: the EP lesson; GNSS jamming from high ground reaches aircraft, the frigate and precision fires; blue EA denies the red "
              "VHF net. Tap any symbol to focus on it. First run takes a couple of minutes (new terrain tiles).",
-    "centre": [57.95, -5.10], "zoom": 8, "entities": MDO}, **EXAMPLES}
+    "centre": [57.95, -5.10], "zoom": 8, "params": {"df_fix_good_m": 5000}, "entities": MDO}, **EXAMPLES}

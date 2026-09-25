@@ -517,6 +517,7 @@ async def load_example(name: str):
                 c.execute("UPDATE emo_entities SET net=? WHERE id=?", (ids[d["net"]], ids[d["name"]]))
     _COV.clear(); _P2P.clear()
     return {"loaded": name, "title": ex["title"], "about": ex["about"], "centre": ex["centre"], "zoom": ex["zoom"],
+            "params": ex.get("params", {}),
             "entities": _all()}
 
 
@@ -625,3 +626,149 @@ async def delete_scenario(sid: str):
     if not n:
         raise HTTPException(404, "no such scenario")
     return {"deleted": sid}
+
+
+
+# ---- Ask AI on the scenario ------------------------------------------------------------------
+EMO_ASK_SYSTEM = """You are an EMO (electromagnetic operations) analyst reviewing a NOTIONAL red/blue scenario for a senior UK
+practitioner. British English, plain and concise. Answer ONLY from the analysis supplied. Each line is already sorted into
+targetable, fixed-not-targetable, denied and holding: never move an item between lists, and quote numbers exactly. Name the entities and quote the numbers. Where the data
+cannot answer, say so. Remind the reader once, briefly, that results are screening-grade (terrain propagation only;
+no clutter, multipath or detailed receiver modelling). Suggest EP or EA options only as options to test in the tool
+(move, EMCON, antenna, power, frequency), not as doctrine. Under 250 words unless a list is needed."""
+
+
+def scenario_context() -> str:
+    """Pre-sorted facts so a small model only narrates: nothing here needs inferring."""
+    if not _LAST:
+        return "(no analysis has been run yet)"
+    thr = _LAST["params"].df_fix_good_m
+    fx = [f for f in _LAST["fixes"] if f["fix"]]
+    L = [f"Time T+{_LAST['t']:g} min. A fix is TARGETABLE if its error is within {thr:g} m."]
+    for side in ("blue", "red"):
+        tg = [f for f in fx if f["target_side"] == side and f["targetable"]]
+        nt = [f for f in fx if f["target_side"] == side and not f["targetable"]]
+        L.append(f"{side.upper()} TARGETABLE: " + ("; ".join(f"{f['target']} (+/-{f['fix']['error_m']} m)" for f in tg) or "none"))
+        L.append(f"{side.upper()} FIXED BUT NOT TARGETABLE: " + ("; ".join(f"{f['target']} (+/-{f['fix']['error_m']} m)" for f in nt) or "none"))
+    den = [j for j in _LAST["jamming"] if j["status"] == "denied"]
+    hold = [j for j in _LAST["jamming"] if j["status"] == "holds"]
+    for side in ("blue", "red"):
+        L.append(f"{side.upper()} USERS DENIED BY JAMMING: " + ("; ".join(f"{j['victim']} on {j['net']} by {j['effector']} (J/S {j['js_db']} dB)"
+                                                                       for j in den if j["effector_side"] != side) or "none"))
+        L.append(f"{side.upper()} USERS HOLDING UNDER JAMMING: " + ("; ".join(f"{j['victim']} (J/S {j['js_db']} dB)"
+                                                                          for j in hold if j["effector_side"] != side) or "none"))
+    det = sorted([d for d in _LAST["detections"] if d["detected"] and d["sensor_side"] == "red"], key=lambda d: -d["margin_db"])[:12]
+    L.append("LOUDEST BLUE EMISSIONS HEARD BY RED: " + ("; ".join(f"{d['target']} heard by {d['sensor']} at +{d['margin_db']} dB" for d in det) or "none"))
+    L.append("Note: radars and SATCOM are emitters only; only nets (comms, datalinks, GNSS) can be jammed in this model.")
+    return "\n".join(L)
+
+
+class AskIn(BaseModel):
+    question: str = Field(min_length=2, max_length=800)
+
+
+@router.post("/ask")
+async def emo_ask(req: AskIn):
+    from fastapi.responses import StreamingResponse
+    from . import llm
+    msgs = [{"role": "system", "content": EMO_ASK_SYSTEM},
+            {"role": "user", "content": f"ANALYSIS\n{scenario_context()}\n\nQUESTION: {req.question.strip()}"}]
+
+    async def gen():
+        try:
+            async for tok in llm.chat_stream(msgs, num_predict=600, temperature=0.1):
+                yield f"data: {json.dumps({'t': tok})}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"data: {json.dumps({'error': f'{type(e).__name__}: {str(e)[:200]}'})}\n\n"
+        yield "data: {\"done\": true}\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# ---- EMO briefing export (Word): one section per phase ------------------------------------------
+def _schematic_png(res: dict, ents: list[dict]) -> bytes:
+    """Schematic (no basemap): overlays, fix circles, jamming lines and entity markers on a dark field."""
+    import base64
+    import io
+    from PIL import Image, ImageDraw
+    (s, w), (n, e) = res["bounds"]
+    W = 900
+    H = max(300, int(W * (n - s) / max(e - w, 1e-6) / max(math.cos(math.radians((s + n) / 2)), 0.2)))
+    img = Image.new("RGBA", (W, H), (14, 20, 28, 255))
+    for k in ("blue_seen", "red_seen", "blue_denied", "red_denied"):
+        u = res["layers"].get(k)
+        if u:
+            ov = Image.open(io.BytesIO(base64.b64decode(u.split(",", 1)[1]))).convert("RGBA").resize((W, H))
+            img.alpha_composite(ov)
+    d = ImageDraw.Draw(img)
+    xy = lambda la, lo: ((lo - w) / (e - w) * W, (n - la) / (n - s) * H)  # noqa: E731
+    for j in res["jamming"]:
+        col = (235, 40, 235, 255) if j["status"] == "denied" else (69, 211, 138, 200)
+        d.line([xy(*j["a"]), xy(*j["b"])], fill=col, width=2)
+    for f in res["fixes"]:
+        if f["fix"]:
+            cx, cy = xy(*f["fix"]["fix"])
+            r = max(4, f["fix"]["error_m"] / 111320 / (n - s) * H)
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(255, 70, 70, 255) if f["target_side"] == "blue" else (60, 200, 255, 255),
+                      width=3 if f["targetable"] else 1)
+    for en in ents:
+        la, lo = res["positions"].get(en["id"], (en["lat"], en["lon"]))
+        x, y = xy(la, lo)
+        col = (60, 140, 255, 255) if en["side"] == "blue" else (255, 70, 70, 255)
+        if en["side"] == "blue":
+            d.rectangle([x - 5, y - 4, x + 5, y + 4], fill=col, outline=(255, 255, 255, 255))
+        else:
+            d.polygon([(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], fill=col, outline=(255, 255, 255, 255))
+        d.text((x + 8, y - 6), en["name"][:22], fill=(230, 237, 243, 255))
+    out = io.BytesIO(); img.convert("RGB").save(out, "PNG")
+    return out.getvalue()
+
+
+@router.get("/export.docx")
+async def emo_export(phases: str = "0", df_fix_good_m: float = 1000):
+    import io
+    from datetime import datetime, timezone
+    from docx import Document
+    from docx.shared import Cm, Pt
+    from fastapi.responses import StreamingResponse
+    ts = sorted({max(0.0, float(x)) for x in phases.split(",") if x.strip()})[:6] or [0.0]
+    doc = Document()
+    st = doc.styles["Normal"]; st.font.name = "Arial"; st.font.size = Pt(10)
+    doc.add_heading("CyEM EMO briefing (notional scenario)", 0)
+    doc.add_paragraph(f"Produced {datetime.now(timezone.utc):%d %b %Y %H:%MZ}. Screening-grade analysis on Copernicus 30 m terrain "
+                      "(Deygout, 3 edges); no clutter, multipath or detailed receiver modelling. Notional data only.")
+    for t in ts:
+        res = await run(RunIn(df_fix_good_m=df_fix_good_m), t_min=t)
+        ents = _all()
+        doc.add_heading(f"Phase T+{t:g} min", 1)
+        tgt = [f for f in res["fixes"] if f["targetable"]]
+        den = sorted(res["nets"], key=lambda x: -x["denied_pct"])
+        doc.add_paragraph(f"{len(tgt)} targetable fix(es) (threshold {df_fix_good_m:g} m). "
+                          + "; ".join(f"{x['net']} ({x['side']}) {x['denied_pct']}% denied" for x in den[:4]) + ".")
+        doc.add_picture(io.BytesIO(await asyncio.to_thread(_schematic_png, res, ents)), width=Cm(16))
+        doc.add_paragraph("Schematic, no basemap. Blue squares, red diamonds; tint = where each side's emissions are heard; "
+                          "hatched = net denial; circles = DF fixes (thick = targetable); lines = jamming (magenta denied).").runs[0].italic = True
+        def table(head, rows):
+            tb = doc.add_table(rows=1, cols=len(head)); tb.style = "Light Grid Accent 1"
+            for i, h in enumerate(head):
+                tb.rows[0].cells[i].text = h
+            for r in rows:
+                cs = tb.add_row().cells
+                for i, v in enumerate(r):
+                    cs[i].text = str(v)
+        fx = [f for f in res["fixes"] if f["fix"]]
+        if fx:
+            doc.add_heading("DF fixes", 2)
+            table(["Target", "Side", "Error m", "Cut", "Targetable", "By"],
+                  [[f["target"], f["target_side"], f["fix"]["error_m"], f["fix"]["cut_deg"], "yes" if f["targetable"] else "no",
+                    " + ".join(f["fix"]["sensors"])] for f in fx])
+        if res["nets"]:
+            doc.add_heading("Nets under attack", 2)
+            table(["Net", "Side", "Coverage km2", "Denied %", "Fails at J/S dB"],
+                  [[x["net"], x["side"], x["coverage_km2"] if x["coverage_km2"] is not None else "space", x["denied_pct"], x["js_req_db"]] for x in res["nets"]])
+        if res["jamming"]:
+            doc.add_heading("Jamming at each victim", 2)
+            table(["Effector", "Victim", "J/S dB", "Result"], [[j["effector"], j["victim"], j["js_db"], j["status"]] for j in res["jamming"]])
+    buf = io.BytesIO(); doc.save(buf)
+    name = f"CyEM-EMO-brief-{datetime.now(timezone.utc):%Y%m%d-%H%MZ}.docx"
+    return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})

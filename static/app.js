@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25f';
+  const BUILD = '2026-09-25g';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1660,17 +1660,46 @@
       <div class="specset">Time T+<b id="emo-tv">${Math.round(EMO.t)}</b> min <input id="emo-t" type="range" min="0" max="${Math.max(1, Math.ceil(H))}" step="1" value="${EMO.t}" style="flex:1;min-width:140px">
         <button id="emo-run" class="primary">Run</button> <button id="emo-play">${EMO.playing ? 'Stop' : 'Play'}</button> <span id="emo-status" class="dim"></span></div>
       <div class="specset">${EMO_LAYERS.map(([k, l, c]) => `<label style="white-space:nowrap"><input type="checkbox" data-emo-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${c}">■</span> ${esc(l)}</label>`).join(' ')}</div>
+      <div class="specset">Targetable if fix within <input id="emo-tgt" type="number" min="50" step="50" value="${EMO.params.df_fix_good_m}" style="width:80px"> m
+        <span class="dim">(tactical ~1000, operational ~5000)</span> · <span class="dim">Map washes are for ground receivers (2 m); airborne results are in the cards and tables.</span></div>
+      <div class="specset"><input id="emo-askq" placeholder="Ask about this scenario, e.g. which blue emitter is most at risk?" style="flex:1;min-width:200px"> <button id="emo-ask">Ask AI</button></div>
+      <div id="emo-askout" class="md"></div>
+      <div class="specset">Briefing phases (minutes) <input id="emo-phases" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
+        <a id="emo-export" class="btnlink" href="#">Export briefing (Word)</a> <span class="dim">one section per phase; takes a minute per new phase</span></div>
       <div id="emo-results"></div>
       <h3 class="sec">Entities</h3>${list}
       <h3 class="sec">${EMO.editId ? 'Edit entity' : 'Add entity'}</h3>${emoForm(EMO.draft)}`);
     emoResults();
     const body = $('#modal-body');
+    $('#emo-tgt').addEventListener('change', (e) => { EMO.params.df_fix_good_m = Math.max(50, +e.target.value || 1000); emoRun(); });
+    $('#emo-export').addEventListener('click', (e) => {
+      e.preventDefault();
+      const ph = $('#emo-phases').value.split(/[,\s]+/).filter((x) => x !== '' && !isNaN(+x)).join(',') || '0';
+      emoStatus('Building briefing… (download starts when ready)');
+      window.location.href = `/api/emo/export.docx?phases=${encodeURIComponent(ph)}&df_fix_good_m=${EMO.params.df_fix_good_m}`;
+    });
+    $('#emo-ask').addEventListener('click', async () => {
+      const q = $('#emo-askq').value.trim(); if (q.length < 2) return;
+      const out = $('#emo-askout'); out.innerHTML = '<span class="spinner"></span> thinking… (about a minute)';
+      let text = '';
+      try {
+        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) });
+        const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+        while (true) {
+          const { value, done } = await rd.read(); if (done) break;
+          buf += dec.decode(value, { stream: true }); const parts = buf.split('\n\n'); buf = parts.pop();
+          for (const p of parts) { const l = p.split('\n').find((x) => x.startsWith('data: ')); if (!l) continue; const d = JSON.parse(l.slice(6));
+            if (d.t) { text += d.t; out.textContent = text; } if (d.error) out.innerHTML = `<p class="bad">${esc(d.error)}</p>`; }
+        }
+        if (text) out.innerHTML = renderMd(text);
+      } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+    });
     $('#emo-ex-go').addEventListener('click', async () => {
       const id = $('#emo-ex').value; if (!id) return;
       emoStatus('loading…');
       try {
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
-        EMO.ents = r.entities; EMO.about = r.about; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        EMO.ents = r.entities; EMO.about = r.about; EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
       } catch (err) { emoStatus(err.message); }
     });

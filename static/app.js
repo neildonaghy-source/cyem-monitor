@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25g';
+  const BUILD = '2026-09-25h';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1777,8 +1777,12 @@
     ['btn-cov', 'Coverage', 'Omni / sector / P2MP coverage'], ['btn-hf', 'HF', 'Skywave now-cast'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-health', 'Health', 'Collectors and data status']];
   $('#mob-tools').addEventListener('click', () => {
     openModal('Tools', `<div class="mobtools">${MOB_TOOLS.filter(([id]) => $('#' + id)).map(([id, t, d]) => `<button data-go="${id}"><b>${t}</b><span class="dim">${d}</span></button>`).join('')}
+      ${window.webkit?.messageHandlers?.cyem ? '<button data-native="ar"><b>AR view (camera)</b><span class="dim">Emitters around you over the camera image</span></button>' : ''}
       <a href="/api/export/plan.docx" class="btnlink" download><b>Export plan (Word)</b></a></div>`);
-    $$('#modal-body .mobtools button').forEach((b) => b.addEventListener('click', () => $('#' + b.dataset.go).click()));
+    $$('#modal-body .mobtools button').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.native) { $('#modal').classList.remove('show'); window.webkit.messageHandlers.cyem.postMessage(b.dataset.native); }
+      else $('#' + b.dataset.go).click();
+    }));
   });
   if (mobile()) { showRail(false, false); showSide(false, false); } else { showRail(panels.rail, false); showSide(panels.side, false); }
 

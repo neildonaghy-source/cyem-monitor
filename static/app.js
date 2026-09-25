@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25s';
+  const BUILD = '2026-09-25t';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1802,6 +1802,9 @@
       <div id="emo-askout" class="md"></div>
       <div class="specset">Briefing phases (minutes) <input id="emo-phases" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
         <a id="emo-export" class="btnlink" href="#">Export briefing (Word)</a> <span class="dim">one section per phase; takes a minute per new phase</span></div>
+      <div class="specset">Timeline: step <input id="emo-tlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-tlnet"><option value="">(none)</option>${EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id)).map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+        <button id="emo-tl">Run timeline</button> <span id="emo-tlstatus" class="dim"></span></div>
+      <div id="emo-tlout"></div>
       <div class="specset">Other side's response: <select id="emo-coaside"><option value="red">Red</option><option value="blue">Blue</option></select>
         <button id="emo-coa-ml" title="Most likely: at most two modest moves">MLCOA</button> <button id="emo-coa-md" title="Most dangerous: every jammer and DF site re-sited for effect">MDCOA</button>
         <button id="emo-coa-rev">Revert</button> <span id="emo-coaout" class="dim"></span></div>
@@ -1821,6 +1824,26 @@
         await emoLoad(); EMO.prevScore = r.score_before || EMO.prevScore; EMO.res = null; await emoRun();
       } catch (err) { o.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
     };
+    $('#emo-tl').addEventListener('click', async () => {
+      const out = $('#emo-tlout'), st = $('#emo-tlstatus'); EMO.tlNet = $('#emo-tlnet').value || null;
+      const t0 = Date.now(); const tick = setInterval(() => { st.textContent = `stepping… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+      try {
+        const r = await postJson('/api/emo/plan/timeline', { step_min: +$('#emo-tlstep').value || 10, net: EMO.tlNet });
+        clearInterval(tick); st.textContent = `${r.steps.length} steps to T+${r.horizon_min} min`;
+        const names = Object.keys(r.rows).filter((n) => r.rows[n].tracked || r.rows[n].heard.some(Boolean) || r.rows[n].denied.some(Boolean))
+          .sort((a, b) => (r.rows[a].side + a).localeCompare(r.rows[b].side + b));
+        const W = 680, lab = 150, cw = Math.max(6, Math.floor((W - lab - 10) / r.steps.length)), rh = 14, H = 20 + names.length * rh;
+        const cell = (row, i) => row.denied[i] ? '#dc3cdc' : row.targetable[i] ? '#ff4646' : row.heard[i] ? '#f3b23e' : '#45d38a';
+        const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#0b1016;border-radius:6px;font:10px sans-serif">
+          ${r.steps.map((s, i) => i % Math.ceil(r.steps.length / 8) === 0 ? `<text x="${lab + i * cw}" y="12" fill="#8593a6">T+${s}</text>` : '').join('')}
+          ${names.map((n, k) => `<text x="4" y="${20 + k * rh + 10}" fill="${SIDE_COL[r.rows[n].side] || '#aaa'}">${esc(n.slice(0, 24))}</text>` +
+            r.steps.map((s, i) => `<rect x="${lab + i * cw}" y="${20 + k * rh + 2}" width="${cw - 1}" height="${rh - 3}" fill="${cell(r.rows[n], i)}"><title>${esc(n)} T+${s}: ${r.rows[n].denied[i] ? 'denied' : r.rows[n].targetable[i] ? 'targetable' : r.rows[n].heard[i] ? 'heard by ' + esc(r.rows[n].heard_by[i].join(', ')) : 'clear'}</title></rect>`).join('')).join('')}</svg>`;
+        const w = r.windows;
+        out.innerHTML = `<p><span style="color:#45d38a">■</span> clear <span style="color:#f3b23e">■</span> heard <span style="color:#ff4646">■</span> targetable <span style="color:#dc3cdc">■</span> denied</p>${svg}
+          ${w ? `<h4>Advantage windows for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Unheard and undenied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
+          <p class="dim">${esc(r.notes)}</p>`;
+      } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    });
     $('#emo-coa-ml').addEventListener('click', () => coa('mlcoa'));
     $('#emo-coa-md').addEventListener('click', () => coa('mdcoa'));
     $('#emo-coa-rev').addEventListener('click', () => coa('revert'));

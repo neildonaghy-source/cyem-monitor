@@ -565,3 +565,67 @@ async def coa_revert(side: str = "red", t_min: float = 0):
             c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (la, lo, now_iso(), eid))
     res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
     return {"reverted": len(snap), "score": res["score"]}
+
+
+# ---- A3/A6: timeline of the EM fight: advantage windows and route survivability -----------------------------
+class TimelineIn(BaseModel):
+    step_min: float = Field(default=10, ge=1, le=120)
+    max_steps: int = Field(default=24, ge=2, le=60)
+    net: str | None = None            # net to report advantage windows for (control station name)
+
+
+@router.post("/timeline")
+async def timeline(body: TimelineIn):
+    """Step the scenario in time with the light analysis (pairwise only) and record, for every emitter and net user,
+    whether it was heard, targetable or denied at each step. Windows: intervals when the chosen net's control
+    station is unheard and none of its users is denied."""
+    from . import emo_api
+    ents = {e["id"]: e for e in emo_api._all()}
+    if not ents:
+        raise HTTPException(400, "no entities")
+    if not emo_api._LAST:
+        raise HTTPException(409, "run the analysis first")
+    p = emo_api._LAST["params"]
+    horizon = max([emo_api.track_minutes(e) for e in ents.values()] + [0.0])
+    steps = [round(i * body.step_min, 1) for i in range(body.max_steps) if i * body.step_min <= horizon + body.step_min]
+    rows = {}
+    for e in ents.values():
+        if e["kind"] in ("emitter", "effector", "receiver") and e.get("fixed_level_dbm") is None:
+            rows[e["name"]] = {"side": e["side"], "kind": e["kind"], "tracked": bool(e.get("track")), "heard": [], "targetable": [], "denied": [], "heard_by": []}
+    board = []
+    for tm in steps:
+        r = await emo_api.run(p, t_min=tm, light=True, keep=False)
+        heard = {}
+        for d in r["detections"]:
+            if d["detected"] and d["sensor_side"] != "grey":
+                heard.setdefault(d["target"], []).append(d["sensor"])
+        tgt = {f["target"] for f in r["fixes"] if f["targetable"]}
+        den = {j["victim"] for j in r["jamming"] if j["status"] == "denied"}
+        for name, row in rows.items():
+            row["heard"].append(name in heard)
+            row["heard_by"].append(heard.get(name, []))
+            row["targetable"].append(name in tgt)
+            row["denied"].append(name in den)
+        board.append({"t": tm, **{sd: r["score"][sd] for sd in ("blue", "red")}})
+    windows = None
+    if body.net and body.net in rows:
+        ctrl = rows[body.net]
+        net_id = next(e["id"] for e in ents.values() if e["name"] == body.net)
+        users = [n for n, e in ((x["name"], x) for x in ents.values()) if e.get("net") == net_id and n in rows]
+        good = [not ctrl["heard"][i] and not any(rows[u]["denied"][i] for u in users) for i in range(len(steps))]
+        unheard = [not ctrl["heard"][i] for i in range(len(steps))]
+        undenied = [not any(rows[u]["denied"][i] for u in users) for i in range(len(steps))]
+        def spans(flags):
+            out, start = [], None
+            for i, f in enumerate(flags + [False]):
+                if f and start is None:
+                    start = i
+                if not f and start is not None:
+                    out.append({"from_min": steps[start], "to_min": steps[min(i, len(steps) - 1)], "steps": i - start}); start = None
+            return out
+        windows = {"net": body.net, "users": users, "advantage": spans(good), "unheard": spans(unheard), "undenied": spans(undenied),
+                   "summary": f"{sum(good)}/{len(steps)} steps with the control station unheard and no user denied; "
+                              f"{sum(unheard)}/{len(steps)} unheard; {sum(undenied)}/{len(steps)} with no user denied."}
+    return {"steps": steps, "step_min": body.step_min, "horizon_min": round(horizon, 1), "rows": rows, "board": board, "windows": windows,
+            "notes": "Light analysis per step (pairwise terrain paths, no map rasters). Heard = detected by the other side's ES; "
+                     "targetable = DF fix within the scenario threshold; denied = a jammer beats the user's own net at that step."}

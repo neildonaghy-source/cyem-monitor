@@ -393,7 +393,7 @@ def other(side: str) -> str:
 
 
 @router.post("/run")
-async def run(p: RunIn, t_min: float = 0):
+async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True):
     t0 = time.monotonic()
     ents = _all()
     if not ents:
@@ -410,8 +410,8 @@ async def run(p: RunIn, t_min: float = 0):
     receivers = [e for e in ents if e["kind"] == "receiver"]
     nets = [e for e in ents if e["kind"] == "emitter" and e["active"] and (any(r.get("net") == e["id"] for r in receivers)
                                                                            or e.get("fixed_level_dbm") is not None)]
-    covs = await asyncio.gather(*[coverage_for(e, e["pos"], p.rx_h) for e in terr_rad])
-    grids = {e["id"]: c for e, c in zip(terr_rad, covs)}
+    covs = [] if light else await asyncio.gather(*[coverage_for(e, e["pos"], p.rx_h) for e in terr_rad])
+    grids = {} if light else {e["id"]: c for e, c in zip(terr_rad, covs)}
     # warm every terrain path the ES and EA loops will need, in parallel
     jobs = []
     for x in sensors:
@@ -437,7 +437,7 @@ async def run(p: RunIn, t_min: float = 0):
     lv = {k: sample(g, LA, LO) for k, g in grids.items()}
 
     # ES maps: where each side's emissions can be heard by the other side's (ground) sensors
-    for e in terr_rad:
+    for e in ([] if light else terr_rad):
         watchers = [x for x in sensors if x["side"] != e["side"] and x["side"] != "grey" and overlap(*band(e), *band(x))]
         if watchers:
             sens = min(x.get("sens_dbm") or p.default_sens for x in watchers)
@@ -480,17 +480,18 @@ async def run(p: RunIn, t_min: float = 0):
         nlo, nhi = victim_band(nn)
         jsreq = nn["js_req_db"] if nn.get("js_req_db") is not None else p.js_req_db
         nsens = nn.get("sens_dbm") or p.default_sens
-        S = np.full(LA.shape, float(nn["fixed_level_dbm"])) if space else lv[nn["id"]]
-        covd = np.ones(LA.shape, bool) if space else S >= nsens
-        if not space:
+        S = np.full(LA.shape, float(nn["fixed_level_dbm"])) if space else (None if light else lv[nn["id"]])
+        covd = np.ones(LA.shape, bool) if space else (np.zeros(LA.shape, bool) if light else S >= nsens)
+        if not space and not light:
             L[f"{nn['side']}_cov"] |= covd
         den = np.zeros(LA.shape, bool)
         for y in effectors:
-            if y["side"] == nn["side"] or not overlap(nlo, nhi, *band(y)) or y["id"] not in lv:
+            if y["side"] == nn["side"] or not overlap(nlo, nhi, *band(y)) or (not light and y["id"] not in lv):
                 continue
             pen = jam_penalty(y, nn)
-            with np.errstate(invalid="ignore"):
-                den |= covd & ((lv[y["id"]] - pen - S) >= jsreq)
+            if not light:
+                with np.errstate(invalid="ignore"):
+                    den |= covd & ((lv[y["id"]] - pen - S) >= jsreq)
             for v in [r for r in receivers if r.get("net") == nn["id"]]:
                 J = await p2p_level(y, y["pos"], v, v["pos"]) - pen
                 Sv = float(nn["fixed_level_dbm"]) if space else await p2p_level(nn, nn["pos"], v, v["pos"])
@@ -511,8 +512,9 @@ async def run(p: RunIn, t_min: float = 0):
     score = scoreboard(ents, detections, fixes, jamming, per_net)
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]
     horizon = max([track_minutes(e) for e in ents] + [0])
-    _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
-                  "jamming": jamming, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
+    if keep:
+        _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
+                      "jamming": jamming, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
             "positions": {e["id"]: e["pos"] for e in ents}, "on_air": {e["id"]: e["active"] for e in ents}, "detections": detections, "fixes": fixes,
             "jamming": jamming, "nets": per_net, "exposure": exposure, "score": score, "params": p.model_dump(),

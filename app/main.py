@@ -25,6 +25,7 @@ from .export import router as export_router
 from .cells import router as cells_router
 from .satnogs import router as sat_router
 from .hf_api import router as hf_router
+from .emo_api import ensure_emo_schema, router as emo_router
 from .spectrum_store import ensure_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
     ensure_schema(db)
     ensure_link_schema(db)
     ensure_coverage_schema(db)
+    ensure_emo_schema(db)
     scheduler = Scheduler(db)
     scheduler.start()
     log.info("CyEM Monitor up; data dir %s; model %s at %s", settings.data_dir, settings.ollama_model, settings.ollama_url)
@@ -59,6 +61,7 @@ app.include_router(export_router)
 app.include_router(cells_router)
 app.include_router(sat_router)
 app.include_router(hf_router)
+app.include_router(emo_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

@@ -49,3 +49,4 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Push after each merge: `git push origin main` (remote alias github-cyem). Tool-call timeouts from the Mac are common: run long jobs with nohup and read logs.
 
 - Clients: native CyEM apps on the Mac and iPhone (source ~/cyem-app on the Mac) embed Tailscale and load https://trade.tail013324.ts.net:8443; keep that URL and the Tailscale serve on 8443 stable.
+- EMO (`emo_api.py`): symmetric red/blue ES/EA/EP on terrain; reuses coverage_api._compute (power capped at 70 dBm, offset added for higher EIRP) and link_core.analyse for per-pair paths; heavy work limited by asyncio.Semaphore(3); cyem container cpus 4.0. Notional data only.

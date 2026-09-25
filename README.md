@@ -260,3 +260,19 @@ limit from NOAA D-RAP (space weather only; normal daytime absorption not modelle
 (host alias `github-cyem`). `.env`, all `.env.*` except the example, data and SearXNG settings are git-ignored.
 Release routine: branch, test (`pytest tests`), merge fast-forward to `main`, `git push origin main`, bump BUILD in
 `static/app.js` with the `?v=` in `index.html` and the cache name in `sw.js`, refresh the Mac bundle.
+
+## EMO: red / blue electromagnetic operations (added 2026-09-25)
+
+EMO button (and phone Tools sheet). Notional scenarios only. Symmetric model: both sides sense, attack and protect.
+- **ES**: each side's sensors against the other side's radiating entities (emitters, effectors, net users with EIRP),
+  per-pair terrain paths at both heights (airborne ES works), detection margin, DF lines of bearing, fix from the best
+  two bearings with error = range x DF sigma combined over the cut angle; fixes within 1 km flagged TARGETABLE.
+- **EA**: effectors against the other side's nets: J/S at each receiver, jammer power scaled to the victim channel
+  (10 log Bj/Bv), per-net fail threshold (VHF 0 dB, datalink 6 dB, GNSS 35 dB); denial zones inside net coverage.
+- **EP**: EMCON on/off per emitter; siting, antenna sector and power. Drag units at T+0 to move them and re-run.
+- Tracks and a time slider with Play; APP-6 symbols via milsymbol (MIT, vendored in static/vendor); editable SIDCs.
+- Radar is modelled as an emitter for ES only (no radar detection or radar-jamming J/S). Screening grade.
+- Examples: battlegroup vignette (30 entities), Brecon siting, Solent maritime, A303 GNSS, C-UAS vs datalink.
+- Performance: first run of the vignette about 48 s (terrain grids and paths computed 3 at a time; cyem container
+  raised to 4 CPUs), later steps 10 to 20 s; results cached per position.
+Code: `app/emo_api.py`, `app/emo_examples.py`, `app/ems_core.py`; tests `tests/test_emo.py`.

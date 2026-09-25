@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-24a';
+  const BUILD = '2026-09-24b';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1440,6 +1440,197 @@
     });
   }
   $('#btn-hf').addEventListener('click', () => openHF());
+  // ---------------------------------------------------------------- EMO red / blue (notional scenarios)
+  const EMO = { ents: [], res: null, t: 0, horizon: 0, params: { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000 }, draft: null, editId: null,
+    playing: false, busy: false, examples: null, about: '',
+    on: { blue_seen: true, red_seen: false, blue_denied: true, red_denied: true, blue_cov: false, red_cov: false, lines: true } };
+  const emoLayer = L.layerGroup().addTo(map);
+  const SIDE_COL = { blue: '#3c8cff', red: '#ff4646' };
+  const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
+    ['blue_denied', 'Blue nets denied', '#dc3cdc'], ['red_denied', 'Red nets denied', '#ffa028'], ['blue_cov', 'Blue net coverage', '#3c8cff'],
+    ['red_cov', 'Red net coverage', '#ff5a5a'], ['lines', 'Detections, bearings, J/S lines', '#c8d3e0']];
+  const KIND_TXT = { emitter: 'Emitter', receiver: 'Net user', sensor: 'ES sensor', effector: 'EA effector' };
+  function emoIcon(e) {
+    const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : 'SHGPU----------');
+    const dim = e.kind !== 'sensor' && e.kind !== 'receiver' && !e.active;
+    let html = null, sz = [16, 16], anc = [8, 8];
+    if (window.ms) {
+      try {
+        const sym = new ms.Symbol(sidc, { size: 24, uniqueDesignation: e.name.slice(0, 20), additionalInformation: `${KIND_TXT[e.kind]}${e.category ? ' · ' + e.category.toUpperCase() : ''}${dim ? ' · OFF-AIR' : ''}` });
+        html = sym.asSVG(); const s = sym.getSize(), a = sym.getAnchor(); sz = [s.width, s.height]; anc = [a.x, a.y];
+      } catch (err) { console.warn('milsymbol', err); }
+    }
+    html = html || `<div style="width:14px;height:14px;border:2px solid #fff;background:${SIDE_COL[e.side]};${e.side === 'red' ? 'transform:rotate(45deg)' : 'border-radius:3px'}"></div>`;
+    return L.divIcon({ className: 'emo-sym', html: `<div style="opacity:${dim ? 0.35 : 1}">${html}</div>`, iconSize: sz, iconAnchor: anc });
+  }
+  const emoPos = (e) => EMO.res?.positions?.[e.id] || [e.lat, e.lon];
+  function emoDraw() {
+    emoLayer.clearLayers();
+    const r = EMO.res;
+    for (const [k] of EMO_LAYERS) if (k !== 'lines' && EMO.on[k] && r?.layers?.[k]) L.imageOverlay(r.layers[k], r.bounds, { interactive: false }).addTo(emoLayer);
+    for (const e of EMO.ents) if (e.track?.length) L.polyline([[e.lat, e.lon], ...e.track], { color: SIDE_COL[e.side], weight: 2, dashArray: '6 6', opacity: 0.7, interactive: false }).addTo(emoLayer);
+    if (EMO.on.lines && r) {
+      for (const d of r.detections.filter((x) => x.detected)) {
+        L.polyline([d.a, d.b], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: 0.7, dashArray: d.df ? null : '2 5' })
+          .bindTooltip(`${esc(d.sensor)} hears ${esc(d.target)}: ${d.level_dbm} dBm, margin ${d.margin_db} dB${d.df ? ' (DF bearing)' : ''}`).addTo(emoLayer);
+      }
+      for (const f of r.fixes.filter((x) => x.fix)) {
+        const col = f.target_side === 'blue' ? '#ff4646' : '#3cc8ff';
+        L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : 1.5, fillOpacity: f.targetable ? 0.25 : 0.08 })
+          .bindTooltip(`${f.targetable ? 'FIXED, TARGETABLE' : 'Fix'}: ${esc(f.target)} ±${f.fix.error_m} m (cut ${f.fix.cut_deg}°, ${esc(f.fix.sensors.join(' + '))})`, { direction: 'top' }).addTo(emoLayer);
+        if (f.targetable) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl', html: `FIX ±${f.fix.error_m} m`, iconSize: [84, 16], iconAnchor: [42, -10] }) }).addTo(emoLayer);
+      }
+      for (const j of r.jamming) {
+        const col = j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6';
+        L.polyline([j.a, j.b], { color: col, weight: 2.5, opacity: 0.9 })
+          .bindTooltip(`${esc(j.effector)} → ${esc(j.victim)}: J/S ${j.js_db} dB vs ${j.js_req_db} dB needed → ${esc(j.status)}${j.bw_penalty_db ? ` (bandwidth loss ${j.bw_penalty_db} dB)` : ''}`).addTo(emoLayer);
+      }
+    }
+    for (const e of EMO.ents) {
+      const mk = L.marker(emoPos(e), { icon: emoIcon(e), draggable: EMO.t === 0, zIndexOffset: 1000, autoPan: true });
+      mk.on('dragend', async () => {
+        const ll = mk.getLatLng();
+        try { await postJson(`/api/emo/${encodeURIComponent(e.id)}/move`, { lat: +ll.lat.toFixed(5), lon: +ll.lng.toFixed(5) }); await emoLoad(); emoRun(); } catch (err) { emoToast(err.message); }
+      });
+      const radiates = e.kind === 'emitter' || e.kind === 'effector' || (e.kind === 'receiver' && e.eirp_dbm != null);
+      mk.bindPopup(() => `<h4 style="color:${SIDE_COL[e.side]}">${esc(e.name)}</h4>${kv([['Role', `${e.side} ${KIND_TXT[e.kind].toLowerCase()}${e.category ? ' (' + e.category + ')' : ''}`],
+        ['Frequency', e.kind === 'sensor' ? `${e.freq_mhz}–${e.f_hi_mhz} MHz${e.df_rms_deg ? `, DF ±${e.df_rms_deg}°` : ''}` : `${e.freq_mhz} MHz, ${e.bw_khz} kHz`],
+        ['EIRP', e.fixed_level_dbm != null ? `space signal ${e.fixed_level_dbm} dBm` : e.eirp_dbm != null ? `${e.eirp_dbm} dBm` : 'receive only'],
+        ['Height', `${e.h_agl} m`], ['Track', e.track?.length ? `${e.track.length} waypoint(s), ${e.speed_kmh} km/h` : 'static']])}
+        <p style="margin:6px 0 0">${radiates && e.fixed_level_dbm == null ? `<a href="#" class="emo-emcon" data-id="${esc(e.id)}" data-on="${e.active ? 0 : 1}">${e.active ? 'EMCON: take off-air' : 'Back on air'}</a> · ` : ''}<a href="#" class="emo-edit" data-id="${esc(e.id)}">Edit</a>${EMO.t === 0 ? ' · drag to move' : ' · set time 0 to drag'}</p>`).addTo(emoLayer);
+    }
+  }
+  map.on('popupopen', (ev) => {
+    const el = ev.popup.getElement(); if (!el) return;
+    el.querySelectorAll('a.emo-edit').forEach((a) => a.addEventListener('click', (x) => { x.preventDefault(); map.closePopup(); EMO.editId = a.dataset.id; EMO.draft = { ...EMO.ents.find((e) => e.id === a.dataset.id) }; openEMO(); }));
+    el.querySelectorAll('a.emo-emcon').forEach((a) => a.addEventListener('click', async (x) => {
+      x.preventDefault(); map.closePopup();
+      try { await fetch(`/api/emo/${encodeURIComponent(a.dataset.id)}/active?on=${a.dataset.on === '1'}`, { method: 'POST' }); await emoLoad(); emoRun(); } catch (err) { emoToast(err.message); }
+    }));
+  });
+  async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
+  async function emoRun() {
+    if (EMO.busy) return; EMO.busy = true; emoStatus('computing…');
+    try { EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min; emoDraw(); emoStatus(`T+${Math.round(EMO.t)} min · ${EMO.res.compute_s} s`); emoResults(); }
+    catch (err) { emoStatus(err.message); }
+    finally { EMO.busy = false; }
+  }
+  function emoStatus(t) { const el = $('#emo-status'); if (el) el.textContent = t; }
+  function emoToast(t) { console.warn(t); emoStatus(t); }
+  const EMO_FIELDS = [['name', 'Name', 'text'], ['side', 'Side (blue/red)', 'text'], ['kind', 'Kind (emitter/receiver/sensor/effector)', 'text'],
+    ['category', 'Category (comms/radar/datalink/nav/cuas/other/es/df/rwr)', 'text'], ['lat', 'Lat', 'number'], ['lon', 'Lon', 'number'],
+    ['h_agl', 'Height m AGL', 'number'], ['freq_mhz', 'Freq MHz (sensor: band start)', 'number'], ['f_hi_mhz', 'Sensor band end MHz', 'number'],
+    ['bw_khz', 'Bandwidth kHz', 'number'], ['eirp_dbm', 'EIRP dBm (blank = receive only)', 'number'], ['sens_dbm', 'Sensitivity dBm', 'number'],
+    ['js_req_db', 'Net fails at J/S dB', 'number'], ['df_rms_deg', 'DF accuracy ° RMS (sensor)', 'number'], ['fixed_level_dbm', 'Space signal dBm (GNSS)', 'number'],
+    ['pattern', 'Antenna omni/sector', 'text'], ['azimuth', 'Sector azimuth °', 'number'], ['beamwidth', 'Beamwidth °', 'number'],
+    ['radius_km', 'Compute radius km', 'number'], ['speed_kmh', 'Track speed km/h', 'number'], ['sidc', 'APP-6 SIDC', 'text'], ['notes', 'Notes', 'text']];
+  function emoForm(d) {
+    d = d || { side: 'blue', kind: 'emitter', category: 'comms', h_agl: 3, bw_khz: 25, pattern: 'omni', radius_km: 20 };
+    const nets = EMO.ents.filter((e) => e.kind === 'emitter');
+    return `<div class="specform">${EMO_FIELDS.map(([k, l, t]) => `<label${k === 'name' || k === 'notes' ? ' class="wide"' : ''}>${esc(l)}<input id="emo-${k}" type="${t}" step="any" value="${esc(d[k] ?? '')}"></label>`).join('')}
+      <label class="wide">Net (for net users)<select id="emo-net"><option value="">none</option>${nets.map((n) => `<option value="${esc(n.id)}"${d.net === n.id ? ' selected' : ''}>${esc(n.name)} (${n.side})</option>`).join('')}</select></label>
+      <label class="wide"><span><input id="emo-active" type="checkbox"${d.active === false ? '' : ' checked'}> On air (untick for EMCON)</span></label>
+      <div class="wide dim">Track: ${d.track?.length ? `${d.track.length} waypoint(s)` : 'none'} <button id="emo-trk">Draw track on map</button> <button id="emo-trk-clear">Clear track</button></div>
+      <div class="wide btns"><button id="emo-pick">Pick position on map</button> <button id="emo-save" class="primary">${EMO.editId ? 'Update' : 'Add'}</button> <button id="emo-new">New</button>${EMO.editId ? ' <button id="emo-del">Delete</button>' : ''} <span id="emo-err" class="bad"></span></div></div>`;
+  }
+  function emoRead() {
+    const o = { ...(EMO.draft || {}) };
+    for (const [k, , t] of EMO_FIELDS) { const v = $(`#emo-${k}`).value.trim(); o[k] = t === 'number' ? (v === '' ? null : Number(v)) : (v || null); }
+    o.net = $('#emo-net').value || null; o.active = $('#emo-active').checked;
+    return o;
+  }
+  function emoBody(o) {
+    const keep = [...EMO_FIELDS.map(([k]) => k), 'net', 'active', 'track'];
+    const b = {}; for (const k of keep) if (o[k] !== null && o[k] !== undefined && o[k] !== '') b[k] = o[k];
+    return b;
+  }
+  function emoResults() {
+    const r = EMO.res, out = $('#emo-results'); if (!out || !r) return;
+    const fx = r.fixes.filter((f) => f.fix || f.lobs);
+    const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
+    out.innerHTML = `
+      <h3 class="sec">ES: what each side can see and fix</h3>
+      ${fx.length ? `<table class="grid"><tr><th>Target</th><th>Seen by</th><th>Fix</th></tr>${fx.map((f) => row([`<span style="color:${SIDE_COL[f.target_side]}">${esc(f.target)}</span>`, esc(f.sensors.join(', ')),
+        f.fix ? `${f.targetable ? '<b style="color:#ff4646">TARGETABLE</b> ' : ''}±${f.fix.error_m} m, cut ${f.fix.cut_deg}°` : `${f.lobs} line of bearing only`])).join('')}</table>` : '<p class="dim">No DF bearings on any emitter.</p>'}
+      <p class="dim">Detections: ${r.detections.filter((d) => d.detected && d.sensor_side === 'red').length} blue emissions heard by red, ${r.detections.filter((d) => d.detected && d.sensor_side === 'blue').length} red emissions heard by blue. Exposure area (ground sensors): blue ${r.exposure.find((x) => x.side === 'blue')?.km2} km², red ${r.exposure.find((x) => x.side === 'red')?.km2} km².</p>
+      <h3 class="sec">EA: nets under attack</h3>
+      ${r.nets.length ? `<table class="grid"><tr><th>Net</th><th>Coverage</th><th>Denied</th><th>Fails at</th></tr>${r.nets.map((n) => row([`<span style="color:${SIDE_COL[n.side]}">${esc(n.net)}</span>`, n.space ? 'space signal' : `${n.coverage_km2} km²`, `<b>${n.denied_pct}%</b> (${n.denied_km2} km²)`, `J/S ${n.js_req_db} dB`])).join('')}</table>` : ''}
+      ${r.jamming.length ? `<table class="grid"><tr><th>Effector</th><th>Victim</th><th>J/S</th><th>Result</th></tr>${r.jamming.map((j) => row([esc(j.effector), esc(j.victim), `${j.js_db} dB`, `<b style="color:${j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6'}">${esc(j.status)}</b>`])).join('')}</table>` : '<p class="dim">No EA against any net.</p>'}
+      <p class="dim">${esc(r.notes)}</p>`;
+  }
+  async function openEMO() {
+    try { if (!EMO.examples) EMO.examples = (await api('/api/emo/examples')).examples; await emoLoad(); } catch (err) { return openModal('EMO', `<p class="bad">${esc(err.message)}</p>`); }
+    const list = EMO.ents.length ? `<table class="grid"><tr><th>Entity</th><th>Role</th><th>MHz</th><th></th></tr>${EMO.ents.map((e) => `<tr class="${e.id === EMO.editId ? 'sel' : ''}"><td style="color:${SIDE_COL[e.side]}">${esc(e.name)}${e.active || e.kind === 'sensor' || e.kind === 'receiver' ? '' : ' <span class="dim">(off-air)</span>'}</td><td class="dim">${esc(KIND_TXT[e.kind])}${e.category ? ' · ' + esc(e.category) : ''}</td><td class="mono">${e.freq_mhz}${e.f_hi_mhz ? '–' + e.f_hi_mhz : ''}</td><td><button data-emo-edit="${esc(e.id)}">Edit</button></td></tr>`).join('')}</table>` : '<p class="dim">No entities: load an example.</p>';
+    const H = Math.max(EMO.horizon, 0);
+    openModal('EMO: red / blue in the spectrum', `<p class="dim">Notional scenarios. ES: who can hear and fix whom. EA: whose nets are denied. EP: EMCON, siting, antennas. Drag units on the map at T+0.</p>
+      <div class="specset"><select id="emo-ex"><option value="">Load example…</option>${EMO.examples.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</select> <button id="emo-ex-go">Load</button></div>
+      ${EMO.about ? `<p class="dim">${esc(EMO.about)}</p>` : ''}
+      <div class="specset">Time T+<b id="emo-tv">${Math.round(EMO.t)}</b> min <input id="emo-t" type="range" min="0" max="${Math.max(1, Math.ceil(H))}" step="1" value="${EMO.t}" style="flex:1;min-width:140px">
+        <button id="emo-run" class="primary">Run</button> <button id="emo-play">${EMO.playing ? 'Stop' : 'Play'}</button> <span id="emo-status" class="dim"></span></div>
+      <div class="specset">${EMO_LAYERS.map(([k, l, c]) => `<label style="white-space:nowrap"><input type="checkbox" data-emo-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${c}">■</span> ${esc(l)}</label>`).join(' ')}</div>
+      <div id="emo-results"></div>
+      <h3 class="sec">Entities</h3>${list}
+      <h3 class="sec">${EMO.editId ? 'Edit entity' : 'Add entity'}</h3>${emoForm(EMO.draft)}`);
+    emoResults();
+    const body = $('#modal-body');
+    $('#emo-ex-go').addEventListener('click', async () => {
+      const id = $('#emo-ex').value; if (!id) return;
+      emoStatus('loading…');
+      try {
+        const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
+        EMO.ents = r.entities; EMO.about = r.about; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
+      } catch (err) { emoStatus(err.message); }
+    });
+    $('#emo-t').addEventListener('input', (e) => { EMO.t = +e.target.value; $('#emo-tv').textContent = EMO.t; });
+    $('#emo-t').addEventListener('change', () => emoRun());
+    $('#emo-run').addEventListener('click', () => emoRun());
+    $('#emo-play').addEventListener('click', async () => {
+      EMO.playing = !EMO.playing; $('#emo-play').textContent = EMO.playing ? 'Stop' : 'Play';
+      const step = Math.max(1, Math.round(Math.max(EMO.horizon, 10) / 12));
+      while (EMO.playing && EMO.t < Math.max(EMO.horizon, 1)) {
+        EMO.t = Math.min(EMO.t + step, Math.ceil(EMO.horizon)); const tv = $('#emo-tv'), ts = $('#emo-t'); if (tv) tv.textContent = EMO.t; if (ts) ts.value = EMO.t;
+        await emoRun();
+      }
+      EMO.playing = false; const pb = $('#emo-play'); if (pb) pb.textContent = 'Play';
+    });
+    body.querySelectorAll('input[data-emo-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.emoLayer] = cb.checked; emoDraw(); }));
+    body.querySelectorAll('button[data-emo-edit]').forEach((b) => b.addEventListener('click', () => { EMO.editId = b.dataset.emoEdit; EMO.draft = { ...EMO.ents.find((e) => e.id === EMO.editId) }; openEMO(); }));
+    $('#emo-new').addEventListener('click', () => { EMO.editId = null; EMO.draft = null; openEMO(); });
+    $('#emo-del')?.addEventListener('click', async () => {
+      if (!confirm('Delete this entity?')) return;
+      await fetch(`/api/emo/${encodeURIComponent(EMO.editId)}`, { method: 'DELETE' }); EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
+    });
+    $('#emo-pick').addEventListener('click', () => {
+      EMO.draft = emoRead(); $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
+      map.getContainer().style.cursor = 'crosshair';
+      map.once('click', (ev) => { map.getContainer().style.cursor = ''; EMO.draft.lat = +ev.latlng.lat.toFixed(5); EMO.draft.lon = +ev.latlng.lng.toFixed(5); openEMO(); });
+    });
+    $('#emo-trk-clear').addEventListener('click', () => { EMO.draft = { ...emoRead(), track: null }; openEMO(); });
+    $('#emo-trk').addEventListener('click', () => {
+      EMO.draft = emoRead(); if (EMO.draft.lat == null) { $('#emo-err').textContent = 'Set a position first'; return; }
+      const pts = []; const tmp = L.polyline([[EMO.draft.lat, EMO.draft.lon]], { color: SIDE_COL[EMO.draft.side] || '#fff', dashArray: '6 6' }).addTo(map);
+      $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
+      const bar = document.createElement('div'); bar.className = 'emo-trackbar';
+      bar.innerHTML = '<span>Tap the map to add waypoints</span> <button class="primary">Finish track</button> <button>Cancel</button>';
+      document.body.appendChild(bar);
+      const add = (ev) => { pts.push([+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]); tmp.addLatLng(ev.latlng); bar.firstChild.textContent = `${pts.length} waypoint(s)`; };
+      map.on('click', add);
+      const done = (keep) => { map.off('click', add); map.removeLayer(tmp); bar.remove(); map.getContainer().style.cursor = '';
+        if (keep && pts.length) { EMO.draft.track = pts; if (!EMO.draft.speed_kmh) EMO.draft.speed_kmh = 20; } openEMO(); };
+      bar.querySelectorAll('button')[0].addEventListener('click', () => done(true));
+      bar.querySelectorAll('button')[1].addEventListener('click', () => done(false));
+    });
+    $('#emo-save').addEventListener('click', async () => {
+      const o = emoRead();
+      try {
+        const r = await postJson(EMO.editId ? `/api/emo/${encodeURIComponent(EMO.editId)}` : '/api/emo', emoBody(o), EMO.editId ? 'PUT' : 'POST');
+        EMO.editId = r.id; EMO.draft = { ...r }; await openEMO(); emoRun();
+      } catch (err) { $('#emo-err').textContent = err.message; }
+    });
+    if (EMO.res) emoDraw();
+  }
+  $('#btn-emo').addEventListener('click', () => openEMO());
   // ---------------------------------------------------------------- panels / mobile
   const mobile = () => window.matchMedia('(max-width: 900px)').matches;
   const panels = (() => { try { return { rail: false, side: false, ...JSON.parse(localStorage.getItem('cyem.panels') || '{}') }; } catch { return { rail: false, side: false }; } })();
@@ -1454,7 +1645,7 @@
   }));
   // Phone layout hides the top-bar buttons; the Tools sheet exposes the same actions.
   const MOB_TOOLS = [['btn-spec', 'Spectrum', 'Planned emitters, conflicts, export'], ['btn-links', 'Links', 'Point-to-point link planner'],
-    ['btn-cov', 'Coverage', 'Omni / sector / P2MP coverage'], ['btn-hf', 'HF', 'Skywave now-cast'], ['btn-health', 'Health', 'Collectors and data status']];
+    ['btn-cov', 'Coverage', 'Omni / sector / P2MP coverage'], ['btn-hf', 'HF', 'Skywave now-cast'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-health', 'Health', 'Collectors and data status']];
   $('#mob-tools').addEventListener('click', () => {
     openModal('Tools', `<div class="mobtools">${MOB_TOOLS.filter(([id]) => $('#' + id)).map(([id, t, d]) => `<button data-go="${id}"><b>${t}</b><span class="dim">${d}</span></button>`).join('')}
       <a href="/api/export/plan.docx" class="btnlink" download><b>Export plan (Word)</b></a></div>`);

@@ -751,6 +751,7 @@ async def joint(body: JointIn, t_min: float = 0):
     own_g, opp_g = _ground(ents, pos, net["side"]), _ground(ents, pos, opp)
     from .db import get_db, now_iso
     before = emo_api._LAST.get("score")
+    bad_before = {j["victim"] for j in emo_api._LAST["jamming"] if j["net"] == net["name"] and j["status"] in ("denied", "no signal")}
     moves = []
     ctrl = pos(net)
     for u in users:
@@ -788,6 +789,26 @@ async def joint(body: JointIn, t_min: float = 0):
             c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (b["lat"], b["lon"], now_iso(), net["id"]))
         moves.append({"entity": net["name"], "from": ctrl, "to": (b["lat"], b["lon"]), "where": b["where"],
                       "detail": f"{b['users_closed']}/{b['of_users']} users closed, exposure {b['exposure_db']:+} dB (was {m['current']['exposure_db']:+}), J/S {b['worst_js_db']:+} dB"})
+    # verify with the exact pairwise model: no user of this net may end up newly denied or without signal
+    def bad(r):
+        return {j["victim"] for j in r["jamming"] if j["net"] == net["name"] and j["status"] in ("denied", "no signal")}
     res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
-    return {"net": net["name"], "moves": moves, "score_before": before, "score_after": res["score"],
-            "notes": "Greedy: users first (static ones only), then the control station; each move only if clearly better (5 points). Applied to the scenario."}
+    rejected = []
+    newly = bad(res) - bad_before
+    if newly and moves and moves[-1]["entity"] == net["name"]:
+        m = moves.pop()
+        with get_db().tx() as c:
+            c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (m["from"][0], m["from"][1], now_iso(), net["id"]))
+        rejected.append(f"{net['name']} move rejected: {', '.join(sorted(newly))} would be denied or lose signal")
+        res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
+        newly = bad(res) - bad_before
+    if newly and moves:
+        with get_db().tx() as c:
+            for m in moves:
+                c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (m["from"][0], m["from"][1], now_iso(), next(e["id"] for e in ents.values() if e["name"] == m["entity"])))
+        rejected.append(f"all moves reverted: {', '.join(sorted(newly))} would be denied or lose signal")
+        moves = []
+        res = await emo_api.run(emo_api.RunIn(**emo_api._LAST["params"].model_dump()), t_min=t_min)
+    return {"net": net["name"], "moves": moves, "rejected": rejected, "score_before": before, "score_after": res["score"],
+            "notes": "Greedy: users first (static ones only), then the control station; each move only if clearly better (5 points), "
+                     "then verified with the exact pairwise model. Applied to the scenario."}

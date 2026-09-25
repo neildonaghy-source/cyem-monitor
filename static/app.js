@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-25v';
+  const BUILD = '2026-09-25w';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1610,7 +1610,7 @@
       const r = await postJson(`/api/emo/plan/joint?t_min=${EMO.t}`, { net: e.name });
       clearInterval(tick); planLayer.clearLayers();
       r.moves.forEach((m) => L.polyline([m.from, m.to], { color: '#45d38a', weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer));
-      out.innerHTML = `<h4>Joint re-site</h4>${r.moves.length ? `<ul>${r.moves.map((m) => `<li><b>${esc(m.entity)}</b> → ${esc(m.where)}: ${esc(m.detail)}</li>`).join('')}</ul>` : '<p>No move is clearly better; the net is already well sited.</p>'}<p class="dim">${esc(r.notes)}</p>`;
+      out.innerHTML = `<h4>Joint re-site</h4>${r.moves.length ? `<ul>${r.moves.map((m) => `<li><b>${esc(m.entity)}</b> → ${esc(m.where)}: ${esc(m.detail)}</li>`).join('')}</ul>` : '<p>No move is clearly better; the net is already well sited.</p>'}${(r.rejected || []).map((x) => `<p class="bad">${esc(x)}</p>`).join('')}<p class="dim">${esc(r.notes)}</p>`;
       EMO.prevScore = r.score_before || EMO.prevScore; await emoLoad(); EMO.res = null; await emoRun();
     } catch (err) { clearInterval(tick); out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
   }

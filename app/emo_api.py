@@ -277,11 +277,15 @@ def _p2p_sync(tx, tx_h, rx, rx_h, f_hz, eirp):
     pts = gc_points(tx[0], tx[1], rx[0], rx[1], n)
     terr = dem.heights(pts)
     dist = [D * i / (n - 1) for i in range(n)]
+    # the DEM is a surface model (trees, buildings): assume each antenna is sited clear of obstacles within 150 m
+    g0, g1 = terr[0], terr[-1]
+    terr = [min(h, g0) if d < CLUTTER_CLEAR_M else min(h, g1) if D - d < CLUTTER_CLEAR_M else h for h, d in zip(terr, dist)]
     r = analyse(dist, terr, h_a_agl=tx_h, h_b_agl=rx_h, f_hz=f_hz, ptx_dbm=eirp, gtx_dbi=0, grx_dbi=0,
                 sens_dbm=-200, rain_mm_h=0)
     return r["prx_dbm"]
 
 
+CLUTTER_CLEAR_M = 150.0
 _P2P: dict[tuple, float] = {}
 _HEAVY = asyncio.Semaphore(3)
 
@@ -316,9 +320,45 @@ def _intersect(p1, b1, p2, b2):
     return math.degrees(y / 6371000.0), math.degrees(x / (6371000.0 * math.cos(lat0)))
 
 
-def df_fix(target_pos, bearings: list[dict]) -> dict | None:
-    """Best two-bearing fix: cut angle closest to 90 deg. Error ~ sqrt(e1^2 + e2^2) / sin(cut), e = range x sigma."""
+def _ls_fix(target_pos, bearings: list[dict]) -> dict | None:
+    """Weighted least-squares intersection of 3+ lines of bearing on a local plane; error radius from the covariance."""
     from .link_core import haversine_m
+    lat0 = math.radians(target_pos[0])
+    def xy(pt):
+        return (math.radians(pt[1]) * math.cos(lat0) * 6371000.0, math.radians(pt[0]) * 6371000.0)
+    A = [[0.0, 0.0], [0.0, 0.0]]; b = [0.0, 0.0]
+    for br in bearings:
+        sx, sy = xy(br["site"])
+        th = math.radians(br["bearing"])
+        nx, ny = math.cos(th), -math.sin(th)          # unit normal to a line heading 'bearing' (x east, y north)
+        rng = max(500.0, haversine_m(*br["site"], *target_pos))
+        w = 1.0 / (rng * math.radians(max(0.1, br["sigma"]))) ** 2
+        c = nx * sx + ny * sy
+        A[0][0] += w * nx * nx; A[0][1] += w * nx * ny; A[1][0] += w * nx * ny; A[1][1] += w * ny * ny
+        b[0] += w * nx * c; b[1] += w * ny * c
+    det = A[0][0] * A[1][1] - A[0][1] * A[1][0]
+    if abs(det) < 1e-12:
+        return None
+    inv = [[A[1][1] / det, -A[0][1] / det], [-A[1][0] / det, A[0][0] / det]]
+    x = inv[0][0] * b[0] + inv[0][1] * b[1]; y = inv[1][0] * b[0] + inv[1][1] * b[1]
+    err = math.sqrt(inv[0][0] + inv[1][1])
+    lat = math.degrees(y / 6371000.0); lon = math.degrees(x / (6371000.0 * math.cos(lat0)))
+    cuts = []
+    for i in range(len(bearings)):
+        for j in range(i + 1, len(bearings)):
+            cut = abs((bearings[i]["bearing"] - bearings[j]["bearing"] + 180) % 360 - 180); cuts.append(min(cut, 180 - cut))
+    return {"sensors": [br["sensor"] for br in bearings], "cut_deg": round(max(cuts), 1), "error_m": round(err),
+            "fix": [round(lat, 5), round(lon, 5)], "method": f"least squares, {len(bearings)} bearings"}
+
+
+def df_fix(target_pos, bearings: list[dict]) -> dict | None:
+    """3+ bearings: weighted least-squares fix. 2 bearings: cut angle closest to 90 deg,
+    error ~ sqrt(e1^2 + e2^2) / sin(cut), e = range x sigma."""
+    from .link_core import haversine_m
+    if len(bearings) >= 3:
+        ls = _ls_fix(target_pos, bearings)
+        if ls:
+            return ls
     best = None
     for i in range(len(bearings)):
         for j in range(i + 1, len(bearings)):

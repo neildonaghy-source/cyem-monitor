@@ -258,20 +258,9 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 .emo-planpin { background: #45d38a; color: #0b1016; border-radius: 50%; font: 700 12px/22px sans-serif; text-align: center; border: 2px solid #fff; }
 .emo-planpin.emo-relay { background: #f3b23e; }
 
-#emo-dock { position: fixed; left: 8px; top: 50%; transform: translateY(-50%); z-index: 1100; display: flex; flex-direction: column; gap: 4px; }
-#emo-dock button { min-width: 64px; font-size: 12px; padding: 6px 8px; background: rgba(10,14,19,.92); border: 1px solid #3c8cff; color: #e6edf3; border-radius: 6px; }
-#emo-dockcard { position: fixed; left: 80px; top: 50%; transform: translateY(-50%); width: min(460px, 80vw); max-height: 70vh; overflow: auto; z-index: 1110;
-  background: rgba(10,14,19,.96); border: 1px solid #3c8cff; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
-@media (max-width: 900px) { #emo-dock { left: 0; right: 0; top: auto; bottom: 56px; transform: none; flex-direction: row; overflow-x: auto; padding: 4px 6px; gap: 6px; }
-  #emo-dock button { min-width: 0; white-space: nowrap; } #emo-dockcard { left: 3vw; width: 94vw; top: auto; bottom: 96px; transform: none; max-height: 50vh; } }
 
 /* ---- 2026-09-26 phone and Mac layout pass ---- */
-#emo-dock { left: auto; right: 8px; top: 110px; transform: none; }
-#emo-dockcard { left: auto; right: 84px; top: 110px; transform: none; }
 @media (max-width: 900px) {
-  #emo-dock { left: 0; right: 0; top: auto; bottom: 56px; }
-  #emo-dock button { min-height: 40px; padding: 8px 10px; }
-  #emo-dockcard { left: 3vw; right: auto; width: 94vw; top: auto; bottom: 100px; }
   #emo-askbar { top: 96px; }
   #emo-card { bottom: 104px !important; max-height: 44vh; }
   #emo-askcard { top: 140px; }
@@ -280,6 +269,16 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 body.emo-nolabels .emo-sym svg text { display: none; }
 @media (max-width: 900px) { #emo-chip { bottom: 104px !important; } }
 
-#emo-dock { top: 150px; }
-#emo-dockcard { top: auto; bottom: 40px; right: 84px; max-height: 55vh; }
-@media (max-width: 900px) { #emo-dock button { font-size: 11px; padding: 8px 7px; } }
+
+/* ---- EMO dock, consolidated (2026-09-26) ---- */
+#emo-dock { position: fixed; right: 8px; top: 150px; left: auto; bottom: auto; z-index: 1100; display: flex; flex-direction: column; gap: 4px; }
+#emo-dock button { min-width: 64px; min-height: 0; height: 30px; line-height: 1; font-size: 12px; padding: 0 8px; background: rgba(10,14,19,.92); border: 1px solid #3c8cff; color: #e6edf3; border-radius: 6px; }
+#emo-dockcard { position: fixed; right: 84px; bottom: 40px; top: auto; left: auto; width: min(460px, 80vw); max-height: 55vh; overflow: auto; z-index: 1110;
+  background: rgba(10,14,19,.96); border: 1px solid #3c8cff; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+@media (max-width: 1024px), (pointer: coarse) {
+  #emo-dock { left: 0; right: 0; top: auto; bottom: 56px; flex-direction: row; justify-content: center; overflow-x: auto; padding: 4px 6px; gap: 6px; }
+  #emo-dock button { min-width: 0; height: 40px; font-size: 11px; padding: 0 9px; white-space: nowrap; }
+  #emo-dockcard { left: 3vw; right: auto; width: 94vw; top: auto; bottom: 100px; max-height: 50vh; }
+  #emo-chip { bottom: 104px !important; }
+  #emo-card { bottom: 104px !important; max-height: 44vh; }
+}

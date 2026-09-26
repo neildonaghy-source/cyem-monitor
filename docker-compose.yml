@@ -22,6 +22,8 @@ services:
       OPENCELLID_KEY: "${OPENCELLID_KEY:-}"
       SEARXNG_URL: "http://searxng:8080"
       SDR_INGEST_TOKEN: "${SDR_INGEST_TOKEN:-}"
+      CYEM_PASSWORD: "${CYEM_PASSWORD:-}"
+      CYEM_SECRET: "${CYEM_SECRET:-}"
       OLLAMA_THINK: "false"
       OLLAMA_NUM_CTX: "8192"
       BRIEF_HOURS: "${BRIEF_HOURS:-06,12,18,00}"

@@ -68,6 +68,11 @@ app.include_router(sat_router)
 app.include_router(hf_router)
 app.include_router(emo_router)
 
+from .auth import PasswordGate, login_get, login_post  # noqa: E402
+app.add_middleware(PasswordGate)
+app.add_api_route("/login", login_get, methods=["GET"], include_in_schema=False)
+app.add_api_route("/login", login_post, methods=["POST"], include_in_schema=False)
+
 
 @app.middleware("http")
 async def cyem_ws_middleware(request, call_next):

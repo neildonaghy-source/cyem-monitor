@@ -290,6 +290,8 @@ P2MP) and HF (skywave now-cast). The sections below still describe each tool; on
 strip remembers the last tab. The old Spectrum / Links / Coverage / HF buttons remain in the page, hidden, so
 keyboard shortcuts in the Mac app and older links keep working.
 
+Dependencies upgraded 2026-09-26 (fastapi 0.141, starlette 1.7, uvicorn 0.54, pydantic 2.13, numpy 2.5, rasterio 1.5, pillow 12, python-docx 1.2, pdfplumber 0.11.10, feedparser 6.0.14, h3 4.5, sgp4 2.27): unit tests, the three UI suites and a full EMO run passed on the new stack before the switch.
+
 Audit 2026-09-26: `tests/ui/plan_smoke.py` (12 checks: tabs, link, coverage and HF calculations, spectrum panel)
 and `tests/ui/ui_audit.py` (every button, pill, layer group and basemap on desktop; Tools sheet, layers sheet,
 views and overflow on a phone viewport) run the same way as `tests/ui/run.sh`. Findings fixed: SDR panel logged a

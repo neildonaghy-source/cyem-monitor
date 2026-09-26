@@ -330,7 +330,7 @@ def _heat_png(score, ok):
     from .coverage_core import _png
     s = np.where(ok, score, np.nan)
     lo, hi = np.nanpercentile(s, 5) if np.isfinite(s).any() else 0, np.nanmax(s) if np.isfinite(s).any() else 1
-    t = np.clip((s - lo) / max(1e-6, hi - lo), 0, 1)
+    t = np.nan_to_num(np.clip((s - lo) / max(1e-6, hi - lo), 0, 1), nan=0.0)   # NaN outside the allowed area: alpha 0 below
     img = np.zeros(s.shape + (4,), np.uint8)
     img[..., 0] = (255 * (1 - t)).astype(np.uint8)
     img[..., 1] = (200 * t + 40 * (1 - t)).astype(np.uint8)

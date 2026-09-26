@@ -681,6 +681,30 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
 
 
 # ---- examples --------------------------------------------------------------------------------
+@router.post("/rerun")
+async def rerun():
+    """Repeat the last analysis with its own settings and time (for the AR view after EMCON or a move)."""
+    if not _LAST:
+        raise HTTPException(409, "run the analysis first")
+    return await run(RunIn(**_LAST["params"].model_dump()), t_min=_LAST.get("t", 0))
+
+
+@router.get("/score")
+async def score_now():
+    """The last analysis scoreboard and a per-entity summary for the AR view."""
+    if not _LAST:
+        raise HTTPException(409, "run the analysis first")
+    det, jam = _LAST["detections"], _LAST["jamming"]
+    ents = _all()
+    per = {}
+    for e in ents:
+        per[e["id"]] = {"detected_by": [d["sensor"] for d in det if d["detected"] and d["target_id"] == e["id"] and d.get("sensor_side") != e["side"]],
+                        "status": next((j["status"] for j in jam if j.get("victim_id") == e["id"] and j["status"] != "unaffected"), None),
+                        "denies": [j["victim"] for j in jam if j.get("effector_id") == e["id"] and j["status"] in ("denied", "deceived")],
+                        "target_quality": any(f["targetable"] for f in _LAST["fixes"] if f["target"] == e["name"])}
+    return {"t": _LAST.get("t", 0), "score": _LAST.get("score"), "entities": per}
+
+
 @router.get("/examples")
 async def examples():
     from .emo_examples import EXAMPLES

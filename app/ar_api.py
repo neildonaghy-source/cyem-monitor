@@ -47,7 +47,7 @@ async def ar(lat: float = Query(ge=-85, le=85), lon: float = Query(ge=-180, le=1
             la, lo = pos.get(e["id"], (e["lat"], e["lon"]))
             if haversine_m(lat, lon, la, lo) > 150_000:
                 continue
-            it = _item("emo", e["name"], la, lo, e["h_agl"], view, side=e["side"], kind=e["kind"], category=e.get("category"),
+            it = _item("emo", e["name"], la, lo, e["h_agl"], view, id=e["id"], side=e["side"], kind=e["kind"], category=e.get("category"),
                        freq_mhz=e["freq_mhz"], active=e["active"])
             items.append(it)
             if levels and e["active"] and e.get("eirp_dbm") is not None and e.get("fixed_level_dbm") is None and e["kind"] in ("emitter", "effector", "receiver"):

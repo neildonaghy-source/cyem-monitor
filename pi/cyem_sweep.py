@@ -61,6 +61,14 @@ def heartbeat(state: str) -> None:
         print("heartbeat failed:", e, flush=True)
 
 
+def dongle_present() -> bool:
+    try:
+        out = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=10).stdout.lower()
+        return "0bda:2838" in out or "rtl2838" in out or "realtek" in out
+    except Exception:  # noqa: BLE001
+        return True   # cannot tell: try the sweep anyway
+
+
 def openwebrx_busy() -> bool:
     """True if someone is using the live receiver (OpenWebRX+ holds the dongle while clients are connected)."""
     try:
@@ -73,7 +81,9 @@ def openwebrx_busy() -> bool:
 if __name__ == "__main__":
     while True:
         try:
-            if openwebrx_busy():
+            if not dongle_present():
+                print("no dongle; skipping sweep", flush=True); heartbeat("no dongle")
+            elif openwebrx_busy():
                 print("live receiver in use; skipping sweep", flush=True); heartbeat("live receiver in use")
             else:
                 subprocess.run(["docker", "stop", "openwebrx"], capture_output=True, timeout=60)

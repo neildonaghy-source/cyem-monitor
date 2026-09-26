@@ -282,3 +282,19 @@ body.emo-nolabels .emo-sym svg text { display: none; }
   #emo-chip { bottom: 104px !important; }
   #emo-card { bottom: 104px !important; max-height: 44vh; }
 }
+
+/* ---- focus card and dock, layout pass 2 (2026-09-26) ---- */
+#emo-card .btns button, #emo-card button { padding: 4px 8px; font-size: 12px; line-height: 1.2; white-space: nowrap; height: auto; }
+#emo-card .btns { display: flex; flex-wrap: wrap; gap: 4px; }
+#emo-dock { top: auto; bottom: 60px; }
+#emo-dockcard { bottom: 60px; }
+@media (max-width: 1024px), (pointer: coarse) {
+  #emo-dock { bottom: 52px; }
+  #emo-card { top: auto !important; bottom: 108px !important; left: 3vw !important; right: auto !important; width: 94vw !important; max-height: 46vh; }
+  #emo-chip { bottom: 100px !important; }
+}
+@media (pointer: coarse) and (max-height: 500px) {
+  body.emo-hascard #emo-askbar { display: none; }
+  #emo-card { max-height: 52vh; }
+}
+@media (pointer: coarse) { body.emo-hascard #emo-chip { display: none; } }

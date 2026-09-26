@@ -88,14 +88,14 @@
     return `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}${w ? `<p><b>${esc(w.net)}</b>: ${esc(w.summary)}${w.advantage.length ? `<br>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}` : '<br><span class="bad">No window: siting alone gives none; use EMCON or another bearer.</span>'}</p>` : ''}`;
   }
   function emoDock() {
-    if (document.getElementById('emo-dock') || !EMO.ents.length) return;
+    if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
     d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
   function emoScrubber() {
-    if (!EMO.res) return;
+    if (EMO.hidden || !EMO.res) return;
     let sc = document.getElementById('emo-scrub');
     if (!sc) {
       sc = document.createElement('div'); sc.id = 'emo-scrub';
@@ -116,7 +116,7 @@
   }
   let staleTimer = null, staleLeft = 0;
   function emoStaleBanner() {
-    const show = EMO.stale && !EMO.busy && !!EMO.res;
+    const show = !EMO.hidden && EMO.stale && !EMO.busy && !!EMO.res;
     let b = document.getElementById('emo-stale');
     if (!show) { if (b) b.remove(); if (staleTimer) { clearInterval(staleTimer); staleTimer = null; } return; }
     if (!b) { b = document.createElement('div'); b.id = 'emo-stale'; document.body.appendChild(b); }
@@ -137,7 +137,7 @@
     b.querySelector('[data-coach-ok]').addEventListener('click', () => { localStorage.setItem('cyem-coach', '1'); document.getElementById('emo-dockcard')?.remove(); });
   }
   function emoAskBar() {
-    if (document.getElementById('emo-askbar') || !EMO.ents.length) return;
+    if (EMO.hidden || document.getElementById('emo-askbar') || !EMO.ents.length) return;
     const bar = document.createElement('div'); bar.id = 'emo-askbar';
     bar.innerHTML = '<input id="emo-askmap" placeholder="Ask about this scenario or your selection…"><button id="emo-askgo">Ask</button><button id="emo-askx" title="Hide">×</button>';
     document.body.appendChild(bar);
@@ -164,18 +164,36 @@
     $('#emo-askx').addEventListener('click', () => bar.remove());
   }
   async function emoAutoStart() {
+    if (EMO.hidden) return;
     try {
       const r = await api('/api/emo'); if (!r.entities?.length) return;
-      EMO.ents = r.entities;
+      EMO.ents = r.entities; $('#btn-emo').classList.add('active');
       const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (b.isValid()) map.fitBounds(b.pad(0.1), matchMedia('(pointer: coarse)').matches && innerHeight > innerWidth ? { paddingBottomRight: [0, Math.round(innerHeight * 0.4)] } : {});
       const touch = matchMedia('(pointer: coarse)').matches, lblZ = touch ? 13 : 11;
-      map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ)); document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ);
-      new MutationObserver(() => document.body.classList.toggle('emo-hascard', !!document.getElementById('emo-card'))).observe(document.body, { childList: true });
+      if (!EMO.wired) { EMO.wired = true; map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ)); }
+      document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ);
+      if (!EMO.wired2) { EMO.wired2 = true; new MutationObserver(() => document.body.classList.toggle('emo-hascard', !!document.getElementById('emo-card'))).observe(document.body, { childList: true }); }
       emoDraw(); emoDock(); emoAskBar();
       if (!localStorage.getItem('cyem-coach')) emoCoach();
       await emoRun();
     } catch (e) { /* no scenario yet */ }
   }
+  EMO.hidden = localStorage.getItem('cyem-emo-on') === '0';
+  // EMO off: clear this device's view (the scenario stays on the box); EMO on: show it again and run
+  function emoOff() {
+    EMO.hidden = true; EMO.playing = false; EMO.pending = false; try { EMO.abort?.abort(); } catch (e) { /* ignore */ }
+    if (staleTimer) { clearInterval(staleTimer); staleTimer = null; } clearInterval(emoTick);
+    EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; EMO.res = null;
+    emoLayer.clearLayers(); planLayer.clearLayers();
+    ['emo-chip', 'emo-dock', 'emo-dockcard', 'emo-card', 'emo-askbar', 'emo-askcard', 'emo-stale', 'emo-scrub'].forEach((id) => document.getElementById(id)?.remove());
+    document.body.classList.remove('emo-hascard', 'emo-nolabels');
+    if ($('#modal-title').textContent.startsWith('EMO')) $('#modal').classList.remove('show');
+    try { localStorage.setItem('cyem-emo-on', '0'); } catch (e) { /* ignore */ }
+    $('#btn-emo').classList.remove('active');
+  }
+  function emoEnable() { EMO.hidden = false; try { localStorage.setItem('cyem-emo-on', '1'); } catch (e) { /* ignore */ } $('#btn-emo').classList.add('active'); }
+  async function emoOn() { emoEnable(); await emoAutoStart(); if (!EMO.ents.length) openEMO(); }
+  const emoActive = () => !EMO.hidden && (!!document.getElementById('emo-chip') || !!document.getElementById('emo-dock'));
   setTimeout(emoAutoStart, 1500);
   async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
   let emoTick = null;
@@ -203,6 +221,7 @@
     finally { clearInterval(emoTick); EMO.busy = false; EMO.abort = null; emoStaleBanner(); if (EMO.pending) emoRun(); }
   }
   function emoStatus(t) {
+    if (EMO.hidden) return;
     const el = $('#emo-status'); if (el) el.textContent = t;
     let chip = document.getElementById('emo-chip');
     if (!chip) { chip = document.createElement('div'); chip.id = 'emo-chip'; chip.title = 'Open EMO panel'; chip.addEventListener('click', () => { if (EMO.busy && EMO.abort) { EMO.abort.abort(); return; } if (/^Cancelled/.test(chip.textContent)) { emoRun(); return; } openEMO(); }); document.body.appendChild(chip); }
@@ -280,6 +299,7 @@
       <p class="dim">${esc(r.notes)}</p>`;
   }
   async function openEMO() {
+    emoEnable();
     try { if (!EMO.examples) EMO.examples = (await api('/api/emo/examples')).examples; await emoLoad(); EMO.scen = (await api('/api/emo/scenarios')).scenarios; } catch (err) { return openModal('EMO', `<p class="bad">${esc(err.message)}</p>`); }
     const list = EMO.ents.length ? `<table class="grid"><tr><th>Entity</th><th>Role</th><th>MHz</th><th></th></tr>${EMO.ents.map((e) => `<tr class="${e.id === EMO.editId ? 'sel' : ''}"><td style="color:${SIDE_COL[e.side]}">${esc(e.name)}${e.active || e.kind === 'sensor' || e.kind === 'receiver' ? '' : ' <span class="dim">(off-air)</span>'}</td><td class="dim">${esc(KIND_TXT[e.kind])}${e.category ? ' · ' + esc(e.category) : ''}</td><td class="mono">${e.freq_mhz}${e.f_hi_mhz ? '–' + e.f_hi_mhz : ''}</td><td><button data-emo-edit="${esc(e.id)}">Edit</button></td></tr>`).join('')}</table>` : '<p class="dim">No entities: load an example.</p>';
     const H = Math.max(EMO.horizon, 0);
@@ -289,7 +309,7 @@
       <div class="specset">Save current as <input id="emo-sc-name" placeholder="scenario name" style="width:180px"> <button id="emo-sc-save">Save</button>
         ${(EMO.scen || []).map((x) => `<span style="white-space:nowrap">${esc(x.name)} <span class="dim">(${x.entities})</span> <button data-sc-load="${esc(x.id)}">Load</button><button data-sc-del="${esc(x.id)}">×</button></span>`).join(' ')}</div>
       <div class="specset">Time T+<b id="emo-tv">${Math.round(EMO.t)}</b> min <input id="emo-t" type="range" min="0" max="${Math.max(1, Math.ceil(H))}" step="1" value="${EMO.t}" style="flex:1;min-width:140px">
-        <button id="emo-run" class="primary">Run</button> <button id="emo-play">${EMO.playing ? 'Stop' : 'Play'}</button> <span id="emo-status" class="dim"></span></div>
+        <button id="emo-run" class="primary" title="Recompute the analysis at this T+ (it also re-runs on its own after any change)">Re-run</button> <button id="emo-play" title="Step T+ forward through the scenario horizon, re-running at each step: units follow their tracks, on-air windows open and close">${EMO.playing ? 'Stop' : 'Play time'}</button> <span id="emo-status" class="dim"></span></div>
       <div class="specset">${EMO_LAYERS.map(([k, l, c]) => `<label style="white-space:nowrap"><input type="checkbox" data-emo-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${c}">■</span> ${esc(l)}</label>`).join(' ')}</div>
       <div class="specset">Targetable if fix within <input id="emo-tgt" type="number" min="50" step="50" value="${EMO.params.df_fix_good_m}" style="width:80px"> m
         <span class="dim">(tactical ~1000, operational ~5000)</span> · <span class="dim">Map washes are for ground receivers (2 m); airborne results are in the cards and tables.</span></div>
@@ -412,7 +432,7 @@
         EMO.t = Math.min(EMO.t + step, Math.ceil(EMO.horizon)); const tv = $('#emo-tv'), ts = $('#emo-t'); if (tv) tv.textContent = EMO.t; if (ts) ts.value = EMO.t;
         await emoRun();
       }
-      EMO.playing = false; const pb = $('#emo-play'); if (pb) pb.textContent = 'Play';
+      EMO.playing = false; const pb = $('#emo-play'); if (pb) pb.textContent = 'Play time';
     });
     body.querySelectorAll('input[data-emo-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.emoLayer] = cb.checked; emoDraw(); }));
     body.querySelectorAll('button[data-emo-edit]').forEach((b) => b.addEventListener('click', () => { EMO.editId = b.dataset.emoEdit; EMO.draft = { ...EMO.ents.find((e) => e.id === EMO.editId) }; openEMO(); }));
@@ -458,6 +478,7 @@
     });
     if (EMO.res) emoDraw();
   }
-  $('#btn-emo').addEventListener('click', () => openEMO());
+  $('#btn-emo').title = 'EMO on / off for this device (panel: the chip at the bottom or the dock)';
+  $('#btn-emo').addEventListener('click', () => { if (emoActive()) emoOff(); else emoOn(); });
 
   { const _emoDraw = emoDraw; emoDraw = function () { _emoDraw(); emoStaleBanner(); }; }

@@ -108,3 +108,9 @@ Recalibrate restarts the AR session when the compass has drifted. The nearest 25
 - **Phone layers.** The layer list opens as a bottom sheet (Tools → Map layers, or the "show" link); collapsed it stays a small pill top-left.
 - **Estimate.** "of about N s" is shown only once a scenario has been computed uncached; cached re-runs do not overwrite the estimate.
 - **Deploying UI changes.** `static/` is baked into the image: after `static/build.sh`, run `docker compose up -d --build cyem` (a plain `docker restart` serves the old bundle) and bump `?v=` in `index.html` and `CACHE` in `sw.js`.
+
+## EMO on / off, Re-run and Play (2026-09-26, build h)
+
+- **EMO button (top bar)** is a switch, like Feed and Brief, and lights up while EMO is showing. Off clears the symbols, overlays, chip, dock and cards from this device and stays off across reloads; the scenario itself stays on the box (and on other devices). On brings it back and re-runs; if the workspace is empty it opens the panel to load a scenario. Phone: Tools → Hide EMO; the panel itself is Tools → EMO panel, the chip or the dock.
+- **Re-run** (panel): recompute at the chosen T+. Rarely needed now: the analysis re-runs on its own after any change (stale banner, 5 s), and dragging the T+ slider re-runs on release.
+- **Play time** (panel) and ▶ on the map scrubber: step T+ forward through the scenario horizon, re-running at each step, so you can watch units move along their tracks and on-air windows open and close (detections, fixes and denial change with them). Stop halts it; the slider stays where it stopped.

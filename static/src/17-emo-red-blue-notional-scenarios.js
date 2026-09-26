@@ -28,6 +28,7 @@
   const emoPosId = (id, fallback) => { const e = EMO.ents.find((x) => x.id === id); return e ? emoPos(e) : fallback; };
   function emoDraw() {
     emoLayer.clearLayers();
+    if (EMO.hidden) return;
     const r = EMO.res;
     const F = EMO.focus ? EMO.focusRes : null;
     const M = EMO.multi && EMO.sel.length > 1;

@@ -37,6 +37,7 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Backups: `~/bin/onedrive-backup.sh` snapshots the DB to `data-store/backup/cyem-backup.sqlite3` nightly; the live WAL DB is excluded from the sync.
 - Spectrum: open data only; never add MOD/unit/role data. Keep licensee surname/first name out of the WTR load.
   Area-defined WTR rows have NULL lat/lon by design. Conflict logic changes go in `spectrum_core.py` with tests.
+- UI tests: tests/ui/run.sh (EMO), and the same docker command with plan_smoke.py or ui_audit.py in place of emo_smoke.py.
 - Tests: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q pytest && python -m pytest -q tests"`
 - Work on branches; `main` is what is deployed once merged. A pre-change DB copy is at `data-store/backup/cyem-pre-spectrum.sqlite3`.
 - Box-level changes (backup excludes, `~/bin/runbook_gen.py`) must be kept in step with this file and the README.

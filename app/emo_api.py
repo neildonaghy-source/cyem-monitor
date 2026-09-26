@@ -953,7 +953,7 @@ async def _plan_facts(question: str, selected: list[str] | None) -> str:
                 r = await emo_plan.plan_map(emo_plan.MapIn(kind="ea", name=y["name"], target_net=n["name"]), t_min=t)
             except HTTPException as e:
                 out.append(f"COMPUTED PLAN (EA {y['name']} vs {n['name']}): not possible ({e.detail})."); continue
-            c, b = r["current"], (r["best"] or [None])[0]
+            c = r["current"]
             out.append(f"COMPUTED PLAN (EA): {y['name']} against {n['name']} ({len(r['users'])} users). Current position: denies "
                        f"{c['denied']}/{c['of_users']}, exposure to {n['side']} DF {c['exposure_db']:+} dB, fratricide {c['fratricide']}.")
             req = r.get("js_req_db", 0)

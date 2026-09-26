@@ -1,5 +1,24 @@
   // ---------------------------------------------------------------- health modal
-  function openModal(title, html) { $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show'); }
+  // Planning area: Spectrum, Links, Coverage and HF share one modal with a tab strip. Each tool still renders itself
+  // through openModal, so the strip is added here (by title) and survives the tools' own re-renders.
+  const PLAN_TABS = [['spec', 'Spectrum', /^Spectrum/, () => openSpectrum()], ['links', 'Links', /^Link planner/, () => openLinks()],
+    ['cov', 'Coverage', /^Coverage/, () => openCoverage()], ['hf', 'HF', /^HF skywave/, () => openHF()]];
+  const planTabFor = (title) => PLAN_TABS.find(([, , re]) => re.test(title));
+  function openPlanning(tab) {
+    const t = PLAN_TABS.find(([k]) => k === tab) || PLAN_TABS.find(([k]) => k === localStorage.getItem('cyem-plan-tab')) || PLAN_TABS[0];
+    t[3]();
+  }
+  function openModal(title, html) {
+    const tab = planTabFor(title);
+    if (tab) {
+      try { localStorage.setItem('cyem-plan-tab', tab[0]); } catch (e) { /* ignore */ }
+      html = `<div class="plantabs">${PLAN_TABS.map(([k, l]) => `<button data-plan="${k}" class="${k === tab[0] ? 'active' : ''}">${l}</button>`).join('')}<span class="dim">${esc(title)}</span></div>` + html;
+      title = 'Planning';
+    }
+    $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show');
+    if (tab) $$('#modal-body .plantabs button').forEach((b) => b.addEventListener('click', () => { if (b.dataset.plan !== tab[0]) openPlanning(b.dataset.plan); }));
+  }
+  $('#btn-plan').addEventListener('click', () => openPlanning());
   $('#modal-close').addEventListener('click', () => $('#modal').classList.remove('show'));
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('#modal').classList.remove('show'); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#modal').classList.remove('show'); });

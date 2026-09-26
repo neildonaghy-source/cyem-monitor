@@ -281,3 +281,18 @@ Code: `app/emo_api.py`, `app/emo_examples.py`, `app/ems_core.py`; tests `tests/t
 - **Footprint radius (2026-09-25):** up to 100 km; blank = automatic (airborne 100, HF/VHF 80, UHF 60, 1 GHz+ 40 km). Pairwise detections and DF fixes are computed along full terrain paths at any range; only the map footprints use the radius. Same compute cost (fixed 600 samples per radial, coarser steps at long range). DEM keeps up to 40 tiles open.
 - **Batch 2 (2026-09-25):** frequency hopping (hopset width) and processing gain per net; on-air windows (timeline); scenario save/load; 17 generic emitter templates; scenario targetable threshold (tactical 1 km, MDO example 5 km); Ask AI on the scenario (pre-sorted facts to a small model, about 1 minute); EMO briefing export to Word, one section per phase with a schematic (no basemap) and tables (Pillow added). Map washes are for ground receivers; airborne results are in cards and tables.
 - **SDR nodes (2026-09-25):** Raspberry Pi 5 + RTL-SDR Blog V4 on the tailnet (pi/setup.sh, pi/README.md): OpenWebRX+ live receiver behind tailscale serve, and a sweep agent posting 24-1766 MHz spectra to /api/sdr/ingest (Bearer SDR_INGEST_TOKEN in .env). SDR panel: node status, spectrum, peaks labelled from UKFAT, open live receiver, set position from the phone. UKFAT parse has 8 gaps (incl. 87.5-108 MHz) to fix.
+
+## Planning area (2026-09-26)
+
+The four planners now live in one place: the **Plan** button (top bar) or **Tools → Planning** on the phone opens a
+modal with a tab strip: Spectrum (deconfliction, plan export), Links (point-to-point), Coverage (omni / sector /
+P2MP) and HF (skywave now-cast). The sections below still describe each tool; only the entry point changed. The
+strip remembers the last tab. The old Spectrum / Links / Coverage / HF buttons remain in the page, hidden, so
+keyboard shortcuts in the Mac app and older links keep working.
+
+Audit 2026-09-26: `tests/ui/plan_smoke.py` (12 checks: tabs, link, coverage and HF calculations, spectrum panel)
+and `tests/ui/ui_audit.py` (every button, pill, layer group and basemap on desktop; Tools sheet, layers sheet,
+views and overflow on a phone viewport) run the same way as `tests/ui/run.sh`. Findings fixed: SDR panel logged a
+404 before the first sweep (now a plain "no sweeps yet" message with the node's state), phone top bar squeezed the
+search box (now wraps to a full-width row), long example lists overflowed the EMO panel on phones, three unused
+variables and two unused imports (pyflakes clean apart from the collector registration imports).

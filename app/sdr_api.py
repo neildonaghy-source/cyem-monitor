@@ -118,7 +118,7 @@ async def nodes():
 async def latest(node: str, points: int = 1200):
     r = get_db().one("SELECT * FROM sdr_sweeps WHERE node=? ORDER BY id DESC LIMIT 1", (node,))
     if not r:
-        raise HTTPException(404, "no sweeps from this node yet")
+        return {"node": node, "empty": True, "reason": "no sweeps from this node yet"}
     vals = [v / 10 for v in struct.unpack(f"<{r['n']}h", r["data"])]
     step = max(1, len(vals) // max(100, min(points, 4000)))
     dec = [max(vals[i:i + step]) for i in range(0, len(vals), step)]    # max-hold keeps narrow carriers visible

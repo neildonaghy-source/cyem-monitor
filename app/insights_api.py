@@ -2,7 +2,7 @@
 Facts are pre-sorted server-side so the small model narrates rather than infers."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 
 from . import llm
 

@@ -233,7 +233,6 @@ async def site_ea(body: SiteEAIn, t_min: float = 0):
                 "fratricide": frat, "score": round(sc, 1)}
 
     here = pos(y)
-    bounds = emo_api._LAST["bounds"]
     own_g, opp_g = _ground(ents, pos, y["side"]), _ground(ents, pos, opp)
     cands = [c for c in local_grid(here, body.max_move_km) if allowed(c, own_g, opp_g, body.standoff_km)]
     sem = asyncio.Semaphore(3)
@@ -288,7 +287,6 @@ def _axes(center, radius_km, px):
 
 def _mask(LA, LO, center, radius_km, own, opp, standoff_km):
     import numpy as np
-    from .sdr_classify import haversine_km
     ok = np.ones(LA.shape, bool)
     # vectorised haversine to each opposing ground unit, and to the two centroids
     def dist(lat0, lon0):
@@ -365,7 +363,6 @@ async def plan_map(body: MapIn, t_min: float = 0):
     LA, LO, bounds = _axes(here, R, body.px)
     own_g, opp_g = _ground(ents, pos, side), _ground(ents, pos, opp)
     ok = _mask(LA, LO, here, R, own_g, opp_g, body.standoff_km)
-    grids_needed = []
 
     async def field(src, at, eirp, rx_h):
         """Level raster at every candidate from a pseudo-transmitter at 'at' with 'eirp', received at rx_h."""

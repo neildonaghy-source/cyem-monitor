@@ -55,6 +55,11 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 .pill.bad b { color: var(--red); }
 .pill.info b { color: var(--cyan); }
 #topbtns { display: flex; gap: 6px; }
+.plantabs { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.plantabs button { padding: 5px 12px; }
+.plantabs button.active { border-color: var(--cyan); color: var(--cyan); background: rgba(60,199,255,.08); }
+.plantabs .dim { margin-left: auto; font-size: 11px; }
+@media (pointer: coarse) { .plantabs button { padding: 9px 12px; font-size: 14px; } .plantabs .dim { flex: 1 1 100%; margin: 4px 0 0; } }
 #topbtns button.active { border-color: var(--cyan); color: var(--cyan); }
 
 /* ---- layout: flex row so map controls sit in the visible map area ---- */
@@ -332,3 +337,16 @@ body.emo-nolabels .emo-sym svg text { display: none; }
   body.emo-hascard #emo-scrub { display: none; }
   #emo-card table.grid td, #emo-dockcard table.grid td { padding: 8px 6px; }
 }
+
+/* ---- 2026-09-26 audit: phone top bar wraps so the search row is full width; long selects stay inside the modal ---- */
+@media (max-width: 900px) {
+  :root { --top-h: 84px; }
+  #top { flex-wrap: wrap; height: auto; min-height: calc(var(--top-h) + env(safe-area-inset-top, 0px)); row-gap: 2px; padding-bottom: 6px; align-content: flex-start; }
+  #omni-form { order: 5; flex: 1 1 100%; margin: 0; }
+  #omni-out { top: calc(var(--top-h) + env(safe-area-inset-top, 0px) + 6px); }
+  #emo-askbar { top: calc(var(--top-h) + env(safe-area-inset-top, 0px) + 8px); }
+  #emo-askcard { top: calc(var(--top-h) + env(safe-area-inset-top, 0px) + 52px); }
+  .specset select { max-width: 100%; min-width: 0; }
+  #emo-ex { flex: 1 1 160px; }
+}
+@media (max-width: 900px) { #layers h3 .dim { display: none; } }

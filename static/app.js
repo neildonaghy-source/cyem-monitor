@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-26f';
+  const BUILD = '2026-09-26g';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -811,7 +811,26 @@
   });
 
   // ---------------------------------------------------------------- health modal
-  function openModal(title, html) { $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show'); }
+  // Planning area: Spectrum, Links, Coverage and HF share one modal with a tab strip. Each tool still renders itself
+  // through openModal, so the strip is added here (by title) and survives the tools' own re-renders.
+  const PLAN_TABS = [['spec', 'Spectrum', /^Spectrum/, () => openSpectrum()], ['links', 'Links', /^Link planner/, () => openLinks()],
+    ['cov', 'Coverage', /^Coverage/, () => openCoverage()], ['hf', 'HF', /^HF skywave/, () => openHF()]];
+  const planTabFor = (title) => PLAN_TABS.find(([, , re]) => re.test(title));
+  function openPlanning(tab) {
+    const t = PLAN_TABS.find(([k]) => k === tab) || PLAN_TABS.find(([k]) => k === localStorage.getItem('cyem-plan-tab')) || PLAN_TABS[0];
+    t[3]();
+  }
+  function openModal(title, html) {
+    const tab = planTabFor(title);
+    if (tab) {
+      try { localStorage.setItem('cyem-plan-tab', tab[0]); } catch (e) { /* ignore */ }
+      html = `<div class="plantabs">${PLAN_TABS.map(([k, l]) => `<button data-plan="${k}" class="${k === tab[0] ? 'active' : ''}">${l}</button>`).join('')}<span class="dim">${esc(title)}</span></div>` + html;
+      title = 'Planning';
+    }
+    $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show');
+    if (tab) $$('#modal-body .plantabs button').forEach((b) => b.addEventListener('click', () => { if (b.dataset.plan !== tab[0]) openPlanning(b.dataset.plan); }));
+  }
+  $('#btn-plan').addEventListener('click', () => openPlanning());
   $('#modal-close').addEventListener('click', () => $('#modal').classList.remove('show'));
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('#modal').classList.remove('show'); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#modal').classList.remove('show'); });
@@ -2216,6 +2235,7 @@
     });
     try {
       const l = await api(`/api/sdr/latest?node=${encodeURIComponent(SDR.node)}`);
+      if (l.empty) { $('#sdr-out').innerHTML = `<p class="dim">No sweeps from ${esc(SDR.node)} yet${n.info?.state ? ` (node reports: ${esc(n.info.state)})` : ''}. ${n.info?.state === 'no dongle' ? 'Plug the RTL-SDR in; sweeps start on their own.' : ''}</p>`; return; }
       let c = null; try { c = await api(`/api/sdr/correlate?node=${encodeURIComponent(SDR.node)}`); } catch (e) { /* no position yet */ }
       if (c) { const byF = Object.fromEntries(c.peaks.map((p) => [p.f_hz, p])); l.peaks = l.peaks.map((p) => byF[p.f_hz] || p); }
       const T = c?.tiers || {};
@@ -2243,8 +2263,7 @@
     if (b.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 250);
   }));
   // Phone layout hides the top-bar buttons; the Tools sheet exposes the same actions.
-  const MOB_TOOLS = [['btn-spec', 'Spectrum', 'Planned emitters, conflicts, export'], ['btn-links', 'Links', 'Point-to-point link planner'],
-    ['btn-cov', 'Coverage', 'Omni / sector / P2MP coverage'], ['btn-hf', 'HF', 'Skywave now-cast'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-sdr', 'SDR', 'Live receiver and spectrum sweeps'], ['btn-health', 'Health', 'Collectors and data status']];
+  const MOB_TOOLS = [['btn-plan', 'Planning', 'Spectrum, links, coverage, HF'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-sdr', 'SDR', 'Live receiver and spectrum sweeps'], ['btn-health', 'Health', 'Collectors and data status']];
   $('#mob-tools').addEventListener('click', () => {
     const emoOn = !!document.getElementById('emo-chip');
     const item = ([id, t, d]) => `<button data-go="${id}"><b>${t}</b><span class="dim">${d}</span></button>`;

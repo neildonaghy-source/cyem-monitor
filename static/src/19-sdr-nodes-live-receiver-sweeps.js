@@ -42,6 +42,7 @@
     });
     try {
       const l = await api(`/api/sdr/latest?node=${encodeURIComponent(SDR.node)}`);
+      if (l.empty) { $('#sdr-out').innerHTML = `<p class="dim">No sweeps from ${esc(SDR.node)} yet${n.info?.state ? ` (node reports: ${esc(n.info.state)})` : ''}. ${n.info?.state === 'no dongle' ? 'Plug the RTL-SDR in; sweeps start on their own.' : ''}</p>`; return; }
       let c = null; try { c = await api(`/api/sdr/correlate?node=${encodeURIComponent(SDR.node)}`); } catch (e) { /* no position yet */ }
       if (c) { const byF = Object.fromEntries(c.peaks.map((p) => [p.f_hz, p])); l.peaks = l.peaks.map((p) => byF[p.f_hz] || p); }
       const T = c?.tiers || {};

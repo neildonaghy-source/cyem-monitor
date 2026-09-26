@@ -90,7 +90,8 @@
       sec.innerHTML = `<div class="ghead"><span class="gname">${esc(g.label)}</span>${g.id !== 'basemap' ? '<a href="#" data-all="on">all</a><a href="#" data-all="off">none</a>' : ''}<a href="#" class="gtoggle">${collapsed[g.id] ? '+' : '−'}</a></div><div class="gbody">${body}</div>`;
       layerCtl.appendChild(sec);
     }
-    $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; });
+    $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; localStorage.setItem('cyem-layers', layerCtl.classList.contains('collapsed') ? 'hide' : 'show'); });
+    if (localStorage.getItem('cyem-layers') === 'hide' || (matchMedia('(max-width: 900px)').matches && !localStorage.getItem('cyem-layers'))) { layerCtl.classList.add('collapsed'); $('#layers-toggle').textContent = 'show'; }
     $$('#layers input[name=basemap]').forEach((r) => r.addEventListener('change', () => setBasemap(r.value)));
     $$('#layers .lgroup').forEach((sec) => {
       const gid = sec.dataset.group;

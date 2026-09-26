@@ -264,3 +264,22 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
   background: rgba(10,14,19,.96); border: 1px solid #3c8cff; border-radius: 8px; padding: 10px 12px; font-size: 13px; }
 @media (max-width: 900px) { #emo-dock { left: 0; right: 0; top: auto; bottom: 56px; transform: none; flex-direction: row; overflow-x: auto; padding: 4px 6px; gap: 6px; }
   #emo-dock button { min-width: 0; white-space: nowrap; } #emo-dockcard { left: 3vw; width: 94vw; top: auto; bottom: 96px; transform: none; max-height: 50vh; } }
+
+/* ---- 2026-09-26 phone and Mac layout pass ---- */
+#emo-dock { left: auto; right: 8px; top: 110px; transform: none; }
+#emo-dockcard { left: auto; right: 84px; top: 110px; transform: none; }
+@media (max-width: 900px) {
+  #emo-dock { left: 0; right: 0; top: auto; bottom: 56px; }
+  #emo-dock button { min-height: 40px; padding: 8px 10px; }
+  #emo-dockcard { left: 3vw; right: auto; width: 94vw; top: auto; bottom: 100px; }
+  #emo-askbar { top: 96px; }
+  #emo-card { bottom: 104px !important; max-height: 44vh; }
+  #emo-askcard { top: 140px; }
+}
+
+body.emo-nolabels .emo-sym svg text { display: none; }
+@media (max-width: 900px) { #emo-chip { bottom: 104px !important; } }
+
+#emo-dock { top: 150px; }
+#emo-dockcard { top: auto; bottom: 40px; right: 84px; max-height: 55vh; }
+@media (max-width: 900px) { #emo-dock button { font-size: 11px; padding: 8px 7px; } }

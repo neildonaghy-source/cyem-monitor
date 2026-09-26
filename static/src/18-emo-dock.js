@@ -75,7 +75,7 @@
   function emoDock() {
     if (document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', `Side: ${EMO.side}`], ['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adversary'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -106,6 +106,17 @@
     $('#emo-askmap').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     $('#emo-askx').addEventListener('click', () => bar.remove());
   }
+  async function emoAutoStart() {
+    try {
+      const r = await api('/api/emo'); if (!r.entities?.length) return;
+      EMO.ents = r.entities;
+      const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (b.isValid()) map.fitBounds(b.pad(0.1));
+      map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < 11)); document.body.classList.toggle('emo-nolabels', map.getZoom() < 11);
+      emoDraw(); emoDock(); emoAskBar();
+      await emoRun();
+    } catch (e) { /* no scenario yet */ }
+  }
+  setTimeout(emoAutoStart, 1500);
   async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
   let emoTick = null;
   async function emoRun() {

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-26b';
+  const BUILD = '2026-09-26c';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -146,7 +146,8 @@
       sec.innerHTML = `<div class="ghead"><span class="gname">${esc(g.label)}</span>${g.id !== 'basemap' ? '<a href="#" data-all="on">all</a><a href="#" data-all="off">none</a>' : ''}<a href="#" class="gtoggle">${collapsed[g.id] ? '+' : '−'}</a></div><div class="gbody">${body}</div>`;
       layerCtl.appendChild(sec);
     }
-    $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; });
+    $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; localStorage.setItem('cyem-layers', layerCtl.classList.contains('collapsed') ? 'hide' : 'show'); });
+    if (localStorage.getItem('cyem-layers') === 'hide' || (matchMedia('(max-width: 900px)').matches && !localStorage.getItem('cyem-layers'))) { layerCtl.classList.add('collapsed'); $('#layers-toggle').textContent = 'show'; }
     $$('#layers input[name=basemap]').forEach((r) => r.addEventListener('change', () => setBasemap(r.value)));
     $$('#layers .lgroup').forEach((sec) => {
       const gid = sec.dataset.group;
@@ -1778,7 +1779,7 @@
   function emoDock() {
     if (document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', `Side: ${EMO.side}`], ['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adversary'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -1809,6 +1810,17 @@
     $('#emo-askmap').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
     $('#emo-askx').addEventListener('click', () => bar.remove());
   }
+  async function emoAutoStart() {
+    try {
+      const r = await api('/api/emo'); if (!r.entities?.length) return;
+      EMO.ents = r.entities;
+      const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (b.isValid()) map.fitBounds(b.pad(0.1));
+      map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < 11)); document.body.classList.toggle('emo-nolabels', map.getZoom() < 11);
+      emoDraw(); emoDock(); emoAskBar();
+      await emoRun();
+    } catch (e) { /* no scenario yet */ }
+  }
+  setTimeout(emoAutoStart, 1500);
   async function emoLoad() { EMO.ents = (await api('/api/emo')).entities; }
   let emoTick = null;
   async function emoRun() {

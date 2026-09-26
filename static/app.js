@@ -2107,7 +2107,7 @@
     const n = nodes.find((x) => x.node === SDR.node);
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
-      <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
+      <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
       ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-pos">Set receiver position to this device</button> <button id="sdr-ins">Insight (AI)</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       <div id="sdr-out"><span class="spinner"></span></div>`;

@@ -83,6 +83,29 @@ async def ingest(s: SweepIn, authorization: str | None = Header(default=None)):
     return {"ok": True, "peaks": len(peaks), **summary(s.db)}
 
 
+class HeartbeatIn(BaseModel):
+    node: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    url: str | None = Field(default=None, max_length=200)
+    state: str = Field(max_length=80)                 # e.g. "no dongle", "live receiver in use", "sweeping"
+
+
+@router.post("/heartbeat")
+async def heartbeat(h: HeartbeatIn, authorization: str | None = Header(default=None)):
+    """Node check-in without a sweep, so the panel shows it online with its state."""
+    tok = os.environ.get("SDR_INGEST_TOKEN")
+    if not tok or authorization != f"Bearer {tok}":
+        raise HTTPException(401, "bad token")
+    db = get_db()
+    node = db.one("SELECT info FROM sdr_nodes WHERE node=?", (h.node,))
+    info = json.loads(node["info"] or "{}") if node else {}
+    info["state"] = h.state
+    with db.tx() as c:
+        c.execute("INSERT INTO sdr_nodes (node, url, last_seen, info) VALUES (?,?,?,?) ON CONFLICT(node) DO UPDATE SET "
+                  "url=COALESCE(excluded.url, url), last_seen=excluded.last_seen, info=excluded.info",
+                  (h.node, h.url, now_iso(), json.dumps(info)))
+    return {"ok": True}
+
+
 @router.get("/nodes")
 async def nodes():
     rows = get_db().query("SELECT n.*, (SELECT COUNT(*) FROM sdr_sweeps s WHERE s.node=n.node) AS sweeps FROM sdr_nodes n ORDER BY last_seen DESC")

@@ -51,6 +51,16 @@ def post(f0, step, vals):
     return json.load(urllib.request.urlopen(req, timeout=60))
 
 
+def heartbeat(state: str) -> None:
+    try:
+        body = json.dumps({"node": NODE, "url": node_url(), "state": state}).encode()
+        req = urllib.request.Request(CYEM + "/api/sdr/heartbeat", data=body, method="POST",
+                                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {TOKEN}"})
+        urllib.request.urlopen(req, timeout=30)
+    except Exception as e:  # noqa: BLE001
+        print("heartbeat failed:", e, flush=True)
+
+
 def openwebrx_busy() -> bool:
     """True if someone is using the live receiver (OpenWebRX+ holds the dongle while clients are connected)."""
     try:
@@ -64,7 +74,7 @@ if __name__ == "__main__":
     while True:
         try:
             if openwebrx_busy():
-                print("live receiver in use; skipping sweep", flush=True)
+                print("live receiver in use; skipping sweep", flush=True); heartbeat("live receiver in use")
             else:
                 subprocess.run(["docker", "stop", "openwebrx"], capture_output=True, timeout=60)
                 try:
@@ -72,9 +82,9 @@ if __name__ == "__main__":
                 finally:
                     subprocess.run(["docker", "start", "openwebrx"], capture_output=True, timeout=60)
                 if r:
-                    print("posted:", post(*r), flush=True)
+                    print("posted:", post(*r), flush=True); heartbeat("sweeping")
                 else:
-                    print("sweep failed (dongle busy or missing)", flush=True)
+                    print("sweep failed (dongle busy or missing)", flush=True); heartbeat("no dongle")
         except Exception as e:  # noqa: BLE001
             print("error:", e, flush=True)
         time.sleep(INTERVAL)

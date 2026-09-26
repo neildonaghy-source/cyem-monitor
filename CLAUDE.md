@@ -59,4 +59,5 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Operator guide and endpoint list: docs/EMO.md. Browser smoke test: tests/ui/run.sh (private workspace uitest1, ~3 min).
 - Conventions: every solver proposes then verifies with the exact pairwise model; stand-off 10 km and own-side rule; civil (grey)
   is located, never targetable; planning answers in Ask bypass the language model.
+- After a dependency change: python3 tools/software_inventory.py (updates docs/SOFTWARE.md + software.json, copied into the nightly trade runbook).
 - Release: bump BUILD in static/app.js, ?v= in index.html/sw.js, cache name in sw.js; commit; push; docker compose up -d --build cyem.

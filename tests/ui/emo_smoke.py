@@ -56,7 +56,7 @@ async def main():
         await pg.click("#modal-close"); await pg.wait_for_timeout(500)
         rec("ask bar present", bool(await pg.query_selector("#emo-askbar")))
         await pg.evaluate("() => [...document.querySelectorAll('.emo-sym')].find(s => s.textContent.includes('Blue HQ')).click()")
-        rec("focus card opens", bool(await wait_text(pg, "#emo-card", "Compare with others", 30)))
+        rec("focus card opens", bool(await wait_text(pg, "#emo-card", "With others", 30)))
         await pg.click("[data-emo-plannet]")
         rec("score map renders", bool(await wait_text(pg, "#emo-planout", "siting", 240)))
         rec("heatmap overlay on map", (await pg.evaluate("() => document.querySelectorAll('.leaflet-image-layer').length")) > 0)

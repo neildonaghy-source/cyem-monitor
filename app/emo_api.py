@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS emo_entities (
 CREATE TABLE IF NOT EXISTS emo_scenarios (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, entities TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS emo_coas (id TEXT PRIMARY KEY, ws TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, t_min REAL,
   params TEXT, score TEXT, entities TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS emo_undo (id INTEGER PRIMARY KEY AUTOINCREMENT, ws TEXT NOT NULL, ts TEXT NOT NULL, label TEXT, entities TEXT NOT NULL);
 """
 CATS = "^(comms|radar|datalink|nav|cuas|other|es|df|rwr)$"
 
@@ -1300,3 +1301,41 @@ async def coas_export():
     buf = BytesIO(); doc.save(buf); buf.seek(0)
     return _SR(buf, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                headers={"Content-Disposition": "attachment; filename=emo-coa-comparison.docx"})
+
+
+
+# ---- undo: a snapshot of the workspace before every change, last five kept ---------------------------------
+UNDO_KEEP = 5
+
+
+def emo_snapshot(label: str) -> None:
+    ws = WS.get()
+    rows = [dict(r) for r in get_db().query("SELECT * FROM emo_entities WHERE ws=?", (ws,))]
+    if not rows:
+        return
+    with get_db().tx() as c:
+        c.execute("INSERT INTO emo_undo (ws, ts, label, entities) VALUES (?,?,?,?)", (ws, now_iso(), label, json.dumps(rows)))
+        c.execute("DELETE FROM emo_undo WHERE ws=? AND id NOT IN (SELECT id FROM emo_undo WHERE ws=? ORDER BY id DESC LIMIT ?)", (ws, ws, UNDO_KEEP))
+
+
+@router.get("/undo")
+async def undo_state():
+    rows = get_db().query("SELECT id, ts, label FROM emo_undo WHERE ws=? ORDER BY id DESC", (WS.get(),))
+    return {"depth": len(rows), "last": rows[0]["label"] if rows else None}
+
+
+@router.post("/undo")
+async def undo():
+    row = get_db().one("SELECT * FROM emo_undo WHERE ws=? ORDER BY id DESC LIMIT 1", (WS.get(),))
+    if not row:
+        raise HTTPException(404, "nothing to undo")
+    ents = json.loads(row["entities"])
+    with get_db().tx() as c:
+        c.execute("DELETE FROM emo_entities WHERE ws=?", (WS.get(),))
+        for e in ents:
+            cols = list(e)
+            c.execute(f"INSERT INTO emo_entities ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [e[k] for k in cols])
+        c.execute("DELETE FROM emo_undo WHERE id=?", (row["id"],))
+    _LAST.clear()
+    depth = get_db().one("SELECT COUNT(*) AS n FROM emo_undo WHERE ws=?", (WS.get(),))["n"]
+    return {"undone": row["label"], "depth": depth, "entities": _all()}

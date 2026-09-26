@@ -583,3 +583,99 @@ EXAMPLES = {
                              "AR view from the centre.",
                     "centre": [51.425, -2.22], "zoom": 13, "params": {"df_fix_good_m": 500}, "entities": COR},
     **EXAMPLES}
+
+
+
+# ---- 2026-09-26: realistic units and APP-6 function symbols -----------------------------------------------
+_AFF = {"blue": "F", "red": "H", "grey": "N"}
+
+
+def _sidc_for(e: dict) -> str:
+    """APP-6B / 2525B symbol with a function icon chosen from the entity's role."""
+    n = e["name"].lower(); cat = (e.get("category") or "").lower(); kind = e["kind"]
+    old = e.get("sidc") or ""
+    aff = _AFF.get(e["side"], "N")
+    dim = "A" if (len(old) > 2 and old[2] == "A") or e.get("h_agl", 0) >= 300 else "S" if len(old) > 2 and old[2] == "S" else "G"
+    if dim == "A":
+        if aff == "N":
+            return "SNAPCF---------"                                     # civil fixed wing
+        fn = ("MFQ---" if any(k in n for k in ("uav", "drone", "orlan", "watchkeeper")) else
+              "MFRW--" if "aew" in n or "e-7" in n else
+              "MFF---" if any(k in n for k in ("fighter", "typhoon", "f-35", "su-", "mig")) else
+              "MFJ---" if kind == "effector" or "jammer" in n or "il-22" in n or "ea-18" in n else
+              "MFR---" if kind == "sensor" or " es" in n or "mpa" in n else
+              "MH----" if "helicopter" in n or "heli" in n else "MF----")
+        return f"S{aff}AP{fn}-----"
+    if dim == "S":
+        return f"S{aff}SP" + ("CL----" if aff != "N" else "XM----") + "-----"
+    if aff == "N":
+        return "SNGPU----------"
+    if kind == "effector":
+        fn = "UUE---"                                                     # electronic warfare
+    elif kind == "sensor":
+        fn = "UUM---"                                                     # intelligence (ES/DF)
+    elif cat == "radar":
+        fn = "UCD---" if any(k in n for k in ("sam", "gbad", "buk", "sky sabre", "s-300", "s-400", "pantsir", "air defence", "air-defence", "tor ")) else \
+             "UCF---" if any(k in n for k in ("counter-battery", "cobra", "cb radar", "zoopark")) else "UUS---"
+    elif "hq" in n:
+        fn = "UH----"
+    elif any(k in n for k in ("recce", "reconnaissance", "observer", " op ")):
+        fn = "UCR---"
+    elif any(k in n for k in ("battery", "artillery", "fires")):
+        fn = "UCF---"
+    elif any(k in n for k in ("bg ", "bg(", "battlegroup", "btg", "mrb", "mrr", "mechani")):
+        fn = "UCIZ--"
+    elif any(k in n for k in ("bde", "brigade", "qrf", "guard", "patrol", "landing", "raid", "team", "picket", "det ", "party")):
+        fn = "UCI---"
+    else:
+        fn = "UUS---"                                                     # signals (nets, SATCOM, datalinks)
+    return f"S{aff}GP{fn}-----"
+
+
+_ORBAT = {
+    "suwalki-mdo": {
+        "Blue Div HQ (Augustow)": "NATO Div HQ, Bowman VHF (Augustów)", "Blue Bde (Suwalki)": "NATO Bde HQ (Suwałki)",
+        "Blue BG (Lazdijai)": "NATO BG (Lazdijai)", "Blue BG (Marijampole)": "NATO BG (Marijampolė)", "Blue Recce (border)": "NATO Recce (border)",
+        "Blue ES/DF (Suwalki)": "LEWT ES/DF (Suwałki)", "Blue ES/DF (Lazdijai)": "LEWT ES/DF (Lazdijai)", "Blue ES/DF (Marijampole)": "LEWT ES/DF (Marijampolė)",
+        "Blue GBAD radar": "Sky Sabre radar (GBAD)", "Blue CB radar": "Cobra counter-battery radar", "Blue VHF jammer": "LEWT VHF jammer",
+        "Blue C-UAS": "ORCUS C-UAS", "Blue UAS GCS": "Watchkeeper GCS", "Blue UAV": "Watchkeeper", "Blue SATCOM (Div)": "Reacher SATCOM (Div)",
+        "Blue AEW radar": "E-7 AEW radar", "Blue Link 16 (AEW)": "E-7 Link 16", "Blue fighter pair": "Typhoon pair", "Blue airborne ES": "RC-135 Rivet Joint ES",
+        "Blue fires (GNSS)": "NATO fires (GNSS)", "Blue UAV nav (GNSS)": "Watchkeeper (GNSS)", "Blue fighters (GNSS)": "Typhoon pair (GNSS)",
+        "Blue stand-off radar jammer": "EA-18G stand-off radar jammer",
+        "Red Army HQ (west)": "Red CAA HQ, R-168 VHF (west)", "Red Bde (west)": "Red MRR (west)", "Red ES/DF (west)": "Red Borisoglebsk-2 ES/DF (west)",
+        "Red VHF barrage": "Red Borisoglebsk-2 VHF jammer", "Red GNSS jammer (west)": "Red Pole-21 GNSS jammer (west)", "Red L-band barrage": "Red Krasukha-4 L-band jammer",
+        "Red SAM radar": "Red Buk 9S18M1 radar", "Red airborne ES": "Red Il-22PP airborne ES", "Red Bde (south-east)": "Red MRR (south-east)",
+        "Red ES/DF (south-east)": "Red Borisoglebsk-2 ES/DF (south-east)", "Red GNSS jammer (south-east)": "Red Pole-21 GNSS jammer (south-east)",
+        "Red CB radar": "Red Zoopark-1 counter-battery radar", "Red UAS GCS": "Red Orlan-10 GCS", "Red UAV": "Red Orlan-10", "Red Bde HQ (south-east)": "Red MRR HQ (south-east)",
+        "Red radar jammer (ground)": "Red Krasukha-2 radar jammer",
+    },
+    "mdo-operational": {
+        "Blue Bde HQ": "NATO Bde HQ, Bowman VHF", "Blue BG 1": "NATO BG 1", "Blue BG 2": "NATO BG 2", "Blue Recce": "NATO Recce",
+        "Blue ES/DF 1": "LEWT ES/DF 1", "Blue ES/DF 2": "LEWT ES/DF 2", "Blue ES/DF 3": "LEWT ES/DF 3", "Blue GBAD radar": "Sky Sabre radar (GBAD)",
+        "Blue CB radar": "Cobra counter-battery radar", "Blue VHF jammer": "LEWT VHF jammer", "Blue SATCOM (HQ)": "Reacher SATCOM (HQ)",
+        "Blue AEW radar": "E-7 AEW radar", "Blue Link 16 (AEW)": "E-7 Link 16", "Blue fighter pair": "Typhoon pair", "Blue airborne ES": "RC-135 Rivet Joint ES",
+        "Blue frigate radar": "Type 26 frigate radar", "Blue frigate (Link 16)": "Type 26 frigate (Link 16)", "Blue fires (GNSS)": "NATO fires (GNSS)",
+        "Blue frigate (GNSS)": "Type 26 frigate (GNSS)", "Blue fighters (GNSS)": "Typhoon pair (GNSS)",
+        "Red Div HQ": "Red CAA HQ, R-168 VHF", "Red Bde 1": "Red MRR 1", "Red Bde 2": "Red MRR 2", "Red ES/DF 1": "Red Borisoglebsk-2 ES/DF 1",
+        "Red ES/DF 2": "Red Borisoglebsk-2 ES/DF 2", "Red ES/DF 3": "Red Borisoglebsk-2 ES/DF 3", "Red VHF jammer": "Red Borisoglebsk-2 VHF jammer",
+        "Red GNSS jammer": "Red Pole-21 GNSS jammer", "Red L-band barrage": "Red Krasukha-4 L-band jammer", "Red SAM radar": "Red Buk 9S18M1 radar",
+        "Red coastal radar": "Red Monolit-B coastal radar", "Red airborne ES": "Red Il-22PP airborne ES", "Red corvette radar": "Red Steregushchiy corvette radar",
+        "Red corvette ES": "Red Steregushchiy corvette ES",
+    },
+}
+
+
+def _apply_orbat():
+    for key, ex in EXAMPLES.items():
+        ren = _ORBAT.get(key, {})
+        for e in ex["entities"]:
+            new = ren.get(e["name"])
+            if new:
+                e["name"] = new
+            if e.get("net") in ren:
+                e["net"] = ren[e["net"]]
+        for e in ex["entities"]:
+            e["sidc"] = _sidc_for(e)
+
+
+_apply_orbat()

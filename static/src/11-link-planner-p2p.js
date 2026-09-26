@@ -33,8 +33,8 @@
     const b = {}; for (const [k, v] of Object.entries(o)) if (v !== null && v !== undefined) b[k] = v;
     return b;
   }
-  async function postJson(path, body, method = 'POST') {
-    const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  async function postJson(path, body, method = 'POST', signal = undefined) {
+    const r = await fetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : Array.isArray(j.detail) ? j.detail.map((d) => `${d.loc?.slice(-1)[0]}: ${d.msg}`).join('; ') : `HTTP ${r.status}`);
     return j;

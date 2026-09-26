@@ -74,12 +74,38 @@ app.add_api_route("/login", login_get, methods=["GET"], include_in_schema=False)
 app.add_api_route("/login", login_post, methods=["POST"], include_in_schema=False)
 
 
+def _undo_label(method: str, path: str) -> str | None:
+    """Which EMO requests change the scenario, and how to name them in the undo list."""
+    import re as _re
+    if method == "POST":
+        if _re.fullmatch(r"/api/emo/[0-9a-f]{8}/move", path):
+            return "move"
+        if _re.fullmatch(r"/api/emo/[0-9a-f]{8}/active", path):
+            return "EMCON"
+        if path == "/api/emo":
+            return "edit"
+        if path in ("/api/emo/plan/coa", "/api/emo/plan/joint", "/api/emo/plan/tune/apply"):
+            return {"coa": "adversary COA", "joint": "joint re-site", "apply": "EP measure"}[path.rsplit("/", 1)[1]]
+        if path.startswith("/api/emo/examples/") or _re.fullmatch(r"/api/emo/(scenarios|coas)/[^/]+/load", path):
+            return "load"
+    if method == "DELETE" and _re.fullmatch(r"/api/emo/[0-9a-f]{8}", path):
+        return "delete"
+    return None
+
+
 @app.middleware("http")
 async def cyem_ws_middleware(request, call_next):
     """Scenario workspace for EMO: 'default' is shared; a device can use its own via the X-CyEM-WS header."""
     from .emo_api import WS
     ws = (request.headers.get("x-cyem-ws") or "default").strip()[:40]
     token = WS.set(ws if ws.replace("-", "").isalnum() else "default")
+    label = _undo_label(request.method, request.url.path)
+    if label:
+        try:
+            from .emo_api import emo_snapshot
+            emo_snapshot(label)
+        except Exception:
+            pass
     try:
         return await call_next(request)
     finally:

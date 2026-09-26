@@ -64,3 +64,47 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 - Users are scored where they are unless Joint re-site moves them; tracked units are never moved by the solvers.
 - Qwen (4B, CPU) summarises facts and verdicts; it still misreads details. Planning answers bypass it.
 - One scenario per workspace; loading a scenario replaces it (save a COA first).
+
+## Map-first controls (2026-09-26)
+
+The dock on the map is the working surface; the panel is for editing entities, examples, scenarios and the full tables.
+
+| Dock | What it does |
+|---|---|
+| Blue / Red | Your viewpoint: scoreboard puts your side first, the adversary card defaults to the other side, Ask answers for your commander |
+| Undo | Restores the scenario to before the last change (move, EMCON, edit, EP measure, joint re-site, adversary COA, load); five levels |
+| Overlays | EMO overlays (coverage, detected, denied, civil lines). The top-left panel is the map's data layers |
+| Score | Both sides' measures with the change since the previous run |
+| Time | Shows or hides the time scrubber (T+0 to the horizon, play) |
+| COA | Save the current state as a course of action; compare saved COAs; Word annex |
+| Adv COA | MLCOA or MDCOA for the other side, applied with revert |
+| Timeline | Per-entity strips over time and windows of EM advantage for a chosen net |
+| Shared / Device | Which scenario space this device uses; loading an example into the shared space asks twice |
+| Panel | The full dashboard |
+
+After any change the results are stale: an amber banner says so and re-runs the analysis after five seconds unless cancelled.
+The status chip shows an estimate from the last run of a scenario of the same size.
+
+## Units and symbols
+
+Every entity carries an APP-6 symbol with a function icon chosen from its role (HQ, mechanised, infantry, recce, artillery,
+air defence, signals, intelligence for ES/DF, electronic warfare for jammers; fixed wing, UAV, AEW, rotary; surface combatant,
+merchant). The Suwałki and NW Scotland scenarios use notional NATO and Russian-style units named by open-source equipment
+(Bowman, Reacher, Watchkeeper, Sky Sabre, Cobra, E-7, Typhoon, RC-135, LEWT, ORCUS; R-168, Borisoglebsk-2, Krasukha-2/-4,
+Pole-21, Buk 9S18M1, Zoopark-1, Orlan-10, Il-22PP, Monolit-B, Steregushchiy). Values remain notional.
+
+## AR view (iPhone)
+
+Tap a label for its sheet: details, who detects it, status, EMCON, Move here, Undo and Ask. The sheet stays open while the
+analysis re-runs and then says what changed ("now detected by 1, was 3"). Filters: source, Detected only, range 5/10/30 km.
+Recalibrate restarts the AR session when the compass has drifted. The nearest 25 labels are drawn; the count beyond is shown.
+
+## Audit items applied (2026-09-26, build f)
+
+- **Cancel.** While the analysis is computing, the chip reads "… tap to cancel"; tapping it aborts the request and keeps the previous results (marked stale, no auto re-run). EP siting search and EP measures show a Cancel button. Adversary COA, joint re-site and other actions that change the scenario are not cancellable; use Undo instead. The box finishes the abandoned calculation in the background.
+- **Focus card.** Buttons are grouped: Act (EMCON, Edit), Plan (EP siting, EP measures, Re-site net; EA siting with target net for effectors) and Compare (With others). × clears focus.
+- **Symbols.** The information line under each symbol starts with the side letter (B, R, G) so side is readable in AR and for colour-blind viewers; names follow the scenario ORBAT (NATO and Russian unit names, APP-6 frames and function icons).
+- **Phone Tools sheet.** When EMO is running, the sheet leads with EMO panel and AR view, then Map layers, then the other tools in a compact grid.
+- **Phone layers.** The layer list opens as a bottom sheet (Tools → Map layers, or the "show" link); collapsed it stays a small pill top-left.
+- **Estimate.** "of about N s" is shown only once a scenario has been computed uncached; cached re-runs do not overwrite the estimate.
+- **Deploying UI changes.** `static/` is baked into the image: after `static/build.sh`, run `docker compose up -d --build cyem` (a plain `docker restart` serves the old bundle) and bump `?v=` in `index.html` and `CACHE` in `sw.js`.

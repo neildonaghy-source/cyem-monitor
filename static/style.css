@@ -186,6 +186,12 @@ h3.sec:first-child { margin-top: 0; }
   #mobnav button.active { color: var(--cyan); }
   #topbtns, #clock { display: none; }
   #layers { width: 170px; }
+  /* open layer list is a bottom sheet, not a narrow floating panel */
+  #layers:not(.collapsed) { position: fixed; top: auto; left: 0; right: 0; bottom: calc(48px + env(safe-area-inset-bottom, 0px)); width: auto; max-width: none; max-height: 62vh; resize: none; border-radius: 12px 12px 0 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 1250; }
+  #layers:not(.collapsed) h3 { position: sticky; top: 0; background: rgba(16,22,30,.98); padding: 4px 0; font-size: 12px; }
+  #layers:not(.collapsed) h3 a { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; }
+  #layers:not(.collapsed) label { padding: 6px 0; font-size: 14px; }
+  #layers:not(.collapsed) label.sub { font-size: 12px; }
   #legend { display: none; }
 }
 
@@ -223,6 +229,18 @@ a.btnlink { display: inline-block; padding: 4px 10px; border: 1px solid var(--bo
 /* phone Tools sheet */
 .mobtools { display: grid; gap: 8px; }
 .mobtools button, .mobtools a.btnlink { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; text-align: left; font-size: 15px; }
+.mobtools .mobgrp { display: grid; gap: 6px; }
+.mobtools .mobgrp .lbl { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted, #8593a6); margin-top: 4px; }
+.mobtools .mobgrp.compact { grid-template-columns: 1fr 1fr; }
+.mobtools .mobgrp.compact .lbl { grid-column: 1 / -1; }
+.mobtools .mobgrp.compact button, .mobtools .mobgrp.compact a.btnlink { padding: 9px 10px; font-size: 13px; }
+.mobtools .mobgrp.compact button .dim { display: none; }
+/* focus card: Act / Plan / Compare */
+.emo-groups { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 2px; }
+.emo-groups .grp { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.emo-groups .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #8593a6); margin-right: 2px; }
+.emo-groups select { max-width: 150px; }
+@media (pointer: coarse) { .emo-groups { gap: 8px 12px; } .emo-groups .grp { flex: 1 1 100%; } .emo-groups .grp .lbl { width: 62px; } }
 
 /* EMO */
 .emo-sym { background: none; border: none; }
@@ -298,3 +316,19 @@ body.emo-nolabels .emo-sym svg text { display: none; }
   #emo-card { max-height: 52vh; }
 }
 @media (pointer: coarse) { body.emo-hascard #emo-chip { display: none; } }
+
+/* ---- UX audit items (2026-09-26) ---- */
+#emo-stale { position: fixed; top: 100px; left: 50%; transform: translateX(-50%); z-index: 1150; background: rgba(60,45,5,.95); border: 1px solid #f3b23e; color: #ffe1a8; border-radius: 8px; padding: 6px 12px; font-size: 13px; }
+#emo-stale button { margin-left: 4px; }
+#emo-scrub { position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%); width: min(560px, 60vw); z-index: 1100; display: flex; align-items: center; gap: 8px; background: rgba(10,14,19,.92); border: 1px solid #3c8cff; border-radius: 18px; padding: 4px 12px; font-size: 12px; }
+#emo-scrub input { flex: 1; min-width: 0; }
+#emo-scrub.closed { display: none; }
+#emo-card .btns { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+#emo-dockcard ol { padding-left: 18px; } #emo-dockcard ol li { margin: 4px 0; }
+@media (max-width: 1024px), (pointer: coarse) {
+  #emo-stale { top: 140px; width: 92vw; text-align: center; }
+  #emo-scrub { bottom: 100px; width: 94vw; display: none; }
+  #emo-scrub.open { display: flex; }
+  body.emo-hascard #emo-scrub { display: none; }
+  #emo-card table.grid td, #emo-dockcard table.grid td { padding: 8px 6px; }
+}

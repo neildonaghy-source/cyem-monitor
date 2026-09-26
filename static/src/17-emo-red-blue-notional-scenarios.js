@@ -17,7 +17,7 @@
     let html = null, sz = [16, 16], anc = [8, 8];
     if (window.ms) {
       try {
-        const sym = new ms.Symbol(sidc, { size: 24, ...(e.side === 'grey' ? { fillColor: '#a6b0bd', colorMode: 'Light' } : {}), uniqueDesignation: e.name.slice(0, 20), additionalInformation: `${KIND_TXT[e.kind]}${e.category ? ' · ' + e.category.toUpperCase() : ''}${dim ? ' · OFF-AIR' : ''}` });
+        const sym = new ms.Symbol(sidc, { size: 24, infoColor: "#fff", infoOutlineColor: "#000", infoOutlineWidth: 3, ...(e.side === 'grey' ? { fillColor: '#a6b0bd', colorMode: 'Light' } : {}), uniqueDesignation: e.name.slice(0, 20), additionalInformation: `${{ blue: 'B', red: 'R', grey: 'G' }[e.side] || '?'} · ${KIND_TXT[e.kind]}${e.category ? ' · ' + e.category.toUpperCase() : ''}${dim ? ' · OFF-AIR' : ''}` });
         html = sym.asSVG(); const s = sym.getSize(), a = sym.getAnchor(); sz = [s.width, s.height]; anc = [a.x, a.y];
       } catch (err) { console.warn('milsymbol', err); }
     }
@@ -103,9 +103,10 @@
   async function emoPlan(kind) {
     const out = $('#emo-planout'); if (!out) return;
     const e = EMO.ents.find((x) => x.id === EMO.focus); if (!e) return;
-    const t0 = Date.now(); const tick = setInterval(() => { out.innerHTML = `<p><span class="spinner"></span> searching positions… ${Math.round((Date.now() - t0) / 1000)} s (1-3 min)</p>`; }, 1000);
+    const ac = new AbortController();
+    const t0 = Date.now(); const tick = setInterval(() => { if (!out.querySelector('[data-cancel]')) { out.innerHTML = `<p><span class="spinner"></span> <span data-tick></span> <button data-cancel>Cancel</button></p>`; out.querySelector('[data-cancel]').addEventListener('click', () => ac.abort()); } out.querySelector('[data-tick]').textContent = `searching positions… ${Math.round((Date.now() - t0) / 1000)} s (1-3 min)`; }, 1000);
     try {
-      const r = await postJson(`/api/emo/plan/map?t_min=${EMO.t}`, kind === 'net' ? { kind: 'net', name: e.name } : { kind: 'ea', name: e.name, target_net: $('[data-emo-eatgt]').value });
+      const r = await postJson(`/api/emo/plan/map?t_min=${EMO.t}`, kind === 'net' ? { kind: 'net', name: e.name } : { kind: 'ea', name: e.name, target_net: $('[data-emo-eatgt]').value }, 'POST', ac.signal);
       clearInterval(tick);
       planLayer.clearLayers();
       EMO.planRes = r;
@@ -134,13 +135,14 @@
         e.lat = la; e.lon = lo; EMO.stale = true; planLayer.clearLayers(); emoDraw();
         await postJson(`/api/emo/${encodeURIComponent(e.id)}/move`, { lat: la, lon: lo }); emoRun();
       }));
-    } catch (err) { clearInterval(tick); out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+    } catch (err) { clearInterval(tick); out.innerHTML = err.name === 'AbortError' ? '<p class="dim">Search cancelled.</p>' : `<p class="bad">${esc(err.message)}</p>`; }
   }
   async function emoTune() {
     const out = $('#emo-planout'), e = EMO.ents.find((x) => x.id === EMO.focus); if (!out || !e) return;
-    out.innerHTML = '<p><span class="spinner"></span> computing power, antenna and channel options…</p>';
+    const ac = new AbortController();
+    out.innerHTML = '<p><span class="spinner"></span> computing power, antenna and channel options… <button data-cancel>Cancel</button></p>'; out.querySelector('[data-cancel]').addEventListener('click', () => ac.abort());
     try {
-      const r = await postJson(`/api/emo/plan/tune?t_min=${EMO.t}`, { net: e.name });
+      const r = await postJson(`/api/emo/plan/tune?t_min=${EMO.t}`, { net: e.name }, 'POST', ac.signal);
       const P = r.power, A = r.antenna.best_sector, O = r.antenna.omni_now, C = r.channel;
       const apply = async (body) => { await postJson(`/api/emo/plan/tune/apply?t_min=${EMO.t}`, { net: e.name, ...body }); await emoLoad(); emoRun(); };
       out.innerHTML = `<h4>EP measures at the current position</h4>
@@ -151,7 +153,7 @@
       out.querySelector('[data-tune-power]')?.addEventListener('click', () => apply({ eirp_dbm: P.recommended_eirp_dbm }));
       out.querySelector('[data-tune-ant]')?.addEventListener('click', () => apply({ azimuth: A.azimuth, beamwidth: A.beamwidth }));
       out.querySelectorAll('[data-tune-freq]').forEach((b) => b.addEventListener('click', () => apply({ freq_mhz: +b.dataset.tuneFreq })));
-    } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+    } catch (err) { out.innerHTML = err.name === 'AbortError' ? '<p class="dim">Cancelled.</p>' : `<p class="bad">${esc(err.message)}</p>`; }
   }
   async function emoJoint() {
     const out = $('#emo-planout'), e = EMO.ents.find((x) => x.id === EMO.focus); if (!out || !e) return;
@@ -192,8 +194,13 @@
     const hears = f.hears.filter((d) => d.detected), misses = f.hears.filter((d) => !d.detected);
     const radiates = ['emitter', 'effector'].includes(f.kind) || (f.kind === 'receiver' && e.eirp_dbm != null);
     return `<div class="emo-card-head"><b style="color:${col}">${esc(f.name)}</b> <span class="dim">${esc(f.side)} ${esc(KIND_TXT[f.kind] || f.kind)}${f.category ? ' · ' + esc(f.category) : ''}${f.active ? '' : ' · OFF-AIR'}</span>
-        <span class="btns">${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button><button data-emo-multi>Compare with others</button>${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<button data-emo-plannet>EP siting</button> <button data-emo-tune>EP measures: power, antenna, channel</button> <button data-emo-joint>Re-site net (joint)</button>' : ''}<button data-emo-clear>Clear focus</button></span></div>
-      ${f.kind === 'effector' ? `<div class="specset"><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
+        <span class="btns"><button data-emo-clear title="Clear focus">×</button></span></div>
+      <div class="emo-groups">
+        <div class="grp"><span class="lbl">Act</span>${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button></div>
+        ${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<div class="grp"><span class="lbl">Plan</span><button data-emo-plannet>EP siting</button><button data-emo-tune>EP measures</button><button data-emo-joint>Re-site net</button></div>' : ''}
+        ${f.kind === 'effector' ? `<div class="grp"><span class="lbl">Plan</span><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
+        <div class="grp"><span class="lbl">Compare</span><button data-emo-multi>With others</button></div>
+      </div>
       <div id="emo-planout"></div>
       ${f.legend ? `<p class="dim">Footprint: where its signal is above ${f.legend.threshold_dbm} dBm (${esc(f.legend.basis)}); darker = just audible, brighter = +10 and +20 dB above; the outline is the limit.${f.kind === 'effector' ? ' Hatched magenta: denial it causes on victim nets.' : ''}</p>` : ''}
       ${f.fix?.fix ? `<p><b style="color:${f.fix.targetable ? '#ff4646' : '#f3b23e'}">${f.fix.targetable ? 'TARGET-QUALITY FIX' : 'Fixed'}: ±${f.fix.fix.error_m} m</b> <span class="dim">(cut ${f.fix.fix.cut_deg}°, ${esc(f.fix.fix.sensors.join(' + '))})</span></p>` : (heard.some((d) => d.df) ? '<p class="dim">Single line of bearing only: not fixed.</p>' : '')}

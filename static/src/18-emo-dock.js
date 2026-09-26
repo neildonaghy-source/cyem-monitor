@@ -13,9 +13,24 @@
   }
   async function emoDockTool(tool) {
     if (tool === 'panel') { document.getElementById('emo-dockcard')?.remove(); return openEMO(); }
+    if (tool === 'undo') {
+      try {
+        const r = await postJson('/api/emo/undo', {});
+        EMO.ents = r.entities; EMO.res = null; emoClearFocus(); planLayer.clearLayers(); emoDraw();
+        emoStatus(`Undid: ${r.undone}${r.depth ? ` (${r.depth} more)` : ''}`); await emoRun();
+      } catch (e) { emoStatus('Nothing to undo'); }
+      return;
+    }
+    if (tool === 'space') {
+      const toDevice = wsId() === 'default';
+      const b = emoDockCard('Scenario space', `<p>Now: <b>${toDevice ? 'Shared (all devices)' : 'This device only'}</b>.</p><p class="dim">${toDevice ? 'A private space keeps your experiments off the shared scenario.' : 'The shared space is what every device sees.'}</p><p><button data-space-go>${toDevice ? 'Switch to this device only' : 'Switch to shared'}</button></p>`);
+      b.querySelector('[data-space-go]').addEventListener('click', () => { localStorage.setItem('cyem-ws-mode', toDevice ? 'device' : 'shared'); location.reload(); });
+      return;
+    }
+    if (tool === 'time') { const sc = document.getElementById('emo-scrub'); if (sc) sc.classList.toggle(matchMedia('(pointer: coarse)').matches ? 'open' : 'closed'); else emoScrubber(); return; }
     if (tool === 'side') { EMO.side = EMO.side === 'blue' ? 'red' : 'blue'; localStorage.setItem('cyem-side', EMO.side); document.getElementById('emo-dock')?.remove(); emoDock(); document.getElementById('emo-dockcard')?.remove(); return; }
     if (tool === 'layers') {
-      const b = emoDockCard('Layers', EMO_LAYERS.map(([k, l, col]) => `<label style="display:block"><input type="checkbox" data-dock-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${col}">■</span> ${l}</label>`).join(''));
+      const b = emoDockCard('EMO overlays', EMO_LAYERS.map(([k, l, col]) => `<label style="display:block"><input type="checkbox" data-dock-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${col}">■</span> ${l}</label>`).join(''));
       b.querySelectorAll('[data-dock-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.dockLayer] = cb.checked; emoDraw(); }));
     } else if (tool === 'score') {
       emoDockCard('Scoreboard', emoScoreTable(EMO.res) + (EMO.stale ? '<p class="dim">Stale: run again after moves.</p>' : ''));
@@ -75,9 +90,51 @@
   function emoDock() {
     if (document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['layers', 'Layers'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
+  }
+  function emoScrubber() {
+    if (!EMO.res) return;
+    let sc = document.getElementById('emo-scrub');
+    if (!sc) {
+      sc = document.createElement('div'); sc.id = 'emo-scrub';
+      sc.innerHTML = '<button data-sc="play" title="Play">▶</button><input type="range" min="0" step="5"><span data-sc="lbl"></span>';
+      document.body.appendChild(sc);
+      const inp = sc.querySelector('input');
+      inp.addEventListener('input', () => { sc.querySelector('[data-sc=lbl]').textContent = `T+${inp.value} / ${Math.round(EMO.horizon || 0)} min`; });
+      inp.addEventListener('change', async () => { EMO.t = +inp.value; EMO.stale = true; emoDraw(); await emoRun(); });
+      sc.querySelector('[data-sc=play]').addEventListener('click', async () => {
+        if (EMO.playing) { EMO.playing = false; return; }
+        EMO.playing = true; sc.querySelector('[data-sc=play]').textContent = '⏸';
+        for (let v = EMO.t + 10; v <= +inp.max && EMO.playing; v += 10) { inp.value = v; EMO.t = v; EMO.stale = true; emoDraw(); await emoRun(); }
+        EMO.playing = false; sc.querySelector('[data-sc=play]').textContent = '▶';
+      });
+    }
+    const inp = sc.querySelector('input'); inp.max = Math.max(5, Math.round(EMO.horizon || 0)); inp.value = EMO.t;
+    sc.querySelector('[data-sc=lbl]').textContent = `T+${Math.round(EMO.t)} / ${Math.round(EMO.horizon || 0)} min`;
+  }
+  let staleTimer = null, staleLeft = 0;
+  function emoStaleBanner() {
+    const show = EMO.stale && !EMO.busy && !!EMO.res;
+    let b = document.getElementById('emo-stale');
+    if (!show) { if (b) b.remove(); if (staleTimer) { clearInterval(staleTimer); staleTimer = null; } return; }
+    if (!b) { b = document.createElement('div'); b.id = 'emo-stale'; document.body.appendChild(b); }
+    const paint = () => {
+      b.innerHTML = staleTimer ? `Scenario changed: results shown are from before. Re-running in ${staleLeft} s <button data-st="now">Now</button> <button data-st="cancel">Cancel</button>`
+                               : 'Scenario changed: results shown are from before. <button data-st="now">Re-run</button>';
+      b.querySelector('[data-st=now]').addEventListener('click', () => { if (staleTimer) clearInterval(staleTimer); staleTimer = null; emoRun(); });
+      b.querySelector('[data-st=cancel]')?.addEventListener('click', () => { clearInterval(staleTimer); staleTimer = null; EMO.staleCancelled = true; paint(); });
+    };
+    if (!staleTimer && !EMO.staleCancelled) {
+      staleLeft = 5;
+      staleTimer = setInterval(() => { staleLeft -= 1; if (staleLeft <= 0) { clearInterval(staleTimer); staleTimer = null; emoRun(); } else paint(); }, 1000);
+    }
+    paint();
+  }
+  function emoCoach() {
+    const b = emoDockCard('Getting started', '<ol><li><b>Tap a unit</b> on the map for its card: EMCON, EP siting, EP measures, Compare.</li><li><b>Use the dock</b> for overlays, the scoreboard, time, COAs, the adversary\'s response and the timeline.</li><li><b>Ask</b> in the bar above the map; select a unit first for siting questions.</li></ol><p><button data-coach-ok>Got it</button></p>');
+    b.querySelector('[data-coach-ok]').addEventListener('click', () => { localStorage.setItem('cyem-coach', '1'); document.getElementById('emo-dockcard')?.remove(); });
   }
   function emoAskBar() {
     if (document.getElementById('emo-askbar') || !EMO.ents.length) return;
@@ -115,6 +172,7 @@
       map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ)); document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ);
       new MutationObserver(() => document.body.classList.toggle('emo-hascard', !!document.getElementById('emo-card'))).observe(document.body, { childList: true });
       emoDraw(); emoDock(); emoAskBar();
+      if (!localStorage.getItem('cyem-coach')) emoCoach();
       await emoRun();
     } catch (e) { /* no scenario yet */ }
   }
@@ -123,25 +181,31 @@
   let emoTick = null;
   async function emoRun() {
     if (EMO.busy) { EMO.pending = true; EMO.stale = true; return; }
-    EMO.busy = true; EMO.pending = false; EMO.started = Date.now();
+    EMO.busy = true; EMO.pending = false; EMO.started = Date.now(); EMO.staleCancelled = false; emoStaleBanner(); EMO.abort = new AbortController();
+    const est = Math.max(0, (+localStorage.getItem('cyem-est-' + (EMO.ents?.length || 0)) || 0) - 1.5);
     clearInterval(emoTick);
-    emoTick = setInterval(() => emoStatus(`EMO computing… ${Math.round((Date.now() - EMO.started) / 1000)} s${EMO.res ? '' : ' (first run of a scenario takes about a minute)'}`), 1000);
+    emoTick = setInterval(() => emoStatus(`EMO computing… ${Math.round((Date.now() - EMO.started) / 1000)} s${est ? ` of about ${Math.round(est)} s` : (EMO.res ? '' : ' (first run of a scenario takes about a minute)')} · tap to cancel`), 1000);
     try {
       await emoLoad();
       EMO.prevScore = EMO.res?.score || EMO.prevScore;
-      EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params); EMO.horizon = EMO.res.horizon_min;
-      EMO.stale = EMO.pending; emoDraw(); emoResults(); emoAskBar(); emoDock();
+      EMO.res = await postJson(`/api/emo/run?t_min=${EMO.t}`, EMO.params, 'POST', EMO.abort.signal); EMO.horizon = EMO.res.horizon_min;
+      EMO.stale = EMO.pending; emoDraw(); emoResults(); emoAskBar(); emoDock(); emoScrubber();
+      try { if (EMO.res.compute_s >= 2) localStorage.setItem('cyem-est-' + EMO.ents.length, EMO.res.compute_s); } catch (e) { /* ignore */ }
+      if (EMO.about && !EMO.aboutShown) { EMO.aboutShown = true; emoDockCard('About this scenario', `<p>${esc(EMO.about)}</p>`); }
       if (EMO.multi && EMO.sel.length) { EMO.multiRes = {}; EMO.pairRes = {}; emoMultiRefresh(); } else if (EMO.focus) emoFocus(EMO.focus);
       const fx = EMO.res.fixes.filter((f) => f.targetable).length;
       const worst = [...EMO.res.nets].sort((a, b) => b.denied_pct - a.denied_pct)[0];
       emoStatus(`EMO T+${Math.round(EMO.t)} min${EMO.pending ? ' · updating…' : ''} · ${fx} target-quality fix${fx === 1 ? '' : 'es'}${worst ? ` · ${worst.net} ${worst.denied_pct}% denied` : ''} · ${EMO.res.compute_s} s`);
-    } catch (err) { emoStatus(`EMO error: ${err.message}`); }
-    finally { clearInterval(emoTick); EMO.busy = false; if (EMO.pending) emoRun(); }
+    } catch (err) {
+      if (err.name === 'AbortError') { EMO.pending = false; EMO.staleCancelled = true; if (EMO.res) EMO.stale = true; emoStatus(EMO.res ? 'Cancelled: results shown are from before' : 'Cancelled: tap the chip to run'); }
+      else emoStatus(/run the analysis first/i.test(err.message) ? 'Run the analysis first: tap the chip' : /sign in/i.test(err.message) ? 'Sign in required: reload the page' : `EMO error: ${err.message}`);
+    }
+    finally { clearInterval(emoTick); EMO.busy = false; EMO.abort = null; emoStaleBanner(); if (EMO.pending) emoRun(); }
   }
   function emoStatus(t) {
     const el = $('#emo-status'); if (el) el.textContent = t;
     let chip = document.getElementById('emo-chip');
-    if (!chip) { chip = document.createElement('div'); chip.id = 'emo-chip'; chip.title = 'Open EMO panel'; chip.addEventListener('click', () => openEMO()); document.body.appendChild(chip); }
+    if (!chip) { chip = document.createElement('div'); chip.id = 'emo-chip'; chip.title = 'Open EMO panel'; chip.addEventListener('click', () => { if (EMO.busy && EMO.abort) { EMO.abort.abort(); return; } if (/^Cancelled/.test(chip.textContent)) { emoRun(); return; } openEMO(); }); document.body.appendChild(chip); }
     chip.textContent = t; chip.classList.toggle('busy', /computing|updating/.test(t));
   }
   function emoToast(t) { console.warn(t); emoStatus(t); }
@@ -220,7 +284,7 @@
     const list = EMO.ents.length ? `<table class="grid"><tr><th>Entity</th><th>Role</th><th>MHz</th><th></th></tr>${EMO.ents.map((e) => `<tr class="${e.id === EMO.editId ? 'sel' : ''}"><td style="color:${SIDE_COL[e.side]}">${esc(e.name)}${e.active || e.kind === 'sensor' || e.kind === 'receiver' ? '' : ' <span class="dim">(off-air)</span>'}</td><td class="dim">${esc(KIND_TXT[e.kind])}${e.category ? ' · ' + esc(e.category) : ''}</td><td class="mono">${e.freq_mhz}${e.f_hi_mhz ? '–' + e.f_hi_mhz : ''}</td><td><button data-emo-edit="${esc(e.id)}">Edit</button></td></tr>`).join('')}</table>` : '<p class="dim">No entities: load an example.</p>';
     const H = Math.max(EMO.horizon, 0);
     openModal('EMO: red / blue in the spectrum', `<p class="dim">Notional scenarios. ES: who can hear and fix whom. EA: whose nets are denied. EP: EMCON, siting, antennas. Drag units on the map at T+0.</p>
-      <div class="specset"><select id="emo-ex"><option value="">Load example…</option>${EMO.examples.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</select> <button id="emo-ex-go">Load</button></div>
+      <div class="specset"><select id="emo-ex"><option value="">Load example…</option>${[['Home ground (AR)', /^0[de]\./], ['Operational MDO', /^0[bc]?\./], ['Vignettes', /./]].reduce((acc, [g, re]) => { const rest = EMO.examples.filter((x) => !acc.used.has(x.id) && re.test(x.title)); rest.forEach((x) => acc.used.add(x.id)); if (rest.length) acc.html += `<optgroup label="${g}">${rest.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</optgroup>`; return acc; }, { used: new Set(), html: '' }).html}</select> <button id="emo-ex-go">Load</button></div>
       ${EMO.about ? `<p class="dim">${esc(EMO.about)}</p>` : ''}
       <div class="specset">Save current as <input id="emo-sc-name" placeholder="scenario name" style="width:180px"> <button id="emo-sc-save">Save</button>
         ${(EMO.scen || []).map((x) => `<span style="white-space:nowrap">${esc(x.name)} <span class="dim">(${x.entities})</span> <button data-sc-load="${esc(x.id)}">Load</button><button data-sc-del="${esc(x.id)}">×</button></span>`).join(' ')}</div>
@@ -329,6 +393,8 @@
     });
     $('#emo-ex-go').addEventListener('click', async () => {
       const id = $('#emo-ex').value; if (!id) return;
+      if (wsId() === 'default' && EMO.ents.length && !EMO.loadArmed) { EMO.loadArmed = true; $('#emo-ex-go').textContent = 'Replace the shared scenario? Tap again'; setTimeout(() => { EMO.loadArmed = false; const b = $('#emo-ex-go'); if (b) b.textContent = 'Load'; }, 6000); return; }
+      EMO.loadArmed = false;
       emoStatus('loading…');
       try {
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
@@ -393,3 +459,5 @@
     if (EMO.res) emoDraw();
   }
   $('#btn-emo').addEventListener('click', () => openEMO());
+
+  { const _emoDraw = emoDraw; emoDraw = function () { _emoDraw(); emoStaleBanner(); }; }

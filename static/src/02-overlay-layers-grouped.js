@@ -72,7 +72,7 @@
     saved[L_.id] = on; saveLs('cyem.layers', saved);
   }
   function buildLayerPanel() {
-    layerCtl.innerHTML = `<h3><span>Layers <span class="dim" style="letter-spacing:0;text-transform:none">build ${BUILD}</span></span><a href="#" id="layers-toggle">hide</a></h3>`;
+    layerCtl.innerHTML = `<h3><span>Map layers <span class="dim" style="letter-spacing:0;text-transform:none">build ${BUILD}</span></span><a href="#" id="layers-toggle">hide</a></h3>`;
     for (const g of GROUPS) {
       const sec = document.createElement('div');
       sec.className = 'lgroup' + (collapsed[g.id] ? ' collapsed' : '');

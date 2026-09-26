@@ -53,7 +53,8 @@ class PasswordGate(BaseHTTPMiddleware):
         if not pw:
             return await call_next(request)
         path = request.url.path
-        if request.headers.get("tailscale-user-login") or path.startswith(EXEMPT_PREFIX) or _valid(request.cookies.get(COOKIE)):
+        # only requests that arrive through Tailscale Funnel are gated; tailnet, LAN and local traffic pass
+        if not request.headers.get("tailscale-funnel-request") or path.startswith(EXEMPT_PREFIX) or _valid(request.cookies.get(COOKIE)):
             return await call_next(request)
         tok = os.environ.get("SDR_INGEST_TOKEN")
         if tok and request.headers.get("authorization") == f"Bearer {tok}":

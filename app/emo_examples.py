@@ -462,3 +462,124 @@ EXAMPLES["littoral-a2ad"]["entities"] += [
 _sp = ea("Red GNSS spoofer (van)", R, "nav", 51.160, -1.980, 2, 1575.42, 2046, 20, notes="Low power: aims to be accepted, not to deny")
 _sp["ea_mode"] = "spoof"
 EXAMPLES["a303-gnss"]["entities"].append(_sp)
+
+
+# ---- 2026-09-26: two home-ground MDO scenarios built for AR (centres at ///shares.cared.shunts and ///gratitude.system.segmented)
+CHI = [
+    # blue: home defence of the Portsmouth approaches, Thorney Island and Chichester Harbour
+    em("Blue Harbour HQ (Chichester)", B, "comms", 50.8537, -0.7696, 8, BVL, 25, 46, sens_dbm=-110, js_req_db=0, hop_bw_khz=58000,
+       notes="Notional coordination HQ at the scenario centre; hopping 30-88 MHz"),
+    rx("Blue OP (The Trundle)", B, "Blue Harbour HQ (Chichester)", 50.8890, -0.7580, 3, BVL, 25, 37),
+    rx("Blue patrol (Itchenor)", B, "Blue Harbour HQ (Chichester)", 50.8000, -0.8630, 2, BVL, 25, 37, track=[[50.7900, -0.9100]], speed_kmh=6),
+    rx("Blue Thorney Island det", B, "Blue Harbour HQ (Chichester)", 50.8180, -0.9170, 4, BVL, 25, 40),
+    em("Blue UHF ship net", B, "comms", 50.7600, -0.9400, 20, BU, 25, 47, sens_dbm=-105, js_req_db=0, sidc=FS,
+       track=[[50.7200, -1.0500]], speed_kmh=20, notes="Patrol vessel in the Solent approach"),
+    rx("Blue RIB (harbour)", B, "Blue UHF ship net", 50.8050, -0.8900, 2, BU, 25, 40, sidc=FS, track=[[50.7800, -0.9300]], speed_kmh=25),
+    rx("Blue helicopter (UHF)", B, "Blue UHF ship net", 50.8300, -0.9600, 250, BU, 25, 40, sidc=FA,
+       track=[[50.7700, -0.8200], [50.8300, -0.9600]], speed_kmh=160),
+    em("Blue harbour radar (Thorney)", B, "radar", 50.8180, -0.9160, 25, 9410, 20000, 82, pattern="sector", azimuth=180, beamwidth=180),
+    em("Blue SATCOM (HQ)", B, "comms", 50.8540, -0.7690, 3, 7950, 5000, 58, pattern="sector", azimuth=170, beamwidth=5),
+    em("Blue UAS GCS (Goodwood)", B, "datalink", 50.8590, -0.7590, 4, 2350, 5000, 38, sens_dbm=-95, js_req_db=6),
+    rx("Blue UAV", B, "Blue UAS GCS (Goodwood)", 50.8400, -0.8300, 300, 2350, 5000, 30, sidc=FA,
+       track=[[50.7900, -0.9000], [50.7800, -0.8000], [50.8400, -0.8300]], speed_kmh=90),
+    es("Blue ES/DF (Trundle)", B, 50.8890, -0.7580, 6, 20, 3000, -115, df=2),
+    es("Blue ES/DF (Thorney)", B, 50.8180, -0.9170, 12, 20, 3000, -115, df=2),
+    es("Blue ES/DF (Selsey)", B, 50.7350, -0.7900, 8, 20, 3000, -115, df=2),
+    ea("Blue VHF jammer (Bognor)", B, "comms", 50.7950, -0.6900, 6, RVL, 25, 58, notes="Against the red raid net"),
+    ea("Blue C-UAS (harbour)", B, "datalink", 50.8050, -0.8900, 3, 2400, 20000, 45, notes="Against the red UAV datalink"),
+    em("GPS L1 (space)", B, "nav", 50.82, -0.85, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140),
+    rx("Blue RIB (GNSS)", B, "GPS L1 (space)", 50.8050, -0.8900, 2, 1575.42, 2046, sidc=FS, track=[[50.7800, -0.9300]], speed_kmh=25),
+    rx("Blue UAV (GNSS)", B, "GPS L1 (space)", 50.8400, -0.8300, 300, 1575.42, 2046, sidc=FA,
+       track=[[50.7900, -0.9000], [50.7800, -0.8000], [50.8400, -0.8300]], speed_kmh=90),
+    # red: raid group in the Channel, landed recce, UAV, GNSS interference
+    em("Red raid net (mother ship)", R, "comms", 50.6800, -0.8500, 15, RVL, 25, 50, sens_dbm=-110, js_req_db=0, sidc=HS,
+       track=[[50.7000, -0.9500]], speed_kmh=15),
+    rx("Red landing party (Wittering)", R, "Red raid net (mother ship)", 50.7750, -0.8700, 2, RVL, 25, 40, track=[[50.7900, -0.8400]], speed_kmh=4),
+    rx("Red recce (Selsey Bill)", R, "Red raid net (mother ship)", 50.7250, -0.7900, 2, RVL, 25, 40),
+    em("Red ship radar", R, "radar", 50.6800, -0.8500, 18, 9400, 20000, 85, sidc=HS, track=[[50.7000, -0.9500]], speed_kmh=15),
+    es("Red ship ES", R, 50.6800, -0.8500, 20, 20, 3000, -112, df=3, sidc=HS, track=[[50.7000, -0.9500]], speed_kmh=15),
+    es("Red recce ES (Pagham)", R, 50.7700, -0.7500, 2, 20, 1000, -110, df=3),
+    em("Red UAS GCS (ship)", R, "datalink", 50.6810, -0.8490, 12, 2440, 20000, 40, sens_dbm=-95, js_req_db=6, sidc=HS),
+    rx("Red UAV", R, "Red UAS GCS (ship)", 50.7600, -0.8800, 200, 2440, 20000, 25, sidc=HA,
+       track=[[50.8200, -0.9200], [50.8100, -0.7700], [50.7600, -0.8800]], speed_kmh=80),
+    ea("Red GNSS jammer (van, A27)", R, "nav", 50.8480, -0.8300, 2, 1575.42, 2046, 30, notes="Low power, mobile"),
+    ea("Red UHF jammer (ship)", R, "comms", 50.6800, -0.8500, 15, BU, 25, 62, sidc=HS, track=[[50.7000, -0.9500]], speed_kmh=15),
+    # grey: civil
+    em("Goodwood ATC (VHF)", G, "comms", 50.8590, -0.7590, 12, 122.45, 25, 44, sens_dbm=-110, js_req_db=0, sidc=NL),
+    rx("Light aircraft (Goodwood)", G, "Goodwood ATC (VHF)", 50.8700, -0.7900, 500, 122.45, 25, 40, sidc=NA,
+       track=[[50.8200, -0.9000], [50.8700, -0.7900]], speed_kmh=170),
+    em("FM broadcast (Chichester)", G, "comms", 50.8600, -0.7200, 60, 96.7, 200, 60, sidc=NL),
+    em("Mobile mast (Chichester)", G, "comms", 50.8380, -0.7800, 25, 806.0, 10000, 60, sidc=NL),
+    em("Harbour ferry (marine VHF)", G, "comms", 50.8020, -0.8700, 5, 156.8, 25, 44, sens_dbm=-110, js_req_db=0, sidc=NS,
+       track=[[50.7900, -0.9300]], speed_kmh=12),
+    rx("Yacht (Chichester Harbour)", G, "Harbour ferry (marine VHF)", 50.7950, -0.9000, 4, 156.8, 25, 37, sidc=NS),
+    em("Airliner (ADS-B, Solent)", G, "other", 50.8000, -1.0000, 6000, 1090.0, 2000, 57, sidc=NA, track=[[50.9000, -0.6000]], speed_kmh=600),
+    em("GPS L1 (civil users)", G, "nav", 50.84, -0.80, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140, sidc=NL),
+    rx("Civil GNSS (A27 Fishbourne)", G, "GPS L1 (civil users)", 50.8380, -0.8200, 2, 1575.42, 2046, sidc=NL),
+    rx("Civil GNSS (Chichester centre)", G, "GPS L1 (civil users)", 50.8370, -0.7800, 2, 1575.42, 2046, sidc=NL),
+    rx("Civil GNSS (harbour ferry)", G, "GPS L1 (civil users)", 50.8020, -0.8700, 5, 1575.42, 2046, sidc=NS, track=[[50.7900, -0.9300]], speed_kmh=12),
+]
+
+COR = [
+    # blue: a notional HQ site at the scenario centre with its backhaul and a mobile reserve on the Box Hill ridge
+    em("Blue Site HQ (Neston)", B, "comms", 51.4214, -2.2154, 10, BVL, 25, 46, sens_dbm=-110, js_req_db=0, hop_bw_khz=58000,
+       notes="Site command net; hopping 30-88 MHz"),
+    rx("Blue guard force (Rudloe)", B, "Blue Site HQ (Neston)", 51.4170, -2.2470, 3, BVL, 25, 37),
+    rx("Blue QRF (Box Hill)", B, "Blue Site HQ (Neston)", 51.4190, -2.2650, 4, BVL, 25, 40, track=[[51.4080, -2.2250]], speed_kmh=30),
+    rx("Blue picket (Lacock)", B, "Blue Site HQ (Neston)", 51.4150, -2.1200, 2, BVL, 25, 37),
+    em("Blue microwave backhaul (Neston)", B, "comms", 51.4216, -2.2150, 20, 7500, 28000, 55, pattern="sector", azimuth=290, beamwidth=6,
+       sens_dbm=-90, js_req_db=10, notes="Point-to-point link to the Colerne relay"),
+    rx("Blue relay (Colerne)", B, "Blue microwave backhaul (Neston)", 51.4400, -2.2900, 25, 7500, 28000, 55, pattern="sector", azimuth=110, beamwidth=6),
+    em("Blue SATCOM (site)", B, "comms", 51.4210, -2.2160, 3, 7950, 5000, 58, pattern="sector", azimuth=175, beamwidth=5),
+    em("Blue UHF ground-air", B, "comms", 51.4390, -2.2900, 15, BU, 25, 47, sens_dbm=-105, js_req_db=0),
+    rx("Blue helicopter (Colerne)", B, "Blue UHF ground-air", 51.4400, -2.2900, 200, BU, 25, 40, sidc=FA,
+       track=[[51.4200, -2.2100], [51.3900, -2.1500], [51.4400, -2.2900]], speed_kmh=150),
+    em("Blue GBAD radar (Colerne)", B, "radar", 51.4400, -2.2900, 12, 3000, 10000, 92),
+    es("Blue ES/DF (Box Hill)", B, 51.4190, -2.2650, 8, 20, 3000, -115, df=2),
+    es("Blue ES/DF (Neston mast)", B, 51.4214, -2.2154, 20, 20, 3000, -115, df=2),
+    es("Blue ES/DF (Lacock)", B, 51.4150, -2.1200, 6, 20, 3000, -115, df=2),
+    ea("Blue C-UAS (site)", B, "datalink", 51.4220, -2.2170, 4, 2440, 20000, 45, notes="Against the red drone datalink"),
+    ea("Blue VHF jammer (Box Hill)", B, "comms", 51.4180, -2.2700, 8, RVL, 25, 58, notes="Against the red team net"),
+    em("GPS L1 (space)", B, "nav", 51.42, -2.22, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140),
+    rx("Blue QRF (GNSS)", B, "GPS L1 (space)", 51.4190, -2.2650, 4, 1575.42, 2046, track=[[51.4080, -2.2250]], speed_kmh=30),
+    rx("Blue helicopter (GNSS)", B, "GPS L1 (space)", 51.4400, -2.2900, 200, 1575.42, 2046, sidc=FA,
+       track=[[51.4200, -2.2100], [51.3900, -2.1500], [51.4400, -2.2900]], speed_kmh=150),
+    # red: covert ES/DF team, a drone, a GNSS spoofer on the M4
+    em("Red team net (Corsham park)", R, "comms", 51.4330, -2.1950, 2, RVL, 25, 40, sens_dbm=-110, js_req_db=0, notes="Low power, hand-held"),
+    rx("Red observer (Box village)", R, "Red team net (Corsham park)", 51.4130, -2.2600, 2, RVL, 25, 37, track=[[51.4200, -2.2400]], speed_kmh=4),
+    rx("Red observer (Neston edge)", R, "Red team net (Corsham park)", 51.4260, -2.2080, 2, RVL, 25, 37),
+    es("Red ES/DF (van, A4)", R, 51.4290, -2.1700, 3, 20, 3000, -112, df=3, track=[[51.4360, -2.2300]], speed_kmh=40),
+    es("Red ES/DF (Bowden Hill)", R, 51.4030, -2.1150, 4, 20, 3000, -112, df=3),
+    em("Red drone controller", R, "datalink", 51.4330, -2.1960, 2, 2440, 20000, 25, sens_dbm=-90, js_req_db=6),
+    rx("Red drone", R, "Red drone controller", 51.4260, -2.2100, 120, 2440, 20000, 20, sidc=HA,
+       track=[[51.4200, -2.2200], [51.4160, -2.2050], [51.4260, -2.2100]], speed_kmh=50),
+    ea("Red GNSS spoofer (M4 car)", R, "nav", 51.4650, -2.2100, 2, 1575.42, 2046, 20, track=[[51.4600, -2.1200]], speed_kmh=90,
+       notes="Aims to be accepted, not to deny"),
+    ea("Red VHF jammer (car)", R, "comms", 51.4380, -2.1650, 2, BVL, 25, 50, track=[[51.4300, -2.2500]], speed_kmh=40, notes="Against the site net"),
+    # grey: civil
+    em("FM broadcast (Bath)", G, "comms", 51.3820, -2.3080, 80, 103.0, 200, 70, sidc=NL),
+    em("Mobile mast (Corsham)", G, "comms", 51.4330, -2.1880, 30, 806.0, 10000, 60, sidc=NL),
+    em("Bristol ATC radar", G, "radar", 51.3830, -2.7190, 30, 2800, 2000, 90, sidc=NL),
+    em("Airliner (ADS-B, Bristol approach)", G, "other", 51.4500, -2.3500, 3000, 1090.0, 2000, 57, sidc=NA, track=[[51.4000, -2.6500]], speed_kmh=400),
+    em("Wi-Fi (Neston)", G, "other", 51.4200, -2.2170, 5, 2437, 20000, 20, sidc=NL),
+    em("GPS L1 (civil users)", G, "nav", 51.43, -2.20, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140, sidc=NL),
+    rx("Civil GNSS (M4 J17)", G, "GPS L1 (civil users)", 51.4720, -2.1250, 2, 1575.42, 2046, sidc=NL),
+    rx("Civil GNSS (A4 Corsham)", G, "GPS L1 (civil users)", 51.4330, -2.1900, 2, 1575.42, 2046, sidc=NL),
+    rx("Civil GNSS (Neston)", G, "GPS L1 (civil users)", 51.4210, -2.2150, 2, 1575.42, 2046, sidc=NL),
+]
+_sp2 = [e for e in COR if e["name"] == "Red GNSS spoofer (M4 car)"][0]; _sp2["ea_mode"] = "spoof"
+
+EXAMPLES = {
+    "sussex-coast": {"title": "0d. Sussex coast: Chichester and the Solent approaches (notional, AR)",
+                     "about": "Home-defence MDO on real ground you can stand on. Blue holds the Portsmouth approaches, Thorney Island "
+                              "and Chichester Harbour from a coordination HQ at ///shares.cared.shunts; red probes from the Channel with "
+                              "a raid group, a landed recce party, a UAV and GNSS interference on the A27; grey is Goodwood, the harbour "
+                              "and the town. Built for the AR view: stand at the centre and the emitters sit in their real directions.",
+                     "centre": [50.82, -0.85], "zoom": 12, "params": {"df_fix_good_m": 800}, "entities": CHI},
+    "corsham-hub": {"title": "0e. Corsham hub: site defence around Neston (notional, AR)",
+                    "about": "Site-defence MDO centred on ///gratitude.system.segmented. Blue protects a notional HQ site, its microwave "
+                             "backhaul to Colerne and its SATCOM, with a QRF on the Box Hill ridge; red is a covert ES/DF team, a drone "
+                             "and a GNSS spoofer on the M4; grey is Bath and Bristol civil, Corsham's mast and M4 traffic. Built for the "
+                             "AR view from the centre.",
+                    "centre": [51.425, -2.22], "zoom": 13, "params": {"df_fix_good_m": 500}, "entities": COR},
+    **EXAMPLES}

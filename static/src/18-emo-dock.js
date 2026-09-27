@@ -444,9 +444,9 @@
     body.querySelectorAll('button[data-sc-load]').forEach((b) => b.addEventListener('click', async () => {
       await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
     body.querySelectorAll('button[data-sc-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this saved scenario?')) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
+      if (!armConfirm(b)) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
     $('#emo-del')?.addEventListener('click', async () => {
-      if (!confirm('Delete this entity?')) return;
+      if (!armConfirm($('#emo-del'), 'Tap again to delete')) return;
       await fetch(`/api/emo/${encodeURIComponent(EMO.editId)}`, { method: 'DELETE' }); EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
     });
     $('#emo-pick').addEventListener('click', () => {

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-27b';
+  const BUILD = '2026-09-27c';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -38,6 +38,15 @@
     if (localStorage.getItem('cyem-ws-mode') !== 'device') return 'default';
     let v = localStorage.getItem('cyem-ws'); if (!v) { v = 'd' + Math.random().toString(36).slice(2, 9); localStorage.setItem('cyem-ws', v); }
     return v;
+  }
+  // Two-tap confirm. The Mac and iPhone app web views do not show window.confirm() (it returns false), so deletes
+  // never ran there. First tap arms the button (red, "Confirm" for 4 s); the second tap goes ahead.
+  function armConfirm(btn, label = 'Confirm') {
+    if (!btn) return true;
+    if (btn.dataset.armed === '1') { delete btn.dataset.armed; btn.classList.remove('armed'); return true; }
+    const txt = btn.textContent; btn.dataset.armed = '1'; btn.textContent = label; btn.classList.add('armed');
+    setTimeout(() => { if (btn.dataset.armed === '1') { delete btn.dataset.armed; btn.textContent = txt; btn.classList.remove('armed'); } }, 4000);
+    return false;
   }
   const _fetch = window.fetch.bind(window);
   window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };

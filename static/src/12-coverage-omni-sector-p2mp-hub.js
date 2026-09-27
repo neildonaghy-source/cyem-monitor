@@ -59,7 +59,7 @@
       openCoverage();
     }));
     body.querySelectorAll('button[data-cv-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this site and its planned emitter?')) return;
+      if (!armConfirm(b)) return;
       await fetch(`/api/coverage/${encodeURIComponent(b.dataset.cvDel)}`, { method: 'DELETE' });
       if (covEditId === b.dataset.cvDel) { covEditId = null; covDraft = null; covRes = null; covPreview.clearLayers(); }
       openCoverage(); loadCoverage().catch(() => {}); loadPlanned().catch(() => {});

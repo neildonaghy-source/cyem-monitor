@@ -106,7 +106,7 @@
       draft = planned.find((p) => p.id === b.dataset.edit) || null; openSpectrum(b.dataset.edit);
     }));
     body.querySelectorAll('button[data-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this planned emitter?')) return;
+      if (!armConfirm(b)) return;
       await api(`/api/spectrum/planned/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' });
       if (draft?.id === b.dataset.del) draft = null;
       if (specSel === b.dataset.del) specSel = null;

@@ -274,7 +274,7 @@ def pattern_loss(e: dict, lat: float, lon: float, tx_pos) -> float:
 
 def _p2p_sync(tx, tx_h, rx, rx_h, f_hz, eirp):
     from . import dem
-    from .link_core import analyse, gc_points, haversine_m, sample_count
+    from .link_core import GROUND_MIN_F_HZ, analyse, gc_points, haversine_m, plane_earth_db, sample_count
     D = haversine_m(tx[0], tx[1], rx[0], rx[1])
     if D < 30:
         return eirp - 40.0
@@ -287,6 +287,14 @@ def _p2p_sync(tx, tx_h, rx, rx_h, f_hz, eirp):
     terr = [min(h, g0) if d < CLUTTER_CLEAR_M else min(h, g1) if D - d < CLUTTER_CLEAR_M else h for h, d in zip(terr, dist)]
     r = analyse(dist, terr, h_a_agl=tx_h, h_b_agl=rx_h, f_hz=f_hz, ptx_dbm=eirp, gtx_dbi=0, grx_dbi=0,
                 sens_dbm=-200, rain_mm_h=0)
+    if f_hz >= GROUND_MIN_F_HZ:
+        # ground reflection for low antennas: loss is at least the plane-earth value (same rule as the map footprints)
+        mean_t = sum(terr) / len(terr)
+        sea = sum(1 for h in terr if h <= 1.0) / len(terr)
+        pel = float(plane_earth_db(D, terr[0] + tx_h, terr[-1] + rx_h, mean_t, sea, tx_h, rx_h, f_hz))
+        extra = max(0.0, pel - (r["fspl_db"] + r["diffraction_db"]))
+        if extra:
+            r = {**r, "prx_dbm": r["prx_dbm"] - extra}
     if max(tx_h, rx_h) >= AIR_PATH_H_M and r.get("diffraction_db", 0) > 0:
         # air-ground beyond the horizon: troposcatter-style median loss rather than deep terrain diffraction
         # (approximation in the spirit of ITU-R P.528; the full model is not implemented)

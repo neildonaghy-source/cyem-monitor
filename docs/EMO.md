@@ -114,3 +114,21 @@ Recalibrate restarts the AR session when the compass has drifted. The nearest 25
 - **EMO button (top bar)** is a switch, like Feed and Brief, and lights up while EMO is showing. Off clears the symbols, overlays, chip, dock and cards from this device and stays off across reloads; the scenario itself stays on the box (and on other devices). On brings it back and re-runs; if the workspace is empty it opens the panel to load a scenario. Phone: Tools → Hide EMO; the panel itself is Tools → EMO panel, the chip or the dock.
 - **Re-run** (panel): recompute at the chosen T+. Rarely needed now: the analysis re-runs on its own after any change (stale banner, 5 s), and dragging the T+ slider re-runs on release.
 - **Play time** (panel) and ▶ on the map scrubber: step T+ forward through the scenario horizon, re-running at each step, so you can watch units move along their tracks and on-air windows open and close (detections, fixes and denial change with them). Stop halts it; the slider stays where it stopped.
+
+## Ground reflection for low antennas (2026-09-27)
+
+Before this, footprints and point-to-point levels were free-space loss plus 3-edge Deygout diffraction over the Copernicus surface. For antennas a few metres off the ground that is far too optimistic at VHF/UHF: a 5 W, 50 MHz manpack at 2 m came out at -100 dBm 80 km away, so every overview wash filled its whole calculation radius and drew as a disc.
+
+The loss is now the larger of (free space + terrain diffraction) and the plane-earth two-ray asymptote, 40 log d - 20 log(h1e h2e), for 30 MHz and above:
+
+- effective heights are the antenna's height above the mean terrain of the path, so a hilltop site gets credit, floored at sqrt(h_agl^2 + h_min^2);
+- h_min is Bullington's minimum effective height for vertical polarisation (land: er 15, sigma 0.005 S/m, about 3.8 m at 50 MHz and 0.5 m at 400 MHz; sea, where most of the path is at or below 1 m: er 70, sigma 5 S/m, about 40 m at 50 MHz, so sea paths carry further);
+- HF (below 30 MHz) is unchanged: surface wave is not modelled.
+
+Same rule in the map footprints (`coverage_core.polar_prx`) and EMO point-to-point levels (`emo_api._p2p_sync`), so washes, detections, fixes and J/S agree. The Coverage planner uses the same footprint code and now gives smaller, terrain-shaped areas for low antennas; the Link planner (`link_core.analyse`, engineered links on masts) is unchanged.
+
+Effect on Corsham: net coverage and "red can hear blue" washes fell from about 99% of the disc to 25 to 50% and now follow ridges and valleys. Washes that include a radar or an airborne emitter can still fill the area: those really are detectable to the horizon. For the picture of one unit use its focus card; for two, With others.
+
+Overview DF fixes: the map shows target-quality fixes and fixes within 2 km; coarser fixes (and fixes on civil emitters unless Lines to civil emitters is on) appear only when a unit is selected, as thin dashed outlines.
+
+Deletes use a two-tap confirm (button turns red, "Confirm", 4 s): the Mac and iPhone app web views do not show window.confirm(), which returned false, so no delete ever ran there.

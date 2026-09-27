@@ -277,3 +277,30 @@ def analyse(dist: list[float], terrain: list[float], *, h_a_agl: float, h_b_agl:
                     "bulged": [round(x, 1) for x in bulged], "los": [round(x, 1) for x in los],
                     "f1": [round(x, 2) for x in r1]},
     }
+
+
+# ---- ground reflection (low antennas) ---------------------------------------------------------------------------
+GROUND_MIN_F_HZ = 30e6          # below this (HF) the surface wave dominates; not modelled here
+LAND = (15.0, 0.005)            # relative permittivity, conductivity S/m (ITU-R P.527 average ground)
+SEA = (70.0, 5.0)
+
+
+def min_eff_height_m(f_hz: float, sea: bool = False) -> float:
+    """Bullington minimum effective antenna height, vertical polarisation: an antenna at ground level still behaves
+    as if raised by this much because of the ground's electrical constants (about 3.8 m at 50 MHz over land,
+    0.5 m at 400 MHz, 40 m at 50 MHz over sea)."""
+    er, sig = SEA if sea else LAND
+    lam = 299792458.0 / f_hz
+    return lam / (2 * math.pi) * ((er + 1) ** 2 + (60 * sig * lam) ** 2) ** 0.25
+
+
+def plane_earth_db(d_m, h_a_abs, h_b_abs, mean_terrain_m, sea_frac, h_a_agl, h_b_agl, f_hz):
+    """Plane-earth (two-ray asymptote) loss, dB: 40 log d - 20 log(h1e h2e). Effective heights are height above the
+    mean terrain of the path (credits a hilltop site), floored at sqrt(h_agl^2 + h_min^2). Works on scalars or numpy
+    arrays. Only meaningful beyond the two-ray breakpoint, so callers take max() with the free-space-based loss."""
+    import numpy as _np
+    sea = _np.asarray(sea_frac) > 0.5
+    h0 = _np.where(sea, min_eff_height_m(f_hz, True), min_eff_height_m(f_hz, False))
+    h1 = _np.maximum(_np.asarray(h_a_abs) - mean_terrain_m, _np.sqrt(h_a_agl ** 2 + h0 ** 2))
+    h2 = _np.maximum(_np.asarray(h_b_abs) - mean_terrain_m, _np.sqrt(_np.asarray(h_b_agl, dtype=float) ** 2 + h0 ** 2))
+    return 40 * _np.log10(_np.maximum(d_m, 1.0)) - 20 * _np.log10(h1 * h2)

@@ -90,7 +90,7 @@
       openLinks(); drawLinkResult();
     }));
     body.querySelectorAll('button[data-lk-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this link and its planned emitters?')) return;
+      if (!armConfirm(b)) return;
       await fetch(`/api/links/${encodeURIComponent(b.dataset.lkDel)}`, { method: 'DELETE' });
       if (linkEditId === b.dataset.lkDel) { linkEditId = null; linkDraft = null; linkRes = null; }
       openLinks(); loadLinks().catch(() => {}); loadPlanned().catch(() => {});

@@ -41,6 +41,12 @@ async def main():
         await pg.goto(BASE, wait_until="networkidle"); await pg.wait_for_timeout(800)
         await pg.evaluate("() => document.querySelectorAll('#layers .lgroup a[data-all=off]').forEach(a => a.click())")
         # the EMO button is on/off; when a scenario is already showing the panel comes from the dock
+        # the shared start-up default may have EMO switched off: switch it on first
+        if not await pg.evaluate("() => document.getElementById('btn-emo').classList.contains('active') || !!document.getElementById('emo-dock')"):
+            await pg.click("#btn-emo")
+        # wait for EMO to finish starting (dock or chip) before using the on/off button, so the click cannot toggle it off
+        try: await pg.wait_for_function("() => document.getElementById('emo-dock') || document.getElementById('emo-chip')", timeout=60000)
+        except Exception: pass
         await pg.evaluate("() => { const d = document.querySelector('#emo-dock [data-dock=panel]'); (d || document.getElementById('btn-emo')).click(); }"); await pg.wait_for_timeout(2500)
         rec("panel opens", bool(await pg.query_selector("#emo-ex")))
         rec("workspace toggle shows device", (await pg.evaluate("() => document.getElementById('emo-ws')?.value")) == "device")

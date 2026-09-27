@@ -9,6 +9,7 @@
   const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
     ['blue_denied', 'Blue nets denied', '#dc3cdc'], ['red_denied', 'Red nets denied', '#ffa028'], ['blue_cov', 'Blue net coverage', '#3c8cff'],
     ['red_cov', 'Red net coverage', '#ff5a5a'], ['grey_seen', 'Civil emissions heard', '#c8ccd4'], ['grey_denied', 'Civil users denied (collateral)', '#ffffff'], ['civil_lines', 'Lines to civil emitters', '#a6b0bd'], ['lines', 'Detections, bearings, J/S lines', '#c8d3e0']];
+  const FIX_OVERVIEW_M = 2000;  // overview shows target-quality fixes and fixes within 2 km; coarser ones only for a selected unit
   const KIND_TXT = { emitter: 'Emitter', receiver: 'Outstation', sensor: 'ES sensor', effector: 'EA effector' };
   function emoIcon(e, off = [0, 0]) {
     const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : e.side === 'grey' ? 'SNGPU----------' : 'SHGPU----------');
@@ -51,9 +52,13 @@
         L.polyline([emoPosId(d.sensor_id, d.a), emoPosId(d.target_id, d.b)], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: EMO.stale ? 0.35 : 0.7, dashArray: d.df ? null : '2 5' })
           .bindTooltip(`${esc(d.sensor)} hears ${esc(d.target)}: ${d.level_dbm} dBm, margin ${d.margin_db} dB${d.df ? ' (DF bearing)' : ''}`).addTo(emoLayer);
       }
-      for (const f of r.fixes.filter((x) => x.fix && (M ? selNames.has(x.target) : (!EMO.focus || x.target === F?.name)))) {
-        const col = f.target_side === 'blue' ? '#ff4646' : '#3cc8ff';
-        L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : 1.5, fillOpacity: f.targetable ? 0.25 : 0.08 })
+      const overview = !M && !EMO.focus;
+      const greyNames = new Set(EMO.ents.filter((e) => e.side === 'grey').map((e) => e.name));
+      for (const f of r.fixes.filter((x) => x.fix && (M ? selNames.has(x.target) : (!EMO.focus || x.target === F?.name))
+          && (!overview || x.targetable || (x.fix.error_m <= FIX_OVERVIEW_M && (EMO.on.civil_lines || !greyNames.has(x.target)))))) {
+        const col = f.target_side === 'blue' ? '#ff4646' : f.target_side === 'grey' ? '#a6b0bd' : '#3cc8ff';
+        const coarse = !f.targetable && f.fix.error_m > FIX_OVERVIEW_M;
+        L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : coarse ? 1 : 1.5, fillOpacity: f.targetable ? 0.25 : coarse ? 0 : 0.08, dashArray: coarse ? '4 6' : null, opacity: coarse ? 0.6 : 1 })
           .bindTooltip(`${f.targetable ? 'TARGET-QUALITY FIX' : 'Fix'}: ${esc(f.target)} ±${f.fix.error_m} m (cut ${f.fix.cut_deg}°, ${esc(f.fix.sensors.join(' + '))})`, { direction: 'top' }).addTo(emoLayer);
         if (f.targetable) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl', html: `FIX ±${f.fix.error_m} m`, iconSize: [84, 16], iconAnchor: [42, -10] }) }).addTo(emoLayer);
         else if (f.located && (EMO.on.civil_lines || M || EMO.focus)) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl emo-loc', html: `located ±${f.fix.error_m} m`, iconSize: [96, 16], iconAnchor: [48, -10] }) }).addTo(emoLayer);
@@ -99,7 +104,15 @@
       if (!EMO.res) { emoCard('<span class="dim">Waiting for the analysis to finish…</span>'); return; }
       EMO.focusRes = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`);
       emoDraw(); emoCard(emoCardHtml(EMO.focusRes));
-    } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
+    } catch (err) {
+      if (/HTTP 404/.test(err.message)) {
+        emoClearFocus();
+        emoCard('<span class="dim">That unit is no longer in the scenario: it was changed on another device (the shared space). Reloading the current scenario…</span>');
+        try { await emoLoad(); await emoRun(); } catch (e2) { /* the chip shows run errors */ }
+        setTimeout(() => { if (!EMO.focus) $('#emo-card')?.remove(); }, 4000);
+      } else if (/HTTP 409/.test(err.message)) { emoCard('<span class="dim">Analysis out of date: re-running…</span>'); try { await emoRun(); emoFocus(id); } catch (e2) { /* ignore */ } }
+      else emoCard(`<span class="bad">${esc(err.message)}</span>`);
+    }
   }
   async function emoPlan(kind) {
     const out = $('#emo-planout'); if (!out) return;
@@ -224,7 +237,7 @@
     emoCard('<span class="dim">Loading selection…</span>');
     if (!EMO.res) { emoCard('<span class="dim">Waiting for the analysis to finish…</span>'); return; }
     try {
-      await Promise.all(EMO.sel.filter((id) => !EMO.multiRes[id]).map(async (id) => { EMO.multiRes[id] = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`); }));
+      EMO.sel = EMO.sel.filter((id) => EMO.ents.some((e) => e.id === id)); await Promise.all(EMO.sel.filter((id) => !EMO.multiRes[id]).map(async (id) => { EMO.multiRes[id] = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`); }));
       const pairs = []; for (let i = 0; i < EMO.sel.length; i++) for (let k = i + 1; k < EMO.sel.length; k++) pairs.push([EMO.sel[i], EMO.sel[k]]);
       for (const key of Object.keys(EMO.pairRes)) { const [a, b] = key.split('|'); if (!EMO.sel.includes(a) || !EMO.sel.includes(b)) delete EMO.pairRes[key]; }
       await Promise.all(pairs.filter(([a, b]) => !(`${a}|${b}` in EMO.pairRes)).map(async ([a, b]) => {

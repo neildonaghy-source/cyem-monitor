@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-27b';
+  const BUILD = '2026-09-27c';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -38,6 +38,15 @@
     if (localStorage.getItem('cyem-ws-mode') !== 'device') return 'default';
     let v = localStorage.getItem('cyem-ws'); if (!v) { v = 'd' + Math.random().toString(36).slice(2, 9); localStorage.setItem('cyem-ws', v); }
     return v;
+  }
+  // Two-tap confirm. The Mac and iPhone app web views do not show window.confirm() (it returns false), so deletes
+  // never ran there. First tap arms the button (red, "Confirm" for 4 s); the second tap goes ahead.
+  function armConfirm(btn, label = 'Confirm') {
+    if (!btn) return true;
+    if (btn.dataset.armed === '1') { delete btn.dataset.armed; btn.classList.remove('armed'); return true; }
+    const txt = btn.textContent; btn.dataset.armed = '1'; btn.textContent = label; btn.classList.add('armed');
+    setTimeout(() => { if (btn.dataset.armed === '1') { delete btn.dataset.armed; btn.textContent = txt; btn.classList.remove('armed'); } }, 4000);
+    return false;
   }
   const _fetch = window.fetch.bind(window);
   window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };
@@ -987,7 +996,7 @@
       draft = planned.find((p) => p.id === b.dataset.edit) || null; openSpectrum(b.dataset.edit);
     }));
     body.querySelectorAll('button[data-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this planned emitter?')) return;
+      if (!armConfirm(b)) return;
       await api(`/api/spectrum/planned/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' });
       if (draft?.id === b.dataset.del) draft = null;
       if (specSel === b.dataset.del) specSel = null;
@@ -1127,7 +1136,7 @@
       openLinks(); drawLinkResult();
     }));
     body.querySelectorAll('button[data-lk-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this link and its planned emitters?')) return;
+      if (!armConfirm(b)) return;
       await fetch(`/api/links/${encodeURIComponent(b.dataset.lkDel)}`, { method: 'DELETE' });
       if (linkEditId === b.dataset.lkDel) { linkEditId = null; linkDraft = null; linkRes = null; }
       openLinks(); loadLinks().catch(() => {}); loadPlanned().catch(() => {});
@@ -1255,7 +1264,7 @@
       openCoverage();
     }));
     body.querySelectorAll('button[data-cv-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this site and its planned emitter?')) return;
+      if (!armConfirm(b)) return;
       await fetch(`/api/coverage/${encodeURIComponent(b.dataset.cvDel)}`, { method: 'DELETE' });
       if (covEditId === b.dataset.cvDel) { covEditId = null; covDraft = null; covRes = null; covPreview.clearLayers(); }
       openCoverage(); loadCoverage().catch(() => {}); loadPlanned().catch(() => {});
@@ -1510,6 +1519,7 @@
   const EMO_LAYERS = [['blue_seen', 'Blue emissions red can hear', '#ff4646'], ['red_seen', 'Red emissions blue can hear', '#3cc8ff'],
     ['blue_denied', 'Blue nets denied', '#dc3cdc'], ['red_denied', 'Red nets denied', '#ffa028'], ['blue_cov', 'Blue net coverage', '#3c8cff'],
     ['red_cov', 'Red net coverage', '#ff5a5a'], ['grey_seen', 'Civil emissions heard', '#c8ccd4'], ['grey_denied', 'Civil users denied (collateral)', '#ffffff'], ['civil_lines', 'Lines to civil emitters', '#a6b0bd'], ['lines', 'Detections, bearings, J/S lines', '#c8d3e0']];
+  const FIX_OVERVIEW_M = 2000;  // overview shows target-quality fixes and fixes within 2 km; coarser ones only for a selected unit
   const KIND_TXT = { emitter: 'Emitter', receiver: 'Outstation', sensor: 'ES sensor', effector: 'EA effector' };
   function emoIcon(e, off = [0, 0]) {
     const sidc = e.sidc || (e.side === 'blue' ? 'SFGPU----------' : e.side === 'grey' ? 'SNGPU----------' : 'SHGPU----------');
@@ -1552,9 +1562,13 @@
         L.polyline([emoPosId(d.sensor_id, d.a), emoPosId(d.target_id, d.b)], { color: d.sensor_side === 'red' ? '#ff4646' : '#3cc8ff', weight: 1.5, opacity: EMO.stale ? 0.35 : 0.7, dashArray: d.df ? null : '2 5' })
           .bindTooltip(`${esc(d.sensor)} hears ${esc(d.target)}: ${d.level_dbm} dBm, margin ${d.margin_db} dB${d.df ? ' (DF bearing)' : ''}`).addTo(emoLayer);
       }
-      for (const f of r.fixes.filter((x) => x.fix && (M ? selNames.has(x.target) : (!EMO.focus || x.target === F?.name)))) {
-        const col = f.target_side === 'blue' ? '#ff4646' : '#3cc8ff';
-        L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : 1.5, fillOpacity: f.targetable ? 0.25 : 0.08 })
+      const overview = !M && !EMO.focus;
+      const greyNames = new Set(EMO.ents.filter((e) => e.side === 'grey').map((e) => e.name));
+      for (const f of r.fixes.filter((x) => x.fix && (M ? selNames.has(x.target) : (!EMO.focus || x.target === F?.name))
+          && (!overview || x.targetable || (x.fix.error_m <= FIX_OVERVIEW_M && (EMO.on.civil_lines || !greyNames.has(x.target)))))) {
+        const col = f.target_side === 'blue' ? '#ff4646' : f.target_side === 'grey' ? '#a6b0bd' : '#3cc8ff';
+        const coarse = !f.targetable && f.fix.error_m > FIX_OVERVIEW_M;
+        L.circle(f.fix.fix, { radius: f.fix.error_m, color: col, weight: f.targetable ? 3 : coarse ? 1 : 1.5, fillOpacity: f.targetable ? 0.25 : coarse ? 0 : 0.08, dashArray: coarse ? '4 6' : null, opacity: coarse ? 0.6 : 1 })
           .bindTooltip(`${f.targetable ? 'TARGET-QUALITY FIX' : 'Fix'}: ${esc(f.target)} ±${f.fix.error_m} m (cut ${f.fix.cut_deg}°, ${esc(f.fix.sensors.join(' + '))})`, { direction: 'top' }).addTo(emoLayer);
         if (f.targetable) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl', html: `FIX ±${f.fix.error_m} m`, iconSize: [84, 16], iconAnchor: [42, -10] }) }).addTo(emoLayer);
         else if (f.located && (EMO.on.civil_lines || M || EMO.focus)) L.marker(f.fix.fix, { interactive: false, icon: L.divIcon({ className: 'emo-fixlbl emo-loc', html: `located ±${f.fix.error_m} m`, iconSize: [96, 16], iconAnchor: [48, -10] }) }).addTo(emoLayer);
@@ -1600,7 +1614,15 @@
       if (!EMO.res) { emoCard('<span class="dim">Waiting for the analysis to finish…</span>'); return; }
       EMO.focusRes = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`);
       emoDraw(); emoCard(emoCardHtml(EMO.focusRes));
-    } catch (err) { emoCard(`<span class="bad">${esc(err.message)}</span>`); }
+    } catch (err) {
+      if (/HTTP 404/.test(err.message)) {
+        emoClearFocus();
+        emoCard('<span class="dim">That unit is no longer in the scenario: it was changed on another device (the shared space). Reloading the current scenario…</span>');
+        try { await emoLoad(); await emoRun(); } catch (e2) { /* the chip shows run errors */ }
+        setTimeout(() => { if (!EMO.focus) $('#emo-card')?.remove(); }, 4000);
+      } else if (/HTTP 409/.test(err.message)) { emoCard('<span class="dim">Analysis out of date: re-running…</span>'); try { await emoRun(); emoFocus(id); } catch (e2) { /* ignore */ } }
+      else emoCard(`<span class="bad">${esc(err.message)}</span>`);
+    }
   }
   async function emoPlan(kind) {
     const out = $('#emo-planout'); if (!out) return;
@@ -1725,7 +1747,7 @@
     emoCard('<span class="dim">Loading selection…</span>');
     if (!EMO.res) { emoCard('<span class="dim">Waiting for the analysis to finish…</span>'); return; }
     try {
-      await Promise.all(EMO.sel.filter((id) => !EMO.multiRes[id]).map(async (id) => { EMO.multiRes[id] = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`); }));
+      EMO.sel = EMO.sel.filter((id) => EMO.ents.some((e) => e.id === id)); await Promise.all(EMO.sel.filter((id) => !EMO.multiRes[id]).map(async (id) => { EMO.multiRes[id] = await api(`/api/emo/focus/${encodeURIComponent(id)}?t_min=${EMO.t}`); }));
       const pairs = []; for (let i = 0; i < EMO.sel.length; i++) for (let k = i + 1; k < EMO.sel.length; k++) pairs.push([EMO.sel[i], EMO.sel[k]]);
       for (const key of Object.keys(EMO.pairRes)) { const [a, b] = key.split('|'); if (!EMO.sel.includes(a) || !EMO.sel.includes(b)) delete EMO.pairRes[key]; }
       await Promise.all(pairs.filter(([a, b]) => !(`${a}|${b}` in EMO.pairRes)).map(async ([a, b]) => {
@@ -2206,9 +2228,9 @@
     body.querySelectorAll('button[data-sc-load]').forEach((b) => b.addEventListener('click', async () => {
       await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
     body.querySelectorAll('button[data-sc-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!confirm('Delete this saved scenario?')) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
+      if (!armConfirm(b)) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
     $('#emo-del')?.addEventListener('click', async () => {
-      if (!confirm('Delete this entity?')) return;
+      if (!armConfirm($('#emo-del'), 'Tap again to delete')) return;
       await fetch(`/api/emo/${encodeURIComponent(EMO.editId)}`, { method: 'DELETE' }); EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
     });
     $('#emo-pick').addEventListener('click', () => {

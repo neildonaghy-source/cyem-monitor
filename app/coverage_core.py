@@ -15,7 +15,7 @@ import zlib
 
 import numpy as np
 
-from .link_core import C, EARTH_R_M, gas_specific_db_km
+from .link_core import C, EARTH_R_M, gas_specific_db_km, GROUND_MIN_F_HZ, plane_earth_db
 
 
 def sector_atten_db(off_deg: np.ndarray, beamwidth_deg: float, max_db: float = 25.0) -> np.ndarray:
@@ -39,7 +39,8 @@ def jv(v: np.ndarray) -> np.ndarray:
 
 
 def polar_prx(heights: np.ndarray, dist_m: np.ndarray, az_deg: np.ndarray, *, h_tx_agl: float, h_rx_agl: float,
-              f_hz: float, eirp_dbm: np.ndarray, grx_dbi: float = 0.0, lrx_db: float = 0.0, k: float = 4 / 3) -> np.ndarray:
+              f_hz: float, eirp_dbm: np.ndarray, grx_dbi: float = 0.0, lrx_db: float = 0.0, k: float = 4 / 3,
+              ground: bool = True) -> np.ndarray:
     """Received level (dBm) for every radial sample. heights: (n_az, n) terrain m ASL with
     heights[:, 0] at the site; eirp_dbm: (n_az,) EIRP towards each radial."""
     n_az, n = heights.shape
@@ -82,7 +83,12 @@ def polar_prx(heights: np.ndarray, dist_m: np.ndarray, az_deg: np.ndarray, *, h_
         has = np.isfinite(vmax) & (vmax > -0.78)
         diff = jv(np.where(np.isfinite(vmax), vmax, -10.0)) + np.where(
             has, jv(np.where(np.isfinite(vl), vl, -10.0)) + jv(np.where(np.isfinite(vr), vr, -10.0)), 0.0)
-        out[a] = eirp_dbm[a] - fspl - diff - gas + grx_dbi - lrx_db
+        loss = fspl + diff
+        if ground and f_hz >= GROUND_MIN_F_HZ:
+            idx = np.arange(1, n + 1)
+            loss = np.maximum(loss, plane_earth_db(d, ht, hr, np.cumsum(h) / idx, np.cumsum(h <= 1.0) / idx,
+                                                   h_tx_agl, h_rx_agl, f_hz))
+        out[a] = eirp_dbm[a] - loss - gas + grx_dbi - lrx_db
     out[:, 0] = np.nan
     return out
 

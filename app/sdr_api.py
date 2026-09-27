@@ -141,35 +141,18 @@ class LocateIn(BaseModel):
 
 
 _LL = re.compile(r"^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
-_W3W = re.compile(r"^\s*(?:///|w3w:)?\s*([a-z\u00c0-\u024f]+)[.\u3002\uff61]([a-z\u00c0-\u024f]+)[.\u3002\uff61]([a-z\u00c0-\u024f]+)\s*$", re.I)
 _PC = re.compile(r"^\s*([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\s*$", re.I)
 _UA = {"User-Agent": "CyEM-Monitor/1.0 (personal, self-hosted)"}
 
 
 def resolve_place(q: str) -> tuple[float, float, str]:
-    """lat,lon | ///what.three.words | UK postcode | place name  ->  (lat, lon, label). Raises HTTPException(400)."""
+    """lat,lon | UK postcode | place name  ->  (lat, lon, label). Raises HTTPException(400)."""
     import httpx
     m = _LL.match(q)
     if m:
         la, lo = float(m.group(1)), float(m.group(2))
         if -85 <= la <= 85 and -180 <= lo <= 180:
             return la, lo, f"{la:.5f}, {lo:.5f}"
-    m = _W3W.match(q)
-    if m:
-        words = ".".join(g.lower() for g in m.groups())
-        key = os.environ.get("W3W_API_KEY", "").strip()
-        if not key:
-            raise HTTPException(400, "what3words needs an API key: add W3W_API_KEY to ~/cyem/.env on the box. "
-                                     "Meanwhile use Pick on map, a postcode or lat, lon.")
-        try:
-            r = httpx.get("https://api.what3words.com/v3/convert-to-coordinates", params={"words": words, "key": key}, timeout=10)
-            j = r.json()
-        except Exception as e:  # noqa: BLE001
-            raise HTTPException(400, f"what3words not reachable: {e}")
-        if r.status_code != 200 or "coordinates" not in j:
-            raise HTTPException(400, f"what3words: {(j.get('error') or {}).get('message') or r.status_code}")
-        c = j["coordinates"]
-        return float(c["lat"]), float(c["lng"]), f"///{words}" + (f" ({j.get('nearestPlace')})" if j.get("nearestPlace") else "")
     m = _PC.match(q)
     if m:
         pc = f"{m.group(1)} {m.group(2)}".upper()
@@ -188,7 +171,7 @@ def resolve_place(q: str) -> tuple[float, float, str]:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"place lookup not reachable: {e}")
     if not j:
-        raise HTTPException(400, "not recognised: use ///what.three.words, a UK postcode, a place name or lat, lon")
+        raise HTTPException(400, "not recognised: use a UK postcode, a place name or lat, lon (or Pick on map)")
     return float(j[0]["lat"]), float(j[0]["lon"]), j[0].get("display_name", q)[:80]
 
 

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-27c';
+  const BUILD = '2026-09-27d';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -136,7 +136,7 @@
     { id: 'c2', group: 'cyber', label: 'Botnet C2 (country)', colour: '#3cc7ff', on: true, load: loadC2, every: 10, legend: `${DOT('rgba(60,199,255,.2)', 12, 'border:1px dashed #3cc7ff')} C2 servers per country` },
     { id: 'apt', group: 'cyber', label: 'APT groups (ref)', colour: '#ff8c42', on: false, load: loadApt, every: 0, legend: `${G('◆', '#ff8c42')} state ${G('◆', '#ffd166')} criminal` },
     { id: 'ioda', group: 'infra', label: 'Internet outages', colour: '#ff8c42', on: true, load: loadIoda, every: 10, legend: `${DOT('rgba(255,140,66,.4)', 12, 'border:1.5px solid #ff8c42')} critical alerts ${DOT('rgba(138,90,43,.2)', 10, 'border:1px solid #8a5a2b')} warnings` },
-    { id: 'cloudflare', group: 'infra', label: 'Cloudflare outages 7d', colour: '#ffd166', on: true, load: loadCloudflare, every: 10, legend: `${DOT('rgba(255,209,102,.3)', 11, 'border:1.5px solid #ffd166')} outage annotation (needs token)` },
+    { id: 'cloudflare', group: 'infra', label: 'Cloudflare outages 7d', colour: '#ffd166', on: true, load: loadCloudflare, every: 10, legend: `${DOT('rgba(255,209,102,.3)', 11, 'border:1.5px solid #ffd166')} outage annotation (Cloudflare Radar)` },
     { id: 'cables', group: 'infra', label: 'Submarine cables', colour: '#2bb9a8', on: false, load: loadCables, every: 0, legend: `<span class="lgline" style="background:#2bb9a8"></span> cable system` },
     { id: 'gdelt', group: 'osint', label: 'GDELT news 24h', colour: '#45d38a', on: true, load: loadGdelt, every: 10, legend: `${DOT('#3cc7ff', 8)} cyber ${DOT('#f3b23e', 8)} GNSS/EW ${DOT('#2bb9a8', 8)} connectivity ${DOT('#ff6fb1', 8)} satellite` },
     { id: 'items', group: 'osint', label: 'Located news 7d', colour: '#8593a6', on: false, load: loadItemsLayer, every: 10, legend: `${DOT('#3cc7ff', 6)} cyber ${DOT('#f3b23e', 6)} EM ${DOT('#2bb9a8', 6)} infra ${DOT('#b48cff', 6)} OSINT` },
@@ -2291,7 +2291,7 @@
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
       <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
-      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="///what.three.words, postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
+      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
     openModal('SDR receivers', body);
@@ -2302,7 +2302,7 @@
       catch (e) { o.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
     });
     const setQ = async () => {
-      const q = $('#sdr-q').value.trim(); if (!q) return toastSDR('Enter a what3words address, postcode, place or lat, lon');
+      const q = $('#sdr-q').value.trim(); if (!q) return toastSDR('Enter a postcode, place or lat, lon');
       $('#sdr-set').disabled = true;
       try { const r = await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/locate`, { q }); SDR.posMsg = `Position set: ${r.label}`; openSDR(); }
       catch (e) { $('#sdr-set').disabled = false; toastSDR(e.message); }
@@ -2324,7 +2324,7 @@
       navigator.geolocation.getCurrentPosition(async (p) => {
         try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5) }); openSDR(); }
         catch (e) { toastSDR(e.message); }
-      }, (e) => toastSDR(`This device's location is unavailable (${e.message}): enter a what3words address, postcode or place, or use Pick on map.`), { enableHighAccuracy: true, timeout: 15000 });
+      }, (e) => toastSDR(`This device's location is unavailable (${e.message}): enter a postcode, place or lat, lon, or use Pick on map.`), { enableHighAccuracy: true, timeout: 15000 });
     });
     try {
       const l = await api(`/api/sdr/latest?node=${encodeURIComponent(SDR.node)}`);

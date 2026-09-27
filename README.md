@@ -309,7 +309,7 @@ Map layers > **Save this setup as the start-up default** stores the layers and t
 
 ## SDR receiver position
 
-SDR panel: type a what3words address (`///word.word.word`), UK postcode, place name or `lat, lon` and press **Set position**, use **Pick on map**, or **Use this device** (browser location, often blocked on managed Wi-Fi). what3words needs `W3W_API_KEY` in `.env` (developer.what3words.com); postcodes use postcodes.io and places use Nominatim, no key.
+SDR panel: type a UK postcode, place name or `lat, lon` and press **Set position**, use **Pick on map**, or **Use this device** (browser location, often blocked on managed Wi-Fi). what3words was tried and dropped (its free plan does not convert words to coordinates); postcodes use postcodes.io and places use Nominatim, no key.
 
 ## UI tests
 

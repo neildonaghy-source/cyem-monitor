@@ -31,6 +31,7 @@ from .sdr_api import ensure_sdr_schema, router as sdr_router
 from .insights_api import router as insight_router
 from .emo_plan import router as emo_plan_router
 from .spectrum_store import ensure_schema
+from .prefs_api import router as prefs_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="CyEM Monitor", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", redoc_url=None)
 app.include_router(spectrum_router)
+app.include_router(prefs_router)
 app.include_router(link_router)
 app.include_router(coverage_router)
 app.include_router(omni_router)

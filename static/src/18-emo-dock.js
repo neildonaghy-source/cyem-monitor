@@ -168,7 +168,7 @@
     try {
       const r = await api('/api/emo'); if (!r.entities?.length) return;
       EMO.ents = r.entities; $('#btn-emo').classList.add('active');
-      const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (b.isValid()) map.fitBounds(b.pad(0.1), matchMedia('(pointer: coarse)').matches && innerHeight > innerWidth ? { paddingBottomRight: [0, Math.round(innerHeight * 0.4)] } : {});
+      const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (startViewHold) startViewHold = false; else if (b.isValid()) map.fitBounds(b.pad(0.1), matchMedia('(pointer: coarse)').matches && innerHeight > innerWidth ? { paddingBottomRight: [0, Math.round(innerHeight * 0.4)] } : {});
       const touch = matchMedia('(pointer: coarse)').matches, lblZ = touch ? 13 : 11;
       if (!EMO.wired) { EMO.wired = true; map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ)); }
       document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ);

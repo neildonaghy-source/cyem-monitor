@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import struct
 
 from fastapi import APIRouter, Header, HTTPException
@@ -133,6 +134,73 @@ async def set_position(node: str, p: PosIn):
     if not n:
         raise HTTPException(404, "unknown node")
     return {"node": node, "lat": p.lat, "lon": p.lon}
+
+
+class LocateIn(BaseModel):
+    q: str = Field(min_length=2, max_length=120)
+
+
+_LL = re.compile(r"^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
+_W3W = re.compile(r"^\s*(?:///|w3w:)?\s*([a-z\u00c0-\u024f]+)[.\u3002\uff61]([a-z\u00c0-\u024f]+)[.\u3002\uff61]([a-z\u00c0-\u024f]+)\s*$", re.I)
+_PC = re.compile(r"^\s*([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\s*$", re.I)
+_UA = {"User-Agent": "CyEM-Monitor/1.0 (personal, self-hosted)"}
+
+
+def resolve_place(q: str) -> tuple[float, float, str]:
+    """lat,lon | ///what.three.words | UK postcode | place name  ->  (lat, lon, label). Raises HTTPException(400)."""
+    import httpx
+    m = _LL.match(q)
+    if m:
+        la, lo = float(m.group(1)), float(m.group(2))
+        if -85 <= la <= 85 and -180 <= lo <= 180:
+            return la, lo, f"{la:.5f}, {lo:.5f}"
+    m = _W3W.match(q)
+    if m:
+        words = ".".join(g.lower() for g in m.groups())
+        key = os.environ.get("W3W_API_KEY", "").strip()
+        if not key:
+            raise HTTPException(400, "what3words needs an API key: add W3W_API_KEY to ~/cyem/.env on the box. "
+                                     "Meanwhile use Pick on map, a postcode or lat, lon.")
+        try:
+            r = httpx.get("https://api.what3words.com/v3/convert-to-coordinates", params={"words": words, "key": key}, timeout=10)
+            j = r.json()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(400, f"what3words not reachable: {e}")
+        if r.status_code != 200 or "coordinates" not in j:
+            raise HTTPException(400, f"what3words: {(j.get('error') or {}).get('message') or r.status_code}")
+        c = j["coordinates"]
+        return float(c["lat"]), float(c["lng"]), f"///{words}" + (f" ({j.get('nearestPlace')})" if j.get("nearestPlace") else "")
+    m = _PC.match(q)
+    if m:
+        pc = f"{m.group(1)} {m.group(2)}".upper()
+        try:
+            r = httpx.get(f"https://api.postcodes.io/postcodes/{pc.replace(' ', '')}", timeout=8)
+            j = r.json()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(400, f"postcode lookup not reachable: {e}")
+        if r.status_code == 200 and j.get("result"):
+            return float(j["result"]["latitude"]), float(j["result"]["longitude"]), pc
+        raise HTTPException(400, f"postcode {pc} not found")
+    try:
+        r = httpx.get("https://nominatim.openstreetmap.org/search", params={"q": q, "format": "json", "limit": 1, "countrycodes": "gb"},
+                      headers=_UA, timeout=8)
+        j = r.json() if r.status_code == 200 else []
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"place lookup not reachable: {e}")
+    if not j:
+        raise HTTPException(400, "not recognised: use ///what.three.words, a UK postcode, a place name or lat, lon")
+    return float(j[0]["lat"]), float(j[0]["lon"]), j[0].get("display_name", q)[:80]
+
+
+@router.post("/nodes/{node}/locate")
+async def locate(node: str, body: LocateIn):
+    import asyncio
+    la, lo, label = await asyncio.to_thread(resolve_place, body.q)
+    with get_db().tx() as c:
+        n = c.execute("UPDATE sdr_nodes SET lat=?, lon=?, pos_at=? WHERE node=?", (round(la, 5), round(lo, 5), now_iso(), node)).rowcount
+    if not n:
+        raise HTTPException(404, "unknown node")
+    return {"node": node, "lat": round(la, 5), "lon": round(lo, 5), "label": label}
 
 
 # ---- correlation: licensed / exempt / public / government / unexplained ------------------------

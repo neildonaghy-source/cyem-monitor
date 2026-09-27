@@ -90,6 +90,19 @@
       sec.innerHTML = `<div class="ghead"><span class="gname">${esc(g.label)}</span>${g.id !== 'basemap' ? '<a href="#" data-all="on">all</a><a href="#" data-all="off">none</a>' : ''}<a href="#" class="gtoggle">${collapsed[g.id] ? '+' : '−'}</a></div><div class="gbody">${body}</div>`;
       layerCtl.appendChild(sec);
     }
+    layerCtl.insertAdjacentHTML('beforeend', `<div class="lfoot"><a href="#" id="startup-save">Save this setup as the start-up default</a>
+      <div class="dim" id="startup-msg">${START ? `Opened with the start-up default saved ${fmtZ(window.CYEM_STARTUP.saved_at)}${window.CYEM_STARTUP.device ? ' from ' + esc(window.CYEM_STARTUP.device) : ''}.` : window.CYEM_STARTUP?.saved_at ? 'Start-up default saved ' + fmtZ(window.CYEM_STARTUP.saved_at) + '.' : 'Every device opens with the layers, basemap, EMO state and map view saved here.'}</div></div>`);
+    $('#startup-save').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const ls = {}; for (const k of ['cyem.layers', 'cyem.layeropts', 'cyem.groups', 'cyem.basemap', 'cyem-emo-on', 'cyem-layers', 'cyem.panels']) { try { ls[k] = localStorage.getItem(k); } catch (x) { /* ignore */ } }
+      const c = map.getCenter();
+      const device = matchMedia('(pointer: coarse)').matches ? (innerWidth < 700 ? 'phone' : 'tablet') : (navigator.userAgent.includes('Macintosh') ? 'Mac' : 'desktop');
+      try {
+        const r = await postJson('/api/prefs/startup', { ls, view: { lat: +c.lat.toFixed(4), lon: +c.lng.toFixed(4), z: map.getZoom() }, device }, 'PUT');
+        window.CYEM_STARTUP = r; try { sessionStorage.setItem('cyem-startup', r.saved_at); } catch (x) { /* ignore */ }
+        $('#startup-msg').innerHTML = `<span class="good">Saved. Every device now opens like this (${fmtZ(r.saved_at)}).</span>`;
+      } catch (x) { $('#startup-msg').innerHTML = `<span class="bad">${esc(x.message)}</span>`; }
+    });
     $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; localStorage.setItem('cyem-layers', layerCtl.classList.contains('collapsed') ? 'hide' : 'show'); });
     if (localStorage.getItem('cyem-layers') === 'hide' || (matchMedia('(max-width: 900px)').matches && !localStorage.getItem('cyem-layers'))) { layerCtl.classList.add('collapsed'); $('#layers-toggle').textContent = 'show'; }
     $$('#layers input[name=basemap]').forEach((r) => r.addEventListener('change', () => setBasemap(r.value)));

@@ -20,6 +20,7 @@ services:
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.5:4b}"
       AISSTREAM_KEY: "${AISSTREAM_KEY:-}"
       OPENCELLID_KEY: "${OPENCELLID_KEY:-}"
+      W3W_API_KEY: "${W3W_API_KEY:-}"
       SEARXNG_URL: "http://searxng:8080"
       SDR_INGEST_TOKEN: "${SDR_INGEST_TOKEN:-}"
       CYEM_PASSWORD: "${CYEM_PASSWORD:-}"

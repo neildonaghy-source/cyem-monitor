@@ -3,7 +3,7 @@
                     fishing: '#2bb9a8', service: '#b48cff', leisure: '#8fb3d9', other: '#8593a6', unknown: '#5d6b7d' };
   const AIS_NAME = { military: 'Military', law: 'Law enforcement', sar: 'Search and rescue', tanker: 'Tanker', cargo: 'Cargo', passenger: 'Passenger',
                      fishing: 'Fishing', service: 'Tug / pilot / service', leisure: 'Sailing / pleasure', other: 'Other', unknown: 'Type not yet received' };
-  const aisCanvas = L.canvas({ padding: 0.3 });
+  const aisCanvas = map.options.renderer; // one shared canvas: a second canvas stacked on top swallows clicks for every vector layer below it
   async function loadAis() {
     const g = groups.ais; g.clearLayers();
     const { data, updated } = await api('/api/layers/ais');

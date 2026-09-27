@@ -364,3 +364,8 @@ body.emo-nolabels .emo-sym svg text { display: none; }
   #emo-card { bottom: 146px !important; max-height: 42vh; }
 }
 @media (max-width: 600px) { #emo-scrub { bottom: 140px; } }
+
+/* ---- start-up default control (2026-09-27) ---- */
+#layers .lfoot { border-top: 1px solid #243040; margin-top: 8px; padding: 8px 2px 2px; font-size: 12px; }
+#layers .lfoot .dim { margin-top: 3px; font-size: 11px; }
+#layers.collapsed .lfoot { display: none; }

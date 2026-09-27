@@ -23,9 +23,9 @@
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
       <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
-      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-pos">Set receiver position to this device</button> <button id="sdr-ins">Insight (AI)</button></div><div id="sdr-insout" class="md"></div>
+      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="///what.three.words, postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
-      <div id="sdr-out"><span class="spinner"></span></div>`;
+      ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
     openModal('SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
     $('#sdr-ins').addEventListener('click', async () => {
@@ -33,12 +33,30 @@
       try { const r = await api(`/api/insight/sdr?node=${encodeURIComponent(SDR.node)}`); o.innerHTML = renderMd(r.text); }
       catch (e) { o.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
     });
+    const setQ = async () => {
+      const q = $('#sdr-q').value.trim(); if (!q) return toastSDR('Enter a what3words address, postcode, place or lat, lon');
+      $('#sdr-set').disabled = true;
+      try { const r = await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/locate`, { q }); SDR.posMsg = `Position set: ${r.label}`; openSDR(); }
+      catch (e) { $('#sdr-set').disabled = false; toastSDR(e.message); }
+    };
+    $('#sdr-set').addEventListener('click', setQ);
+    $('#sdr-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setQ(); } });
+    $('#sdr-pick').addEventListener('click', () => {
+      $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
+      map.once('click', async (e) => {
+        map.getContainer().style.cursor = '';
+        const lat = +e.latlng.lat.toFixed(5), lon = +e.latlng.lng.toFixed(5);
+        try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat, lon }); SDR.posMsg = `Position set from the map: ${lat}, ${lon}`; }
+        catch (err) { SDR.posMsg = err.message; }
+        openSDR();
+      });
+    });
     $('#sdr-pos').addEventListener('click', () => {
       if (!navigator.geolocation) return toastSDR('No location on this device');
       navigator.geolocation.getCurrentPosition(async (p) => {
         try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5) }); openSDR(); }
         catch (e) { toastSDR(e.message); }
-      }, (e) => toastSDR(`Location: ${e.message}`), { enableHighAccuracy: true, timeout: 15000 });
+      }, (e) => toastSDR(`This device's location is unavailable (${e.message}): enter a what3words address, postcode or place, or use Pick on map.`), { enableHighAccuracy: true, timeout: 15000 });
     });
     try {
       const l = await api(`/api/sdr/latest?node=${encodeURIComponent(SDR.node)}`);

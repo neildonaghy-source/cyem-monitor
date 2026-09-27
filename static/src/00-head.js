@@ -1,7 +1,23 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-27a';
+  const BUILD = '2026-09-27b';
+  // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
+  // changes during a session stand until the app is closed, unless saved as the new default.
+  const START = (() => {
+    const s = window.CYEM_STARTUP; if (!s || !s.saved_at) return null;
+    try {
+      if (sessionStorage.getItem('cyem-startup') === s.saved_at) return null;
+      const phone = matchMedia('(max-width: 900px)').matches;
+      for (const [k, v] of Object.entries(s.ls || {})) {
+        if (phone && (k === 'cyem-layers' || k === 'cyem.panels')) continue;  // panel layout stays per device on phones
+        if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v);
+      }
+      sessionStorage.setItem('cyem-startup', s.saved_at);
+    } catch (e) { return null; }
+    return s;
+  })();
+  let startViewHold = !!START?.view;  // keep the saved view instead of EMO's first auto-fit
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

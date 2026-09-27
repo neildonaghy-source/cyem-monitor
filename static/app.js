@@ -1,7 +1,23 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-09-27a';
+  const BUILD = '2026-09-27b';
+  // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
+  // changes during a session stand until the app is closed, unless saved as the new default.
+  const START = (() => {
+    const s = window.CYEM_STARTUP; if (!s || !s.saved_at) return null;
+    try {
+      if (sessionStorage.getItem('cyem-startup') === s.saved_at) return null;
+      const phone = matchMedia('(max-width: 900px)').matches;
+      for (const [k, v] of Object.entries(s.ls || {})) {
+        if (phone && (k === 'cyem-layers' || k === 'cyem.panels')) continue;  // panel layout stays per device on phones
+        if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v);
+      }
+      sessionStorage.setItem('cyem-startup', s.saved_at);
+    } catch (e) { return null; }
+    return s;
+  })();
+  let startViewHold = !!START?.view;  // keep the saved view instead of EMO's first auto-fit
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -34,9 +50,11 @@
   const state = { dom: 'all', q: '', hiOnly: false, hours: 48, country: null, status: null, briefId: null, layerCounts: {} };
 
   // ---------------------------------------------------------------- map + basemaps
-  const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true })
+  const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) })
     .setView([38, 18], 3);
   map.setMaxBounds([[-85, -200], [85, 200]]);
+  window.__cyemMap = map; // test hook for tests/ui/layer_click.py
+  if (START?.view) map.setView([START.view.lat, START.view.lon], Math.max(2, START.view.z - (innerWidth < 700 ? 1 : 0)), { animate: false });
   L.control.zoom({ position: 'topright' }).addTo(map);
   const BASEMAPS = {
     esri_dark: { label: 'Esri dark grey', make: () => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri, HERE, Garmin, OSM contributors', maxNativeZoom: 16, noWrap: true }) },
@@ -146,6 +164,19 @@
       sec.innerHTML = `<div class="ghead"><span class="gname">${esc(g.label)}</span>${g.id !== 'basemap' ? '<a href="#" data-all="on">all</a><a href="#" data-all="off">none</a>' : ''}<a href="#" class="gtoggle">${collapsed[g.id] ? '+' : '−'}</a></div><div class="gbody">${body}</div>`;
       layerCtl.appendChild(sec);
     }
+    layerCtl.insertAdjacentHTML('beforeend', `<div class="lfoot"><a href="#" id="startup-save">Save this setup as the start-up default</a>
+      <div class="dim" id="startup-msg">${START ? `Opened with the start-up default saved ${fmtZ(window.CYEM_STARTUP.saved_at)}${window.CYEM_STARTUP.device ? ' from ' + esc(window.CYEM_STARTUP.device) : ''}.` : window.CYEM_STARTUP?.saved_at ? 'Start-up default saved ' + fmtZ(window.CYEM_STARTUP.saved_at) + '.' : 'Every device opens with the layers, basemap, EMO state and map view saved here.'}</div></div>`);
+    $('#startup-save').addEventListener('click', async (e) => {
+      e.preventDefault();
+      const ls = {}; for (const k of ['cyem.layers', 'cyem.layeropts', 'cyem.groups', 'cyem.basemap', 'cyem-emo-on', 'cyem-layers', 'cyem.panels']) { try { ls[k] = localStorage.getItem(k); } catch (x) { /* ignore */ } }
+      const c = map.getCenter();
+      const device = matchMedia('(pointer: coarse)').matches ? (innerWidth < 700 ? 'phone' : 'tablet') : (navigator.userAgent.includes('Macintosh') ? 'Mac' : 'desktop');
+      try {
+        const r = await postJson('/api/prefs/startup', { ls, view: { lat: +c.lat.toFixed(4), lon: +c.lng.toFixed(4), z: map.getZoom() }, device }, 'PUT');
+        window.CYEM_STARTUP = r; try { sessionStorage.setItem('cyem-startup', r.saved_at); } catch (x) { /* ignore */ }
+        $('#startup-msg').innerHTML = `<span class="good">Saved. Every device now opens like this (${fmtZ(r.saved_at)}).</span>`;
+      } catch (x) { $('#startup-msg').innerHTML = `<span class="bad">${esc(x.message)}</span>`; }
+    });
     $('#layers-toggle').addEventListener('click', (e) => { e.preventDefault(); layerCtl.classList.toggle('collapsed'); e.target.textContent = layerCtl.classList.contains('collapsed') ? 'show' : 'hide'; localStorage.setItem('cyem-layers', layerCtl.classList.contains('collapsed') ? 'hide' : 'show'); });
     if (localStorage.getItem('cyem-layers') === 'hide' || (matchMedia('(max-width: 900px)').matches && !localStorage.getItem('cyem-layers'))) { layerCtl.classList.add('collapsed'); $('#layers-toggle').textContent = 'show'; }
     $$('#layers input[name=basemap]').forEach((r) => r.addEventListener('change', () => setBasemap(r.value)));
@@ -1370,7 +1401,7 @@
                     fishing: '#2bb9a8', service: '#b48cff', leisure: '#8fb3d9', other: '#8593a6', unknown: '#5d6b7d' };
   const AIS_NAME = { military: 'Military', law: 'Law enforcement', sar: 'Search and rescue', tanker: 'Tanker', cargo: 'Cargo', passenger: 'Passenger',
                      fishing: 'Fishing', service: 'Tug / pilot / service', leisure: 'Sailing / pleasure', other: 'Other', unknown: 'Type not yet received' };
-  const aisCanvas = L.canvas({ padding: 0.3 });
+  const aisCanvas = map.options.renderer; // one shared canvas: a second canvas stacked on top swallows clicks for every vector layer below it
   async function loadAis() {
     const g = groups.ais; g.clearLayers();
     const { data, updated } = await api('/api/layers/ais');
@@ -1899,7 +1930,7 @@
     try {
       const r = await api('/api/emo'); if (!r.entities?.length) return;
       EMO.ents = r.entities; $('#btn-emo').classList.add('active');
-      const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (b.isValid()) map.fitBounds(b.pad(0.1), matchMedia('(pointer: coarse)').matches && innerHeight > innerWidth ? { paddingBottomRight: [0, Math.round(innerHeight * 0.4)] } : {});
+      const core = EMO.ents.filter((e) => e.side !== 'grey'); const b = L.latLngBounds((core.length ? core : EMO.ents).map((e) => [e.lat, e.lon])); if (startViewHold) startViewHold = false; else if (b.isValid()) map.fitBounds(b.pad(0.1), matchMedia('(pointer: coarse)').matches && innerHeight > innerWidth ? { paddingBottomRight: [0, Math.round(innerHeight * 0.4)] } : {});
       const touch = matchMedia('(pointer: coarse)').matches, lblZ = touch ? 13 : 11;
       if (!EMO.wired) { EMO.wired = true; map.on('zoomend', () => document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ)); }
       document.body.classList.toggle('emo-nolabels', map.getZoom() < lblZ);
@@ -2238,9 +2269,9 @@
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
       <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
-      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-pos">Set receiver position to this device</button> <button id="sdr-ins">Insight (AI)</button></div><div id="sdr-insout" class="md"></div>
+      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="///what.three.words, postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
-      <div id="sdr-out"><span class="spinner"></span></div>`;
+      ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
     openModal('SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
     $('#sdr-ins').addEventListener('click', async () => {
@@ -2248,12 +2279,30 @@
       try { const r = await api(`/api/insight/sdr?node=${encodeURIComponent(SDR.node)}`); o.innerHTML = renderMd(r.text); }
       catch (e) { o.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
     });
+    const setQ = async () => {
+      const q = $('#sdr-q').value.trim(); if (!q) return toastSDR('Enter a what3words address, postcode, place or lat, lon');
+      $('#sdr-set').disabled = true;
+      try { const r = await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/locate`, { q }); SDR.posMsg = `Position set: ${r.label}`; openSDR(); }
+      catch (e) { $('#sdr-set').disabled = false; toastSDR(e.message); }
+    };
+    $('#sdr-set').addEventListener('click', setQ);
+    $('#sdr-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setQ(); } });
+    $('#sdr-pick').addEventListener('click', () => {
+      $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
+      map.once('click', async (e) => {
+        map.getContainer().style.cursor = '';
+        const lat = +e.latlng.lat.toFixed(5), lon = +e.latlng.lng.toFixed(5);
+        try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat, lon }); SDR.posMsg = `Position set from the map: ${lat}, ${lon}`; }
+        catch (err) { SDR.posMsg = err.message; }
+        openSDR();
+      });
+    });
     $('#sdr-pos').addEventListener('click', () => {
       if (!navigator.geolocation) return toastSDR('No location on this device');
       navigator.geolocation.getCurrentPosition(async (p) => {
         try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5) }); openSDR(); }
         catch (e) { toastSDR(e.message); }
-      }, (e) => toastSDR(`Location: ${e.message}`), { enableHighAccuracy: true, timeout: 15000 });
+      }, (e) => toastSDR(`This device's location is unavailable (${e.message}): enter a what3words address, postcode or place, or use Pick on map.`), { enableHighAccuracy: true, timeout: 15000 });
     });
     try {
       const l = await api(`/api/sdr/latest?node=${encodeURIComponent(SDR.node)}`);

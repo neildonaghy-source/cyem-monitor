@@ -23,11 +23,13 @@
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
       <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
-      ${n.url ? `<a class="btnlink" href="${esc(n.url)}">Open live receiver</a>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
+      ${n.url ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
     openModal('SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
+    // Live receiver in an in-app window: a plain link replaced the whole app page, and the Mac/iPhone apps have no Back
+    $('#sdr-live')?.addEventListener('click', (ev) => openLiveRx(ev.currentTarget.dataset.url, n.node));
     $('#sdr-ins').addEventListener('click', async () => {
       const o = $('#sdr-insout'); o.innerHTML = '<span class="spinner"></span> reading the spectrum… (about a minute)';
       try { const r = await api(`/api/insight/sdr?node=${encodeURIComponent(SDR.node)}`); o.innerHTML = renderMd(r.text); }
@@ -72,6 +74,20 @@
         ${l.peaks.slice(0, 40).map((p) => `<tr title="${esc(p.tier_why || p.status_text || '')}"><td><span style="color:${TIER_COL[p.tier] || '#8593a6'};font-size:16px">●</span></td><td class="mono">${(p.f_hz / 1e6).toFixed(3)}</td><td class="mono">${p.snr_db}</td><td>${who(p)}<div class="dim">${esc(p.tier_why || '')}</div></td><td>${where(p)}</td></tr>`).join('')}</table>
         <p class="dim">${esc(c?.notes || 'Levels are relative dB (not calibrated). Peaks are carriers at least 10 dB above the local floor.')}</p>`;
     } catch (e) { $('#sdr-out').innerHTML = `<p class="dim">${esc(e.message)}</p>`; }
+  }
+  function openLiveRx(url, node) {
+    closeLiveRx();
+    const ov = document.createElement('div'); ov.id = 'sdr-live-ov';
+    ov.innerHTML = `<div class="lvbar"><b>Live receiver</b><span class="dim">${esc(node || '')} · OpenWebRX · tap the play button to start audio</span><button id="sdr-live-close">Close ×</button></div><iframe src="${esc(url)}" allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#sdr-live-close').addEventListener('click', closeLiveRx);
+    document.addEventListener('keydown', liveEsc);
+  }
+  function liveEsc(e) { if (e.key === 'Escape') closeLiveRx(); }
+  function closeLiveRx() {
+    const ov = document.getElementById('sdr-live-ov'); if (!ov) return;
+    const f = ov.querySelector('iframe'); if (f) f.src = 'about:blank';   // stop the audio stream
+    ov.remove(); document.removeEventListener('keydown', liveEsc);
   }
   function toastSDR(t) { const o = $('#sdr-out'); if (o) o.insertAdjacentHTML('afterbegin', `<p class="bad">${esc(t)}</p>`); }
   $('#btn-sdr').addEventListener('click', () => openSDR());

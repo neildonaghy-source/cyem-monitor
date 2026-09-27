@@ -611,9 +611,9 @@ def _sidc_for(e: dict) -> str:
     if aff == "N":
         return "SNGPU----------"
     if kind == "effector":
-        fn = "UUE---"                                                     # electronic warfare
+        fn = "UUMSEJ"                                                     # EW: jamming
     elif kind == "sensor":
-        fn = "UUM---"                                                     # intelligence (ES/DF)
+        fn = "UUMSED" if e.get("df_rms_deg") else "UUMSEI"                # EW: direction finding / intercept
     elif cat == "radar":
         fn = "UCD---" if any(k in n for k in ("sam", "gbad", "buk", "sky sabre", "s-300", "s-400", "pantsir", "air defence", "air-defence", "tor ")) else \
              "UCF---" if any(k in n for k in ("counter-battery", "cobra", "cb radar", "zoopark")) else "UUS---"

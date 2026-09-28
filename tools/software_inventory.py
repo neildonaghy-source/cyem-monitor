@@ -124,12 +124,12 @@ md = [f"# CyEM Monitor: software library\n",
       "## Front end\n", md_table(["Library", "Version", "Role"], fe_rows),
       "\n## Containers and services\n", md_table(["Container", "Image / version", "Role"], container_rows),
       "\n## Hosts\n", md_table(["Host", "OS", "Tooling"], host_rows + pi_rows),
-      "\n## Native apps (Mac and iPhone, source `~/cyem-app` on the Mac)\n", md_table(["Component", "Version", "Role"], native_rows),
+      "\n## Native apps (Mac and iPhone, source `~/Documents/Codex/CyEM/cyem-app` on the Mac)\n", md_table(["Component", "Version", "Role"], native_rows),
       "\n## Lines of code\n", "Blank and comment-only lines excluded; vendored libraries, the generated `static/app.js`, build output and libtailscale excluded.\n",
       "\n**CyEM Monitor (this repository)**\n", md_table(["Language", "Files", "Lines", "Code lines"], loc_table(loc_box)),
       "\n**By area (application code only)**\n", md_table(["Area", "Files", "Lines", "Code lines"], area_rows)]
 if loc_app:
-    md += ["\n**Native apps (`~/cyem-app`)**\n", md_table(["Language", "Files", "Lines", "Code lines"], loc_table(loc_app))]
+    md += ["\n**Native apps (`~/Documents/Codex/CyEM/cyem-app`)**\n", md_table(["Language", "Files", "Lines", "Code lines"], loc_table(loc_app))]
 open("docs/SOFTWARE.md", "w").write("\n".join(md) + "\n")
 json.dump({"generated": today, "python": py_rows, "transitive": transitive, "frontend": fe_rows, "containers": container_rows,
            "hosts": host_rows, "pi": pi_rows, "native": native_rows, "loc_box": loc_table(loc_box),

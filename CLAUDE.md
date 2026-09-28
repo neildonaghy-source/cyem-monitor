@@ -44,12 +44,12 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Harmonic and IM3 screening live in `spectrum_core` (`harmonic_emitters`, `im3_emitters`, `check_products`); `run_conflicts` takes `harm_order` and `cosite_km`. Keep product severities below fundamental ones except IM3 on own nets.
 - Link planner: `link_core.py` stays stdlib-only and tested; terrain via `dem.heights()` (rasterio, lazy import, run in a thread). Saved links own their planned emitters via `link_id`; keep create/delete in step.
 - Coverage: `coverage_core.polar_prx` is vectorised Deygout (3 edges) per radial; keep it consistent with `link_core.deygout_loss_db` (depth 1). Cross-check any model change against the link planner on a real path before shipping. Saved sites own their planned emitter via `site_id`.
-- Mac client is a Safari web app on Neil's Mac (loads the live site; bump `BUILD` in `static/app.js`, the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the Mac bundle: `git archive --prefix=cyem/ main` to `~/cyem-deploy/cyem-monitor-vNN.tgz` on the Mac. No git remote exists.
+- Web client (browser; bump `BUILD` in `static/app.js`, the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the Mac bundle: `git archive --prefix=cyem/ main` to `~/Documents/Codex/CyEM/cyem-deploy/cyem-monitor-vNN.tgz` on the Mac. No git remote exists.
 - Keys (AISSTREAM_KEY, OPENCELLID_KEY) live only in `.env`; never log or echo URLs containing them. `.env.*` is ignored except `.env.example`.
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
 - Push after each merge: `git push origin main` (remote alias github-cyem). Tool-call timeouts from the Mac are common: run long jobs with nohup and read logs.
 
-- Clients: native CyEM apps on the Mac and iPhone (source ~/cyem-app on the Mac) embed Tailscale and load https://trade.tail013324.ts.net:8443; keep that URL and the Tailscale serve on 8443 stable.
+- Clients: native CyEM apps on the Mac and iPhone (source ~/Documents/Codex/CyEM/cyem-app on the Mac) embed Tailscale and load https://trade.tail013324.ts.net:8443; keep that URL and the Tailscale serve on 8443 stable.
 - EMO (`emo_api.py`): symmetric red/blue ES/EA/EP on terrain; reuses coverage_api._compute (power capped at 70 dBm, offset added for higher EIRP) and link_core.analyse for per-pair paths; heavy work limited by asyncio.Semaphore(3); cyem container cpus 4.0. Notional data only.
 
 ## EMO planning layer (added 2026-09-25)
@@ -61,3 +61,5 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
   is located, never targetable; planning answers in Ask bypass the language model.
 - After a dependency change: python3 tools/software_inventory.py (updates docs/SOFTWARE.md + software.json, copied into the nightly trade runbook).
 - Release: bump BUILD in static/app.js, ?v= in index.html/sw.js, cache name in sw.js; commit; push; docker compose up -d --build cyem.
+
+- Mac-side CyEM files (app source, deploy bundles, scratch) live in ~/Documents/Codex/CyEM on the Mac since 2026-09-28; iPhone signing renewal: cd ~/Documents/Codex/CyEM/cyem-app && ./build.sh iphone

@@ -215,7 +215,7 @@ on demand; HF skywave planning using the existing MUF layer.
   https://trade.tail013324.ts.net:8443/. It loads the live site, so it updates itself; static assets carry
   `?v=<BUILD>` so a stale cache cannot persist. Confirm the build shown at the top of the layers panel.
   To force a refresh, quit and reopen the app.
-- **Deploy bundles:** `~/cyem-deploy/cyem-monitor-v14.tgz` on the Mac is `git archive` of `main` at 154f3b1
+- **Deploy bundles:** `~/Documents/Codex/CyEM/cyem-deploy/cyem-monitor-v14.tgz` on the Mac is `git archive` of `main` at 154f3b1
   (code only: no `.env`, database, Ofcom CSV or DEM tiles). v13 was the 21 Sep initial import.
 - **Version control:** local git on the trade box only (no remote). Off-box copies are the OneDrive home backup
   and the Mac deploy bundles. Work on branches; merge to `main` with fast-forward.

@@ -50,7 +50,7 @@ Transitive packages in the image: 29 (affine 3.0.1, annotated-doc 0.0.5, annotat
 | Trade box | Ubuntu 26.04.1 LTS, kernel 7.0.0-34-generic | Docker 29.8.1, Compose v5.5.1, Tailscale 1.102.4, git 2.53.0 |
 | Pi 5 node cyem-sdr (100.77.35.64) | Raspberry Pi OS Lite (Debian 13 trixie), kernel 6.18.50+rpt-rpi-2712, Python 3.13.5 | Docker 29.8.1, Tailscale 1.102.4 (Tailscale SSH), OpenWebRX+ 1.2.125 (slechev/openwebrxplus:latest), librtlsdr (rtl-sdr-blog fork, built from source), pi/cyem_sweep.py (stdlib only) as systemd unit cyem-sweep |
 
-## Native apps (Mac and iPhone, source `~/cyem-app` on the Mac)
+## Native apps (Mac and iPhone, source `~/Documents/Codex/CyEM/cyem-app` on the Mac)
 
 | Component | Version | Role |
 |---|---|---|
@@ -90,7 +90,7 @@ Blank and comment-only lines excluded; vendored libraries, the generated `static
 | static/ HTML | 1 | 105 | 99 |
 | pi/ Python | 1 | 100 | 83 |
 
-**Native apps (`~/cyem-app`)**
+**Native apps (`~/Documents/Codex/CyEM/cyem-app`)**
 
 | Language | Files | Lines | Code lines |
 |---|---|---|---|

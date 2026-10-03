@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import os
 import time
 
@@ -47,6 +48,32 @@ def _valid(tok: str | None) -> bool:
     return exp.isdigit() and int(exp) > time.time() and hmac.compare_digest(sig, _token(int(exp)).split(".", 1)[1])
 
 
+def _is_local_proxy(host: str) -> bool:
+    try:
+        a = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return a.is_loopback or a.is_private
+
+
+def client_ip(request: Request) -> str:
+    """The real client address for the login rate limit.
+
+    The first X-Forwarded-For entry is whatever the client sent, so keying on it let anyone
+    reset the 5-tries limit by changing the header. Only trust X-Forwarded-For when the TCP peer
+    is our own proxy chain (tailscaled -> docker-proxy, i.e. a loopback/private address), and then
+    take the right-most entry: the one our proxy appended, which the client cannot forge.
+    (Checked 2026-10-03: tailscaled currently *replaces* X-Forwarded-For with the real Funnel client
+    address, so this is defence in depth against a future proxy that appends instead.)"""
+    peer = request.client.host if request.client else ""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff and _is_local_proxy(peer):
+        hops = [h.strip() for h in xff.split(",") if h.strip()]
+        if hops:
+            return hops[-1]
+    return peer or "?"
+
+
 class PasswordGate(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         pw = os.environ.get("CYEM_PASSWORD")
@@ -70,7 +97,7 @@ async def login_get(request: Request):
 
 
 async def login_post(request: Request):
-    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "?").split(",")[0].strip()
+    ip = client_ip(request)
     now = time.time()
     _attempts[ip] = [t for t in _attempts.get(ip, []) if now - t < 900]
     if len(_attempts[ip]) >= 5:

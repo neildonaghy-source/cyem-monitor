@@ -153,6 +153,8 @@ async def collect_gdelt(ctx: Context) -> Result:
     msg = f"{total} located articles across {len(results)} themes; {new} new items"
     if errors:
         msg += f"; errors: {'; '.join(errors)}"
-    if not results:
+    # 2026-10-03: every theme 429'd -> zero located articles with errors. That
+    # used to count as ok, so the scheduler's rate-limit back-off never engaged.
+    if not results or (errors and total == 0):
         raise RuntimeError(msg)
     return Result(new, msg)

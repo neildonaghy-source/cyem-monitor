@@ -71,7 +71,6 @@ app.include_router(hf_router)
 app.include_router(emo_router)
 
 from .auth import PasswordGate, login_get, login_post  # noqa: E402
-app.add_middleware(PasswordGate)
 app.add_api_route("/login", login_get, methods=["GET"], include_in_schema=False)
 app.add_api_route("/login", login_post, methods=["POST"], include_in_schema=False)
 
@@ -112,6 +111,13 @@ async def cyem_ws_middleware(request, call_next):
         return await call_next(request)
     finally:
         WS.reset(token)
+
+
+# 2026-10-03: Starlette runs the LAST-added middleware first. PasswordGate used
+# to be added before cyem_ws_middleware, so the workspace middleware (which
+# writes an EMO undo snapshot for mutating requests) ran before auth and
+# anonymous Funnel POSTs could write. Adding the gate last makes it outermost.
+app.add_middleware(PasswordGate)
 app.include_router(ar_router)
 app.include_router(sdr_router)
 app.include_router(insight_router)

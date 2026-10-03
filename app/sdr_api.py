@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import hmac
 import os
 import re
 import struct
@@ -60,10 +61,17 @@ def _label(f_hz: float) -> str:
     return "not listed in Ofcom's UKFAT table"
 
 
+def bearer_ok(authorization: str | None, tok: str | None) -> bool:
+    """Constant-time check of an `Authorization: Bearer <tok>` header."""
+    if not tok:
+        return False
+    return hmac.compare_digest((authorization or "").encode(), f"Bearer {tok}".encode())
+
+
 @router.post("/ingest")
 async def ingest(s: SweepIn, authorization: str | None = Header(default=None)):
     tok = os.environ.get("SDR_INGEST_TOKEN")
-    if not tok or authorization != f"Bearer {tok}":
+    if not bearer_ok(authorization, tok):
         raise HTTPException(401, "bad token")
     db = get_db()
     node = db.one("SELECT * FROM sdr_nodes WHERE node=?", (s.node,))
@@ -94,7 +102,7 @@ class HeartbeatIn(BaseModel):
 async def heartbeat(h: HeartbeatIn, authorization: str | None = Header(default=None)):
     """Node check-in without a sweep, so the panel shows it online with its state."""
     tok = os.environ.get("SDR_INGEST_TOKEN")
-    if not tok or authorization != f"Bearer {tok}":
+    if not bearer_ok(authorization, tok):
         raise HTTPException(401, "bad token")
     db = get_db()
     node = db.one("SELECT info FROM sdr_nodes WHERE node=?", (h.node,))

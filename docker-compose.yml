@@ -40,7 +40,7 @@ services:
     networks:
       - default
       - trading-bot
-    mem_limit: 768m
+    mem_limit: 1g        # 2026-10-03: was 768m (ran at 83%)
     cpus: 4.0
     logging:
       driver: json-file

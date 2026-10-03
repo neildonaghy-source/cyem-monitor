@@ -50,6 +50,10 @@ def load_csv_gz(paths: list[Path]) -> int:
         if n == 0:
             conn.execute("DROP TABLE cells_new"); conn.commit()
             raise RuntimeError("no rows parsed")
+        # SQLite keeps an index's name when its table is renamed, so after the first swap the live
+        # `cells` table owns idx_cells_new_ll and every later refresh failed with "index ... already
+        # exists". Drop it first (queries fall back to a scan for the second or two until the swap).
+        conn.execute("DROP INDEX IF EXISTS idx_cells_new_ll")
         conn.execute("CREATE INDEX idx_cells_new_ll ON cells_new(lat, lon)")
         conn.execute("DROP TABLE IF EXISTS cells")
         conn.execute("ALTER TABLE cells_new RENAME TO cells")

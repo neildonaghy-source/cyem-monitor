@@ -19,6 +19,33 @@ BOOT_ORDER = ["spaceweather", "hf", "drap", "aurora", "hfmap", "sat_tle", "sats"
               "nvd", "cables", "gdelt", "launches", "cloudflare", "threatfox", "opencti", "radars", "wtr"]
 
 
+RATE_LIMIT_MIN_BACKOFF_S = 2 * 3600      # a rate-limited source is never retried sooner than this
+MAX_BACKOFF_S = 12 * 3600                 # ...and never pushed out further than this (unless its interval is longer)
+
+
+def _rate_limited(message: str | None) -> bool:
+    m = (message or "").lower()
+    return "429" in m or "rate limit" in m or "too many requests" in m
+
+
+def retry_delay_s(interval_s: int, ok: bool, message: str | None, failures: int) -> int:
+    """Seconds until the next run of a collector.
+
+    OK runs wait their normal interval. Ordinary failures retry sooner (never more often than
+    every 5 minutes, at most 30 minutes, doubling per consecutive failure but never past the
+    normal interval). Rate-limited failures (HTTP 429) back off exponentially from at least 2 h:
+    the old flat 30-minute retry is what kept GDELT throttling us (2026-10-03).
+    """
+    if ok:
+        return interval_s
+    n = max(1, failures)
+    if _rate_limited(message):
+        base = max(RATE_LIMIT_MIN_BACKOFF_S, interval_s)
+        return int(min(base * 2 ** (n - 1), max(MAX_BACKOFF_S, interval_s)))
+    base = max(300, min(interval_s, 1800))
+    return int(min(base * 2 ** (n - 1), max(base, interval_s)))
+
+
 class Scheduler:
     def __init__(self, db: Database):
         self.db = db
@@ -31,6 +58,7 @@ class Scheduler:
         self.tz = ZoneInfo(settings.tz)
         self.last_purge: datetime | None = None
         self.next_due: dict[str, datetime] = {}
+        self.failures: dict[str, int] = {}   # consecutive failed runs per collector
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop(), name="cyem-scheduler")
@@ -58,8 +86,11 @@ class Scheduler:
             async with self.sem:
                 res = await run_collector(self.ctx, name)
             col = REGISTRY[name]
-            # Failed runs retry sooner (but never more often than every 5 minutes).
-            delay = col.interval_s if res.ok else max(300, min(col.interval_s, 1800))
+            if res.ok:
+                self.failures.pop(name, None)
+            else:
+                self.failures[name] = self.failures.get(name, 0) + 1
+            delay = retry_delay_s(col.interval_s, res.ok, res.message, self.failures.get(name, 0))
             self.next_due[name] = datetime.now(timezone.utc) + timedelta(seconds=delay)
         finally:
             self.running.discard(name)

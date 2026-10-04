@@ -50,60 +50,7 @@ def test_client_ip():
 
 # --- 2026-10-03 round 2: GDELT partial failure, middleware order, constant-time tokens ---
 
-class _FakeDB:
-    def upsert_items(self, items):
-        return len(items)
-
-    def set_snapshot(self, *a):
-        pass
-
-
-def _run_gdelt(monkeypatch, theme_fn):
-    import asyncio
-    from app.collectors import osint
-    monkeypatch.setattr(osint, "GDELT_THEME_GAP_S", 0)
-    monkeypatch.setattr(osint, "_theme", theme_fn)
-    return asyncio.run(osint.collect_gdelt(SimpleNamespace(db=_FakeDB())))
-
-
-def test_gdelt_all_themes_rate_limited_is_a_failure(monkeypatch):
-    import pytest
-    from app.scheduler import retry_delay_s
-
-    async def throttled(ctx, t):
-        raise RuntimeError("GDELT rate limited (429) after 2 retries")
-
-    with pytest.raises(RuntimeError) as e:
-        _run_gdelt(monkeypatch, throttled)
-    # ...and the scheduler treats that message as rate-limited (>= 2 h back-off)
-    assert retry_delay_s(2 * 3600, False, str(e.value), 1) >= 2 * 3600
-
-
-def test_gdelt_some_articles_with_errors_is_still_ok(monkeypatch):
-    calls = {"n": 0}
-
-    async def mixed(ctx, t):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return {"key": t["key"], "label": t["label"], "points": [], "total": 3, "articles": 3}, []
-        raise RuntimeError("GDELT rate limited (429) after 2 retries")
-
-    res = _run_gdelt(monkeypatch, mixed)
-    assert "3 located articles" in res.message if hasattr(res, "message") else True
-
-
-def test_gdelt_results_but_zero_articles_and_errors_fails(monkeypatch):
-    import pytest
-    calls = {"n": 0}
-
-    async def zero_then_429(ctx, t):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return {"key": t["key"], "label": t["label"], "points": [], "total": 0, "articles": 0}, []
-        raise RuntimeError("GDELT rate limited (429) after 2 retries")
-
-    with pytest.raises(RuntimeError):
-        _run_gdelt(monkeypatch, zero_then_429)
+# GDELT tests moved to tests/test_gdelt_spread.py (round-robin rewrite, 2026-10-04)
 
 
 def test_password_gate_runs_before_workspace_middleware():

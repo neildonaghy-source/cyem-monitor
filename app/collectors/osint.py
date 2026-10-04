@@ -6,8 +6,11 @@ detection on the headline, falling back to the publisher's country."""
 from __future__ import annotations
 
 import asyncio
+import os
+import random
+import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .. import geo
 from ..db import iso
@@ -15,24 +18,40 @@ from ..tagging import enrich, strip_html
 from .base import Context, Result, item_id, parse_dt, register
 
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
-# Waits after a 429, in seconds.
-#
-# 2026-09-24, second pass: escalating 60/120/240 did NOT fix the 429s -- a run
-# with three retries per theme still lost 2 of 4 themes and took 21 min instead
-# of 6. GDELT's throttle here is cumulative across a run, not a short window
-# you can wait out, so a long backoff buys nothing and just stretches the run.
-# Kept short, and the real fix is the rotation below.
-GDELT_429_BACKOFF_S = (30, 90)
-# Gap between themes. Measured 2026-09-24, one run each:
-#   30 s  -> lost 2-3 of 4 themes
-#   60 s  -> lost 1 (satcom, last),  run 7.7 min
-#   120 s -> lost 1 (infra, 3rd),    run 12.7 min
-# Doubling the gap did not improve the count, it only moved which theme was
-# dropped, so 60 s it is. GDELT's limit here is not something spacing solves;
-# the query itself is fine (an isolated `satcom` call after a ~90 s quiet gap
-# returns HTTP 200 with articles). Losing ~1 theme per run is acceptable
-# because rotated_themes() guarantees it is a different theme each time.
-GDELT_THEME_GAP_S = 60
+
+# 2026-10-04: spread the themes out. Requesting all four themes back to back
+# every 2 h (even with 60 s gaps and in-run 429 retries) kept tripping GDELT's
+# throttle, so now each run fetches GDELT_THEMES_PER_RUN theme(s) round-robin
+# (the pointer is persisted in the DB), the collector runs every 30 min (each
+# theme still refreshes every 2 h), there are no in-run retries, and a theme
+# that gets a 429 is put on its own cooldown (2 h, doubling, max 12 h) and
+# skipped by the round-robin until it expires.
+GDELT_INTERVAL_S = 30 * 60
+GDELT_THEMES_PER_RUN = max(1, int(os.environ.get("GDELT_THEMES_PER_RUN", "1") or 1))
+GDELT_THEME_GAP_S = (60.0, 120.0)        # jittered gap when >1 theme per run
+GDELT_MIN_SPACING_S = 5.0                # GDELT guidance: <= 1 request / 5 s
+GDELT_COOLDOWN_S = 2 * 60 * 60           # first 429 on a theme
+GDELT_MAX_COOLDOWN_S = 12 * 60 * 60
+GDELT_STATE_KEY = "gdelt_state"
+GDELT_USER_AGENT = os.environ.get(
+    "GDELT_USER_AGENT",
+    "CyEM-Monitor/1.1 (+https://github.com/neildonaghy-source/cyem-monitor; "
+    "personal self-hosted OSINT dashboard; ~2 requests/hour)")
+
+_last_request_at = 0.0
+
+
+class GdeltRateLimited(RuntimeError):
+    pass
+
+
+async def _respect_spacing() -> None:
+    global _last_request_at
+    wait = GDELT_MIN_SPACING_S - (time.monotonic() - _last_request_at)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_request_at = time.monotonic()
+
 
 THEMES: list[dict] = [
     {"key": "cyber", "label": "Cyber attacks", "tags": ["gdelt"],
@@ -56,20 +75,13 @@ def _seendate(s: str | None) -> str | None:
 async def _theme(ctx: Context, theme: dict) -> tuple[dict, list[dict]]:
     params = {"query": theme["query"], "mode": "artlist", "format": "json", "timespan": "24h",
               "maxrecords": 75, "sort": "hybridrel"}
-    # GDELT documents "one request per 5 s" but throttles far harder in
-    # practice: with 30 s spacing and a single 45 s retry, 2-3 of the 4 themes
-    # were 429-ing on EVERY run (2026-09-24 audit), so the OSINT layer had been
-    # running on partial coverage indefinitely. The collector interval is 2 h,
-    # so patience is nearly free — escalate the backoff instead of giving up.
-    r = await ctx.http.get(GDELT_DOC, params=params, timeout=60)
-    for backoff in GDELT_429_BACKOFF_S:
-        if r.status_code != 429:
-            break
-        await asyncio.sleep(backoff)
-        r = await ctx.http.get(GDELT_DOC, params=params, timeout=60)
+    # One request, no in-run retries: retrying inside a run only deepened the
+    # throttle (2026-09-24 / 10-04). A 429 puts this theme on cooldown instead.
+    await _respect_spacing()
+    r = await ctx.http.get(GDELT_DOC, params=params, timeout=60,
+                           headers={"User-Agent": GDELT_USER_AGENT, "Accept": "application/json"})
     if r.status_code == 429:
-        raise RuntimeError(
-            f"GDELT rate limited (429) after {len(GDELT_429_BACKOFF_S)} retries")
+        raise GdeltRateLimited(f"GDELT rate limited (429) for {theme['key']}")
     r.raise_for_status()
     try:
         data = r.json()
@@ -121,40 +133,84 @@ async def _theme(ctx: Context, theme: dict) -> tuple[dict, list[dict]]:
             "articles": len(data.get("articles", []))}, items
 
 
-def rotated_themes(now: datetime | None = None) -> list[dict]:
-    """THEMES, rotated so a different one leads each run.
-
-    Later positions in a run are far likelier to be throttled: over the six
-    runs before 2026-09-24, `satcom` -- always last -- failed 6/6, while
-    `infra` failed 2/6. With a fixed order the same theme is starved forever.
-    Rotating by the 2-hourly slot gives every theme the lead position once per
-    8 h, so a theme missed on one run is picked up on the next.
-    """
-    now = now or datetime.now(timezone.utc)
-    offset = (now.hour // 2) % len(THEMES)
-    return THEMES[offset:] + THEMES[:offset]
+def _parse_iso(v):
+    if not v:
+        return None
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
-@register("gdelt", interval_s=2 * 60 * 60, domain="osint", description="GDELT DOC: news for cyber, GNSS/EW, connectivity and space themes (24h), placed by headline country")
+def pick_themes(state: dict, now: datetime, n: int) -> tuple[list[dict], int]:
+    """Next `n` themes round-robin from state['next'], skipping themes on
+    cooldown. Returns (themes, new_next_index)."""
+    count = len(THEMES)
+    start = int(state.get("next", 0) or 0) % count
+    per = state.get("themes") or {}
+    picked, nxt = [], start
+    for step in range(count):
+        idx = (start + step) % count
+        theme = THEMES[idx]
+        until = _parse_iso((per.get(theme["key"]) or {}).get("cooldown_until"))
+        nxt = (idx + 1) % count
+        if until and until > now:
+            continue
+        picked.append(theme)
+        if len(picked) >= n:
+            break
+    return picked, nxt
+
+
+def cooldown_s(failures: int) -> int:
+    return int(min(GDELT_COOLDOWN_S * 2 ** (max(1, failures) - 1), GDELT_MAX_COOLDOWN_S))
+
+
+@register("gdelt", interval_s=GDELT_INTERVAL_S, domain="osint", description="GDELT DOC: news for cyber, GNSS/EW, connectivity and space themes (24h), placed by headline country; one theme per run, round-robin")
 async def collect_gdelt(ctx: Context) -> Result:
-    results, errors, items = [], [], []
-    for i, t in enumerate(rotated_themes()):  # sequential: GDELT throttles concurrent callers hard
+    now = datetime.now(timezone.utc)
+    state, _ = ctx.db.get_snapshot(GDELT_STATE_KEY)
+    state = state if isinstance(state, dict) else {}
+    per: dict = state.setdefault("themes", {})
+    themes, state["next"] = pick_themes(state, now, GDELT_THEMES_PER_RUN)
+    if not themes:
+        soonest = min((_parse_iso(v.get("cooldown_until")) for v in per.values() if v.get("cooldown_until")),
+                      default=None)
+        ctx.db.set_snapshot(GDELT_STATE_KEY, state)
+        return Result(0, f"all GDELT themes cooling down after 429s (next {iso(soonest) if soonest else '?'})")
+
+    ok_keys, errors, items = [], [], []
+    for i, t in enumerate(themes):
         if i:
-            await asyncio.sleep(GDELT_THEME_GAP_S)
+            await asyncio.sleep(random.uniform(*GDELT_THEME_GAP_S))
+        st = per.setdefault(t["key"], {})
         try:
             res, its = await _theme(ctx, t)
-            results.append(res)
+            res["fetched_at"] = iso(datetime.now(timezone.utc))
+            st.update({"result": res, "failures": 0, "cooldown_until": None,
+                       "last_ok": res["fetched_at"], "last_error": None})
             items.extend(its)
+            ok_keys.append(f"{t['key']} {res['total']}")
         except Exception as e:  # noqa: BLE001
-            errors.append(f"{t['key']}: {type(e).__name__}: {str(e)[:90]}")
-    new = ctx.db.upsert_items(items)
-    ctx.db.set_snapshot("gdelt", {"fetched_at": iso(datetime.now(timezone.utc)), "themes": results, "errors": errors})
-    total = sum(r["total"] for r in results)
-    msg = f"{total} located articles across {len(results)} themes; {new} new items"
+            msg = f"{t['key']}: {type(e).__name__}: {str(e)[:90]}"
+            errors.append(msg)
+            st["last_error"] = msg
+            if isinstance(e, GdeltRateLimited):
+                st["failures"] = int(st.get("failures", 0) or 0) + 1
+                st["cooldown_until"] = iso(datetime.now(timezone.utc) + timedelta(seconds=cooldown_s(st["failures"])))
+    new = ctx.db.upsert_items(items) if items else 0
+    ctx.db.set_snapshot(GDELT_STATE_KEY, state)
+    # Map layer / brief snapshot: the latest good result of EVERY theme, so
+    # fetching one theme per run never blanks the others.
+    results = [per[t["key"]]["result"] for t in THEMES if (per.get(t["key"]) or {}).get("result")]
+    ctx.db.set_snapshot("gdelt", {"fetched_at": iso(now), "themes": results, "errors": errors,
+                                  "next_theme": THEMES[state["next"]]["key"]})
+    msg = (f"fetched {', '.join(ok_keys) or 'nothing'} (located articles); {new} new items; "
+           f"next theme {THEMES[state['next']]['key']}")
     if errors:
         msg += f"; errors: {'; '.join(errors)}"
-    # 2026-10-03: every theme 429'd -> zero located articles with errors. That
-    # used to count as ok, so the scheduler's rate-limit back-off never engaged.
-    if not results or (errors and total == 0):
+    if not ok_keys:
+        # every theme tried this run failed: let the scheduler back off
+        # (a 429 message gets the >= 2 h rate-limit back-off)
         raise RuntimeError(msg)
     return Result(new, msg)

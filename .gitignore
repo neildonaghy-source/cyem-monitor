@@ -10,3 +10,6 @@ __pycache__/
 
 # SearXNG settings hold a secret key
 searxng/settings.yml
+
+# Local configuration backups are private archive material
+docker-compose.yml.bak-*

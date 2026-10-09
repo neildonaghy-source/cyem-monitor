@@ -1,0 +1,7 @@
+Pi CyEM retirement — 9 October 2026
+
+The installed Pi collector source has been preserved in pi/cyem_sweep.py. The old cyem-sweep unit is stopped and disabled, OpenWebRX is stopped with restart disabled, and its Tailscale HTTPS route is removed. Private configuration and the OpenWebRX settings are in /home/neil/backups/cyem-retired-20261009T103042Z on cyem-sdr. Do not commit those archives or their credentials.
+
+The RTL-SDR Blog V4 is now dedicated to six Ecowitt temperature/humidity probes at 868.3MHz. The Pi is a temporary commissioning host. The permanent receiver will be the ordered MS-A2; move the USB receiver there with the same sensor and MQTT discovery identities, then retire the Pi. Do not restart CyEM/OpenWebRX or run two receivers concurrently.
+
+Receiver software/configuration is maintained separately from this retired application. The final rack contains EVO-X2, MS-A2, Mac mini and the TP-Link switch; neither the Pi nor the old Lenovo nodes is a permanent requirement after migration.

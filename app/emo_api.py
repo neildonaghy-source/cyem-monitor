@@ -9,13 +9,17 @@ EP is represented by 'active' (EMCON: off-air emitters are neither seen nor prov
 antenna pattern and power.
 
 ES   sensor(side Y) vs active emitters and effectors (side X != Y), frequency overlap, per-pair terrain
-     path at both heights; detection margin; DF lines of bearing; fixes from the best two DF bearings.
-EA   effector(side Y) vs nets of side X: J/S at each receiver (per-pair terrain paths), and on the map a
-     denial zone inside the net's coverage where J - S - bandwidth loss >= the net's J/S threshold.
+     path at both heights; detection margin; DF lines of bearing; fixes from the best two-bearing cut,
+     or weighted least squares when three or more bearings are held.
+EA   effector(side Y) vs nets of side X: J/S at each receiver (per-pair terrain paths) after bandwidth
+     dilution, hopping and processing gain, and on the map a denial zone inside the net's coverage where
+     J - S - penalty >= the net's J/S threshold. Noise jamming or spoofing (GNSS, datalink).
+Links: each net user is first checked against its own control station; a user out of reach, or whose
+     control is off air, counts as unavailable whether or not it is jammed.
+Radar: range equation per radar and opposing air or sea platform, noise jamming (main lobe, sidelobe,
+     self-screening), screening and burn-through range.
 Maps (per side): own net coverage, exposure of own emissions to the other side's sensors, denial.
-Radar: modelled as an emitter for ES only; radar detection and radar-jamming J/S are not modelled.
-Screening grade: Deygout 3-edge on Copernicus 30 m, no processing gain, hopping, nulling, clutter,
-multipath or time variability. Notional scenarios only.
+MODEL_CAVEAT below is the one statement of model limits; the API, UI and Word export all use it.
 """
 from __future__ import annotations
 
@@ -35,6 +39,15 @@ from .db import Database, get_db, now_iso
 from .ems_core import band_masks, cell_km2, overlap, overlay_png, raster_axes, region_masks, sample, union_bounds
 
 router = APIRouter(prefix="/api/emo", tags=["emo"])
+
+MODEL_CAVEAT = (
+    "Screening grade on notional data. Terrain: Copernicus 30 m surface model with Deygout 3-edge diffraction, "
+    "plane-earth ground reflection for low antennas, antennas assumed sited clear of obstacles within 150 m, "
+    "fixed 4/3 earth and an ITU-R P.528-style cap on air paths. Jamming: bandwidth dilution, hopping and processing "
+    "gain; noise or spoofing. Radar: range equation with main-lobe, sidelobe and self-screening noise jamming. "
+    "DF: best two-bearing cut, or least squares for three or more bearings. Not modelled: weather and atmospheric "
+    "refraction (ducting, rain, fog), adaptive nulling, radar clutter and Doppler processing, multipath fading, and "
+    "variability beyond the probability spread (sigma).")
 
 SQL = """
 CREATE TABLE IF NOT EXISTS emo_entities (
@@ -167,7 +180,8 @@ async def create_entity(body: EntityIn):
 
 @router.put("/{eid}")
 async def update_entity(eid: str, body: EntityIn):
-    if not get_db().one("SELECT id FROM emo_entities WHERE id=?", (eid,)):
+    # scoped to the caller's workspace: an id from another workspace is not found (and is never moved across)
+    if not get_db().one("SELECT id FROM emo_entities WHERE id=? AND ws=?", (eid, WS.get())):
         raise HTTPException(404, "no such entity")
     _check(body)
     return _upsert(body, eid)
@@ -177,7 +191,8 @@ async def update_entity(eid: str, body: EntityIn):
 async def move_entity(eid: str, body: MoveIn):
     """Drag on the map: move the entity (and its track start) to a new position."""
     with get_db().tx() as c:
-        n = c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=?", (body.lat, body.lon, now_iso(), eid)).rowcount
+        n = c.execute("UPDATE emo_entities SET lat=?, lon=?, updated_at=? WHERE id=? AND ws=?",
+                      (body.lat, body.lon, now_iso(), eid, WS.get())).rowcount
     if not n:
         raise HTTPException(404, "no such entity")
     return {"moved": eid}
@@ -187,7 +202,8 @@ async def move_entity(eid: str, body: MoveIn):
 async def set_active(eid: str, on: bool):
     """EMCON: take an emitter or effector off-air (or back on)."""
     with get_db().tx() as c:
-        n = c.execute("UPDATE emo_entities SET active=?, updated_at=? WHERE id=?", (1 if on else 0, now_iso(), eid)).rowcount
+        n = c.execute("UPDATE emo_entities SET active=?, updated_at=? WHERE id=? AND ws=?",
+                      (1 if on else 0, now_iso(), eid, WS.get())).rowcount
     if not n:
         raise HTTPException(404, "no such entity")
     return {"id": eid, "active": on}
@@ -196,8 +212,9 @@ async def set_active(eid: str, on: bool):
 @router.delete("/{eid}")
 async def delete_entity(eid: str):
     with get_db().tx() as c:
-        n = c.execute("DELETE FROM emo_entities WHERE id=?", (eid,)).rowcount
-        c.execute("UPDATE emo_entities SET net=NULL WHERE net=?", (eid,))
+        n = c.execute("DELETE FROM emo_entities WHERE id=? AND ws=?", (eid, WS.get())).rowcount
+        if n:
+            c.execute("UPDATE emo_entities SET net=NULL WHERE net=? AND ws=?", (eid, WS.get()))
     if not n:
         raise HTTPException(404, "no such entity")
     return {"deleted": eid}
@@ -447,14 +464,29 @@ async def coverage_for(e: dict, pos, rx_h: float):
     return _COV[key]
 
 
-def scoreboard(ents, detections, fixes, jamming, nets, radar=None) -> dict:
-    """Per-side measures of the EM fight: net availability, exposure, fix risk, denial achieved, collateral."""
+def link_status(control: dict | None, s_dbm: float | None, sens_dbm: float) -> tuple[str, bool]:
+    """A net user's own link before any jamming: control off air, out of range, or linked."""
+    if control is None or not control.get("active", True):
+        return "control off air", False
+    if s_dbm is None or s_dbm < sens_dbm:
+        return "out of range", False
+    return "linked", True
+
+
+def scoreboard(ents, detections, fixes, jamming, nets, radar=None, links=None) -> dict:
+    """Per-side measures of the EM fight: net availability, exposure, fix risk, denial achieved, collateral.
+    Net availability: share of net users that hold their own control station (in range, control on air) and are
+    not denied or deceived. 'links' comes from run(); without it every user is assumed linked (the old basis)."""
     out = {}
     for sd in ("blue", "red"):
         opp = "red" if sd == "blue" else "blue"
-        bad = {j["victim"] for j in jamming if j["status"] in ("denied", "no link", "deceived")}
-        rx = [e for e in ents if e["side"] == sd and e["kind"] == "receiver"]
-        avail = [e["name"] not in bad for e in rx]
+        bad_ids = {j["victim_id"] for j in jamming if j["status"] in ("denied", "no link", "deceived")}
+        if links is None:
+            users = [{"receiver_id": e["id"], "linked": True} for e in ents if e["side"] == sd and e["kind"] == "receiver"]
+        else:
+            users = [lk for lk in links if lk["side"] == sd]
+        avail = [lk["linked"] and lk["receiver_id"] not in bad_ids for lk in users]
+        unlinked = sum(1 for lk in users if not lk["linked"])
         radiating = [e for e in ents if e["side"] == sd and e["active"] and (e["kind"] in ("emitter", "effector") or e.get("eirp_dbm") is not None)
                      and e.get("fixed_level_dbm") is None]
         heard = {d["target"] for d in detections if d["detected"] and d["sensor_side"] == opp}
@@ -462,6 +494,7 @@ def scoreboard(ents, detections, fixes, jamming, nets, radar=None) -> dict:
         margins = [d["margin_db"] for d in detections if d["detected"] and d["sensor_side"] == opp]
         out[sd] = {
             "net_availability_pct": round(100 * sum(avail) / len(avail), 0) if avail else None,
+            "net_users_unlinked": unlinked,
             "emitters_exposed": f"{len(exposed)}/{len(radiating)}",
             "mean_exposure_db": round(sum(margins) / len(margins), 1) if margins else None,
             "fixed": sum(1 for f in fixes if f["target_side"] == sd and f["fix"]),
@@ -492,6 +525,16 @@ def _default_rcs(e: dict) -> float:
     if pf == "air":
         return 0.1 if "uav" in n or "drone" in n else 1.0 if "fighter" in n else 30.0 if "aew" in n or "mpa" in n or "ea" in n else 50.0 if "airliner" in n else 5.0
     return 10.0
+
+
+def burnthrough_km(range_m: float, js_db: float, mode: str) -> float | None:
+    """Range at which the echo overcomes the noise (J/S falls to 0 dB), from J/S at the present range.
+    Self-screening: the jammer rides on the target, J ~ 1/R^2 against an echo ~ 1/R^4, so J/S ~ R^2.
+    Stand-off or main-lobe jammer at a fixed position: J does not change as the target closes, so J/S ~ R^4."""
+    if js_db <= 0:
+        return None
+    k = 20.0 if mode == "self-screening" else 40.0
+    return round(range_m / 1000 / 10 ** (js_db / k), 1)
 
 
 async def radar_picture(ents, radiating, effectors, p, prob) -> list[dict]:
@@ -529,8 +572,8 @@ async def radar_picture(ents, radiating, effectors, p, prob) -> list[dict]:
                 J = await p2p_level(y, y["pos"], rd, rd["pos"]) + gain - jam_penalty(y, rd)
                 js = J - echo
                 if best is None or js > best["js_db"]:
-                    best = {"jammer": y["name"], "mode": "self-screening" if selfp else "mainlobe" if same_bearing else "stand-off (sidelobe)",
-                            "js_db": round(js, 1), "burnthrough_km": round(R / 1000 / (10 ** (js / 40)), 1) if js > 0 else None}
+                    mode = "self-screening" if selfp else "mainlobe" if same_bearing else "stand-off (sidelobe)"
+                    best = {"jammer": y["name"], "mode": mode, "js_db": round(js, 1), "burnthrough_km": burnthrough_km(R, js, mode)}
             detected = margin >= 0
             screened = bool(detected and best and best["js_db"] >= 0)     # only a detectable target can be screened
             out.append({"radar": rd["name"], "radar_side": rd["side"], "target": tg["name"], "target_side": tg["side"], "platform": _platform(tg),
@@ -575,9 +618,29 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
             if y["side"] != nn["side"] and overlap(*band(nn), *band(y)):
                 for v in [r for r in receivers if r.get("net") == nn["id"]]:
                     jobs.append(p2p_level(y, y["pos"], v, v["pos"]))
-                    if nn.get("fixed_level_dbm") is None:
-                        jobs.append(p2p_level(nn, nn["pos"], v, v["pos"]))
+    for v in receivers:                                   # every user's own link, jammed or not
+        ctl = byid.get(v.get("net") or "")
+        if ctl and ctl["active"] and ctl.get("fixed_level_dbm") is None and ctl.get("eirp_dbm") is not None:
+            jobs.append(p2p_level(ctl, ctl["pos"], v, v["pos"]))
     await asyncio.gather(*jobs)
+
+    # own links: is each net user in reach of its control station before any jamming?
+    links = []
+    for v in receivers:
+        if not v.get("net"):
+            continue
+        ctl = byid.get(v["net"])
+        vs = v.get("sens_dbm") or (ctl or {}).get("sens_dbm") or p.default_sens
+        s_dbm = None
+        if ctl and ctl["active"]:
+            if ctl.get("fixed_level_dbm") is not None:
+                s_dbm = float(ctl["fixed_level_dbm"])
+            elif ctl.get("eirp_dbm") is not None:
+                s_dbm = await p2p_level(ctl, ctl["pos"], v, v["pos"])
+        status, ok = link_status(ctl, s_dbm, vs)
+        links.append({"receiver": v["name"], "receiver_id": v["id"], "side": v["side"], "net": ctl["name"] if ctl else None,
+                      "net_id": v["net"], "s_dbm": None if s_dbm is None else round(s_dbm, 1), "sens_dbm": vs,
+                      "margin_db": None if s_dbm is None else round(s_dbm - vs, 1), "status": status, "linked": ok})
     if grids:
         s, w, n, e_ = union_bounds(list(grids.values()))
     else:
@@ -674,19 +737,16 @@ async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True
         ps = [d["p"] for d in detections if d["target"] == f["target"] and d["sensor"] in f["sensors"] and d["detected"]]
         f["p"] = int(round(100 * math.prod(x / 100 for x in ps))) if len(ps) >= 2 else 0
     layers = {k: overlay_png(region_masks(m, LAYER_RGBA[k], hatched=k.endswith("_denied"))) for k, m in L.items() if m.any()}
-    score = scoreboard(ents, detections, fixes, jamming, per_net, radar)
+    score = scoreboard(ents, detections, fixes, jamming, per_net, radar, links)
     exposure = [{"side": sd, "km2": round(float(L[f"{sd}_seen"].sum()) * km2, 1)} for sd in ("blue", "red", "grey")]
     horizon = max([track_minutes(e) for e in ents] + [0])
     if keep:
         _LAST.update({"t": t_min, "pos": {e["id"]: e["pos"] for e in ents}, "detections": detections, "fixes": fixes,
-                      "jamming": jamming, "radar": radar, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
+                      "jamming": jamming, "radar": radar, "links": links, "params": p, "bounds": [[s, w], [n, e_]], "score": score})
     return {"t_min": t_min, "horizon_min": round(horizon, 1), "bounds": [[s, w], [n, e_]], "layers": layers,
             "positions": {e["id"]: e["pos"] for e in ents}, "on_air": {e["id"]: e["active"] for e in ents}, "detections": detections, "fixes": fixes,
-            "jamming": jamming, "nets": per_net, "exposure": exposure, "score": score, "radar": radar, "params": p.model_dump(),
-            "compute_s": round(time.monotonic() - t0, 1),
-            "notes": "Screening only: Deygout 3-edge on Copernicus 30 m terrain; no processing gain, hopping, nulling, clutter, "
-                     "multipath or time variability. Radar modelled as an emitter for ES only. DF fix error = range x DF "
-                     "sigma per bearing, combined over the best cut angle. Notional scenario data."}
+            "jamming": jamming, "nets": per_net, "links": links, "exposure": exposure, "score": score, "radar": radar,
+            "params": p.model_dump(), "compute_s": round(time.monotonic() - t0, 1), "notes": MODEL_CAVEAT}
 
 
 # ---- examples --------------------------------------------------------------------------------
@@ -704,11 +764,13 @@ async def score_now():
     if not _LAST:
         raise HTTPException(409, "run the analysis first")
     det, jam = _LAST["detections"], _LAST["jamming"]
+    own = {lk["receiver_id"]: lk for lk in (_LAST.get("links") or []) if not lk["linked"]}
     ents = _all()
     per = {}
     for e in ents:
         per[e["id"]] = {"detected_by": [d["sensor"] for d in det if d["detected"] and d["target_id"] == e["id"] and d.get("sensor_side") != e["side"]],
-                        "status": next((j["status"] for j in jam if j.get("victim_id") == e["id"] and j["status"] != "unaffected"), None),
+                        "status": next((j["status"] for j in jam if j.get("victim_id") == e["id"] and j["status"] != "unaffected"), None)
+                                  or (own[e["id"]]["status"] if e["id"] in own else None),
                         "denies": [j["victim"] for j in jam if j.get("effector_id") == e["id"] and j["status"] in ("denied", "deceived")],
                         "target_quality": any(f["targetable"] for f in _LAST["fixes"] if f["target"] == e["name"])}
     return {"t": _LAST.get("t", 0), "score": _LAST.get("score"), "entities": per}
@@ -739,7 +801,7 @@ async def load_example(name: str):
         for d in ex["entities"]:
             if d.get("net"):
                 c.execute("UPDATE emo_entities SET net=? WHERE id=?", (ids[d["net"]], ids[d["name"]]))
-    _COV.clear(); _P2P.clear()
+    _COV.clear(); _P2P.clear(); _LAST.clear()      # the previous scenario's analysis must not feed planning calls
     return {"loaded": name, "title": ex["title"], "about": ex["about"], "centre": ex["centre"], "zoom": ex["zoom"],
             "params": ex.get("params", {}),
             "entities": _all()}
@@ -1084,59 +1146,75 @@ def _schematic_png(res: dict, ents: list[dict]) -> bytes:
     W = 900
     H = max(300, int(W * (n - s) / max(e - w, 1e-6) / max(math.cos(math.radians((s + n) / 2)), 0.2)))
     img = Image.new("RGBA", (W, H), (14, 20, 28, 255))
-    for k in ("blue_seen", "red_seen", "blue_denied", "red_denied"):
+    for k in ("blue_seen", "red_seen", "grey_seen", "blue_denied", "red_denied", "grey_denied"):
         u = res["layers"].get(k)
         if u:
             ov = Image.open(io.BytesIO(base64.b64decode(u.split(",", 1)[1]))).convert("RGBA").resize((W, H))
             img.alpha_composite(ov)
     d = ImageDraw.Draw(img)
     xy = lambda la, lo: ((lo - w) / (e - w) * W, (n - la) / (n - s) * H)  # noqa: E731
+    jam_col = {"denied": (235, 40, 235, 255), "deceived": (255, 170, 30, 255)}
     for j in res["jamming"]:
-        col = (235, 40, 235, 255) if j["status"] == "denied" else (69, 211, 138, 200)
-        d.line([xy(*j["a"]), xy(*j["b"])], fill=col, width=2)
+        d.line([xy(*j["a"]), xy(*j["b"])], fill=jam_col.get(j["status"], (69, 211, 138, 200)), width=2)
     for f in res["fixes"]:
         if f["fix"]:
             cx, cy = xy(*f["fix"]["fix"])
             r = max(4, f["fix"]["error_m"] / 111320 / (n - s) * H)
-            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(255, 70, 70, 255) if f["target_side"] == "blue" else (60, 200, 255, 255),
+            # coloured by the side that holds the fix
+            d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(255, 70, 70, 255) if f["by_side"] == "red" else (60, 200, 255, 255),
                       width=3 if f["targetable"] else 1)
     for en in ents:
         la, lo = res["positions"].get(en["id"], (en["lat"], en["lon"]))
         x, y = xy(la, lo)
-        col = (60, 140, 255, 255) if en["side"] == "blue" else (255, 70, 70, 255)
         if en["side"] == "blue":
-            d.rectangle([x - 5, y - 4, x + 5, y + 4], fill=col, outline=(255, 255, 255, 255))
-        else:
-            d.polygon([(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], fill=col, outline=(255, 255, 255, 255))
+            d.rectangle([x - 5, y - 4, x + 5, y + 4], fill=(60, 140, 255, 255), outline=(255, 255, 255, 255))
+        elif en["side"] == "red":
+            d.polygon([(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], fill=(255, 70, 70, 255), outline=(255, 255, 255, 255))
+        else:                                                   # grey: civil or neutral, located but never a target
+            d.ellipse([x - 5, y - 5, x + 5, y + 5], fill=(170, 180, 190, 255), outline=(255, 255, 255, 255))
         d.text((x + 8, y - 6), en["name"][:22], fill=(230, 237, 243, 255))
     out = io.BytesIO(); img.convert("RGB").save(out, "PNG")
     return out.getvalue()
 
 
+def _export_params(df_fix_good_m: float | None) -> RunIn:
+    """The settings the user last ran with (rx height, J/S, sensitivity, sigma, fix threshold), else the defaults.
+    An explicit df_fix_good_m from the export request overrides the saved threshold."""
+    saved = _LAST.get("params")
+    d = saved.model_dump() if saved is not None else {}
+    if df_fix_good_m is not None:
+        d["df_fix_good_m"] = df_fix_good_m
+    return RunIn(**d)
+
+
 @router.get("/export.docx")
-async def emo_export(phases: str = "0", df_fix_good_m: float = 1000):
+async def emo_export(phases: str = "0", df_fix_good_m: float | None = None):
     import io
     from datetime import datetime, timezone
     from docx import Document
     from docx.shared import Cm, Pt
     from fastapi.responses import StreamingResponse
     ts = sorted({max(0.0, float(x)) for x in phases.split(",") if x.strip()})[:6] or [0.0]
+    params = _export_params(df_fix_good_m)
     doc = Document()
     st = doc.styles["Normal"]; st.font.name = "Arial"; st.font.size = Pt(10)
     doc.add_heading("CyEM EMO briefing (notional scenario)", 0)
-    doc.add_paragraph(f"Produced {datetime.now(timezone.utc):%d %b %Y %H:%MZ}. Screening-grade analysis on Copernicus 30 m terrain "
-                      "(Deygout, 3 edges); no clutter, multipath or detailed receiver modelling. Notional data only.")
+    doc.add_paragraph(f"Produced {datetime.now(timezone.utc):%d %b %Y %H:%MZ}. {MODEL_CAVEAT}")
+    doc.add_paragraph(f"Settings: receiver and sensor height {params.rx_h:g} m, default J/S to fail {params.js_req_db:g} dB, "
+                      f"default sensitivity {params.default_sens:g} dBm, probability spread {params.sigma_db:g} dB, "
+                      f"target-quality fix within {params.df_fix_good_m:g} m.")
     for t in ts:
-        res = await run(RunIn(df_fix_good_m=df_fix_good_m), t_min=t)
+        res = await run(params, t_min=t, keep=False)   # the user's own saved analysis is left as it was
         ents = _all()
         doc.add_heading(f"Phase T+{t:g} min", 1)
         tgt = [f for f in res["fixes"] if f["targetable"]]
         den = sorted(res["nets"], key=lambda x: -x["denied_pct"])
-        doc.add_paragraph(f"{len(tgt)} target-quality fix(es) (threshold {df_fix_good_m:g} m). "
+        doc.add_paragraph(f"{len(tgt)} target-quality fix(es) (threshold {params.df_fix_good_m:g} m). "
                           + "; ".join(f"{x['net']} ({x['side']}) {x['denied_pct']}% denied" for x in den[:4]) + ".")
         doc.add_picture(io.BytesIO(await asyncio.to_thread(_schematic_png, res, ents)), width=Cm(16))
-        doc.add_paragraph("Schematic, no basemap. Blue squares, red diamonds; tint = where each side's emissions are heard; "
-                          "hatched = net denial; circles = DF fixes (thick = target-quality fix); lines = jamming (magenta denied).").runs[0].italic = True
+        doc.add_paragraph("Schematic, no basemap. Blue squares, red diamonds, grey circles (civil, located but never targeted); "
+                          "tint = where each side's emissions are heard; hatched = net denial; circles = DF fixes in the colour of "
+                          "the side holding the fix (thick = target-quality); lines = jamming (magenta denied, amber deceived).").runs[0].italic = True
         def table(head, rows):
             tb = doc.add_table(rows=1, cols=len(head)); tb.style = "Light Grid Accent 1"
             for i, h in enumerate(head):
@@ -1145,6 +1223,23 @@ async def emo_export(phases: str = "0", df_fix_good_m: float = 1000):
                 cs = tb.add_row().cells
                 for i, v in enumerate(r):
                     cs[i].text = str(v)
+        sc = res["score"]
+        doc.add_heading("Scoreboard", 2)
+        table(["Measure", "Blue", "Red"],
+              [["Net availability %", sc["blue"]["net_availability_pct"], sc["red"]["net_availability_pct"]],
+               ["Net users without their own link", sc["blue"]["net_users_unlinked"], sc["red"]["net_users_unlinked"]],
+               ["Emitters exposed", sc["blue"]["emitters_exposed"], sc["red"]["emitters_exposed"]],
+               ["Fixed / target-quality", f"{sc['blue']['fixed']} / {sc['blue']['targetable']}", f"{sc['red']['fixed']} / {sc['red']['targetable']}"],
+               ["Denial achieved", sc["blue"]["denial_achieved"], sc["red"]["denial_achieved"]],
+               ["Deceived", sc["blue"]["deceived"], sc["red"]["deceived"]],
+               ["Collateral (civil users denied)", sc["blue"]["collateral"], sc["red"]["collateral"]],
+               ["Radar tracks held", sc["blue"]["radar_tracks"], sc["red"]["radar_tracks"]],
+               ["Own platforms screened from radar", sc["blue"]["radar_screened"], sc["red"]["radar_screened"]]])
+        cut = [lk for lk in res["links"] if not lk["linked"]]
+        if cut:
+            doc.add_heading("Net users without their own link", 2)
+            table(["User", "Side", "Net", "Status", "Margin dB"],
+                  [[lk["receiver"], lk["side"], lk["net"] or "-", lk["status"], lk["margin_db"] if lk["margin_db"] is not None else "-"] for lk in cut])
         fx = [f for f in res["fixes"] if f["fix"]]
         if fx:
             doc.add_heading("DF fixes", 2)
@@ -1158,6 +1253,14 @@ async def emo_export(phases: str = "0", df_fix_good_m: float = 1000):
         if res["jamming"]:
             doc.add_heading("Jamming at each victim", 2)
             table(["Effector", "Victim", "J/S dB", "Result"], [[j["effector"], j["victim"], j["js_db"], j["status"]] for j in res["jamming"]])
+        rd = [r for r in res["radar"] if r["detected"]]
+        if rd:
+            doc.add_heading("Radar picture", 2)
+            table(["Radar", "Target", "Range km", "Margin dB", "Result", "Jammer (mode)", "J/S dB", "Burn-through km"],
+                  [[r["radar"], r["target"], r["range_km"], r["margin_db"], "screened" if r["screened"] else "tracked",
+                    f"{r['jam']['jammer']} ({r['jam']['mode']})" if r["jam"] else "-",
+                    r["jam"]["js_db"] if r["jam"] else "-",
+                    (r["jam"]["burnthrough_km"] if r["jam"] and r["jam"]["burnthrough_km"] is not None else "-")] for r in rd])
     buf = io.BytesIO(); doc.save(buf)
     name = f"CyEM-EMO-brief-{datetime.now(timezone.utc):%Y%m%d-%H%MZ}.docx"
     return StreamingResponse(io.BytesIO(buf.getvalue()), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -1292,7 +1395,7 @@ async def coas_export():
     doc = Document()
     doc.styles["Normal"].font.size = Pt(10)
     doc.add_heading("EMO courses of action: comparison", 1)
-    doc.add_paragraph(f"Workspace {WS.get()}; {len(rows)} saved COA(s) plus the current state. Screening-grade terrain model; notional values.")
+    doc.add_paragraph(f"Workspace {WS.get()}; {len(rows)} saved COA(s) plus the current state. {MODEL_CAVEAT}")
     for side in ("blue", "red"):
         doc.add_heading(f"{side.capitalize()} measures", 2)
         t = doc.add_table(rows=1, cols=1 + len(cols)); t.style = "Light Grid Accent 1"
@@ -1316,13 +1419,27 @@ async def coas_export():
 UNDO_KEEP = 5
 
 
-def emo_snapshot(label: str) -> None:
+def emo_snapshot(label: str) -> int | None:
+    """Record the workspace's entities before a change. Returns the snapshot id; the caller settles it once the
+    request has finished (kept on success, dropped on failure) so a rejected request leaves no undo entry."""
     ws = WS.get()
     rows = [dict(r) for r in get_db().query("SELECT * FROM emo_entities WHERE ws=?", (ws,))]
     if not rows:
-        return
+        return None
     with get_db().tx() as c:
-        c.execute("INSERT INTO emo_undo (ws, ts, label, entities) VALUES (?,?,?,?)", (ws, now_iso(), label, json.dumps(rows)))
+        cur = c.execute("INSERT INTO emo_undo (ws, ts, label, entities) VALUES (?,?,?,?)", (ws, now_iso(), label, json.dumps(rows)))
+        return cur.lastrowid
+
+
+def emo_snapshot_settle(snap_id: int | None, ok: bool) -> None:
+    """Keep the snapshot and trim the workspace's undo list to UNDO_KEEP, or drop it if the change was rejected."""
+    if snap_id is None:
+        return
+    ws = WS.get()
+    with get_db().tx() as c:
+        if not ok:
+            c.execute("DELETE FROM emo_undo WHERE id=?", (snap_id,))
+            return
         c.execute("DELETE FROM emo_undo WHERE ws=? AND id NOT IN (SELECT id FROM emo_undo WHERE ws=? ORDER BY id DESC LIMIT ?)", (ws, ws, UNDO_KEEP))
 
 

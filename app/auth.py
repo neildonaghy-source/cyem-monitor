@@ -29,8 +29,17 @@ button{width:100%;padding:10px;border-radius:6px;border:0;background:#3c8cff;col
 <input type="hidden" name="next" value="{next}"><button>Sign in</button></form></body></html>"""
 
 
+def safe_next(nxt: str | None) -> str:
+    """Where to go after sign-in: a path on this site only. '//host' and '/\\host' are protocol-relative to a
+    browser (an open redirect), and control characters or a scheme are refused; anything else falls back to '/'."""
+    nxt = nxt or "/"
+    if not nxt.startswith("/") or nxt.startswith(("//", "/\\")) or any(ord(ch) < 32 or ch == "\\" for ch in nxt):
+        return "/"
+    return nxt
+
+
 def _page(msg: str, nxt: str) -> str:
-    return LOGIN_HTML.replace("{msg}", msg).replace("{next}", nxt.replace('"', ""))
+    return LOGIN_HTML.replace("{msg}", msg).replace("{next}", safe_next(nxt).replace('"', ""))
 
 
 def _secret() -> bytes:
@@ -106,7 +115,7 @@ async def login_post(request: Request):
     form = await request.form()
     if hmac.compare_digest(str(form.get("password", "")), os.environ.get("CYEM_PASSWORD", "")):
         nxt = str(form.get("next") or "/")
-        r = RedirectResponse(nxt if nxt.startswith("/") else "/", status_code=302)
+        r = RedirectResponse(safe_next(nxt), status_code=302)
         r.set_cookie(COOKIE, _token(int(now + TTL)), max_age=TTL, httponly=True, secure=True, samesite="lax")
         return r
     _attempts[ip].append(now)

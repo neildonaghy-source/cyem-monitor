@@ -89,6 +89,8 @@ def _undo_label(method: str, path: str) -> str | None:
             return {"coa": "adversary COA", "joint": "joint re-site", "apply": "EP measure"}[path.rsplit("/", 1)[1]]
         if path.startswith("/api/emo/examples/") or _re.fullmatch(r"/api/emo/(scenarios|coas)/[^/]+/load", path):
             return "load"
+    if method == "PUT" and _re.fullmatch(r"/api/emo/[0-9a-f]{8}", path):
+        return "edit"
     if method == "DELETE" and _re.fullmatch(r"/api/emo/[0-9a-f]{8}", path):
         return "delete"
     return None
@@ -101,15 +103,25 @@ async def cyem_ws_middleware(request, call_next):
     ws = (request.headers.get("x-cyem-ws") or "default").strip()[:40]
     token = WS.set(ws if ws.replace("-", "").isalnum() else "default")
     label = _undo_label(request.method, request.url.path)
+    snap = None
     if label:
         try:
             from .emo_api import emo_snapshot
-            emo_snapshot(label)
+            snap = emo_snapshot(label)
         except Exception:
-            pass
+            snap = None
+    ok = False
     try:
-        return await call_next(request)
+        resp = await call_next(request)
+        ok = resp.status_code < 400
+        return resp
     finally:
+        if snap is not None:
+            try:
+                from .emo_api import emo_snapshot_settle
+                emo_snapshot_settle(snap, ok)          # a rejected change leaves no undo entry
+            except Exception:
+                pass
         WS.reset(token)
 
 
@@ -419,9 +431,21 @@ async def collect(name: str):
     return {"ok": ok, "started": [name] if ok else []}
 
 
+# Content-Security-Policy for every response. Scripts only from this origin (no inline script), so injected markup
+# in model output cannot run; base-uri 'none' stops a stray <base> tag re-pointing relative links. Map tiles and
+# symbol images may come from any https host; the live SDR receiver is an https iframe. frame-ancestors is left
+# open on purpose so Home Assistant can embed the dashboard (no X-Frame-Options either).
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+       "connect-src 'self'; font-src 'self' data:; frame-src 'self' https:; media-src 'self' https: blob:; "
+       "worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'")
+
+
 @app.middleware("http")
 async def no_frame_block(request: Request, call_next):
     # Deliberately no X-Frame-Options so Home Assistant can embed the dashboard in an iframe.
     resp = await call_next(request)
     resp.headers.setdefault("Cache-Control", "no-store" if request.url.path.startswith("/api/") else "public, max-age=300")
+    if not request.url.path.startswith(("/api/docs", "/openapi.json")):     # FastAPI's own docs page loads its UI from a CDN
+        resp.headers.setdefault("Content-Security-Policy", CSP)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     return resp

@@ -513,8 +513,11 @@ async def red_coa(body: CoaIn, t_min: float = 0):
         raise HTTPException(400, f"{opp} has no net to target")
     _SNAP[(emo_api.WS.get(), side)] = {e["id"]: (e["lat"], e["lon"]) for e in ents.values() if e["side"] == side}
     moves = []
+    # units on a track are left alone: moving the start point would redraw the route and change the timeline
+    # (same rule as the joint re-site)
+    tracked = lambda e: bool(e.get("track")) and bool(e.get("speed_kmh"))  # noqa: E731
     # jammers: against the opposing net they can affect, preferring the HQ net
-    for y in [e for e in ents.values() if e["side"] == side and e["kind"] == "effector" and e["active"]]:
+    for y in [e for e in ents.values() if e["side"] == side and e["kind"] == "effector" and e["active"] and not tracked(e)]:
         nets = [n for n in ents.values() if n["side"] == opp and n["kind"] == "emitter" and emo_api.overlap(*emo_api.band(y), *emo_api.band(n))
                 and any(u.get("net") == n["id"] for u in ents.values())]
         if not nets:
@@ -529,7 +532,7 @@ async def red_coa(body: CoaIn, t_min: float = 0):
     # DF sites: hear the opposing HQ net best with a good cut angle against the other DF sites
     dfs = [e for e in ents.values() if e["side"] == side and e["kind"] == "sensor" and e.get("df_rms_deg") and e["h_agl"] < 300
            and emo_api.overlap(*emo_api.band(target), *emo_api.band(e))]
-    for d in dfs:
+    for d in [q for q in dfs if not tracked(q)]:          # tracked DF sites still count for the cut angle, but stay put
         cur, best = await _df_site(emo_api, ents, p, pos, d, target, [q for q in dfs if q is not d], max_move, standoff)
         if best and best["score"] - cur["score"] >= gain_needed:
             moves.append({"entity": d["name"], "id": d["id"], "kind": "sensor", "from": pos(d), "to": (best["lat"], best["lon"]),
@@ -547,7 +550,7 @@ async def red_coa(body: CoaIn, t_min: float = 0):
     return {"side": side, "coa": body.coa, "target": target["name"], "moves": moves, "score_before": before, "score_after": res["score"],
             "notes": ("MLCOA: at most two moves within 15 km, each only if clearly better. " if ml else
                       "MDCOA: every jammer and DF site re-sited within 40 km for greatest effect on the other side's highest-value net. ")
-                     + "Applied to the scenario; use revert to restore."}
+                     + "Units on a track are not moved. Applied to the scenario; use revert to restore."}
 
 
 @router.post("/coa/revert")

@@ -17,6 +17,23 @@ below is computed on the box; positions and effects are proposals to test, not s
 
 Near-terminal clutter: within 150 m of each antenna the surface model is capped at ground level on the pairwise paths.
 
+## Met (18 Nov 2026)
+
+The panel's **Met** row chooses the atmosphere for every run, the timeline and the Word export:
+
+| Setting | What the model uses |
+|---|---|
+| Standard atmosphere (default) | k = 4/3, no rain, no fog |
+| Forecast at the scenario centre | Open-Meteo for the hour of T+0 (empty time: now; up to 16 days ahead; older dates from archived forecasts). k from the refractivity gradient in the lowest kilometre (ITU-R P.453), rain at the hourly rate (P.838 with the P.530 path reduction), fog from visibility (P.840) |
+| What-if k, rain, visibility | Overrides on either setting, e.g. k 4 for strong super-refraction, 25 mm/h for a heavy shower |
+
+Each timeline step and each export phase uses the met for its own hour. The run's **Met** card shows k and refraction
+class, rain, visibility and fog water, wind, cloud base, freezing level, air, sea state, the evaporation duct over
+nearby sea (neutral Paulus-Jeske), any ducts in the forecast profile with their cut-off frequency, Kp, and the
+entities a duct could carry ("In a duct: ..."). Ducts are flagged, not modelled: ranges shown are the k-factor model's.
+One met state covers the whole scenario. `python -m app.cli met <lat> <lon> [time]` and `GET /api/met` give the same
+state for any place; it is cached per 0.05 degree square and day (`met_cache`, 3 hours for recent days).
+
 ## Workflow
 
 1. **Load** a scenario or build one, then Run. Examples: 0 NW Scotland and the Minches (operational MDO), 0b Suwałki Gap,
@@ -66,6 +83,9 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 - Net availability counts a user only if it holds its own control station (in range, control on air) and is not
   denied or deceived; users out of range or with the control off air are listed under *links* in the run and in the export.
 - Model limits, in one place: `MODEL_CAVEAT` in `app/emo_api.py` (shown in run notes and both Word exports).
+- Met: the forecast model's pressure levels are about 250 m apart near the ground, so thin elevated ducts are missed;
+  the evaporation duct is the neutral-stability estimate (the card says when the air is stable); rain is the hourly
+  mean, not the peak of a shower.
 
 - Surface-model terrain; clutter clearance only on pairwise paths, not on the map rasters (a few dB difference at 1 km pixels).
 - Air and space paths use the standard analysis with earth curvature, not ITU-R P.528; within 100 km at aircraft heights this is line of sight anyway.

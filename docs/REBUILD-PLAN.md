@@ -22,7 +22,7 @@ the planning. Notional data only, as before.
 | 1. Fix | Audit findings 1 to 12 (13 moves to phase 5); Pillow 13.0.0; DOMPurify and CSP; scenario tests on synthetic terrain | 1 | Merged 18 Nov (PR #4) |
 | 2. Redeploy | EVO WSL distro, Docker, internet log-in, data re-download (Copernicus tiles on demand, Ofcom WTR, UKFAT), new API keys (aisstream, OpenCelliD, Cloudflare), tailnet routes, backups, runbook (HA panel dropped 18 Nov: not needed) | 2 | Running on the EVO since 18 Nov (docs/DEPLOY-EVO.md); cross-site guard and frame-ancestors 'self' added 18 Nov; still to do: off-box data copy, API keys |
 | 3. Clients | Installable web app on Mac and iPhone; native apps if the source turns up (repoint and re-sign: 1 session; rebuild from scratch: 2 to 3) | 1 | Web app done 18 Nov: installable from the tailnet and the internet (manifest and icons outside the log-in; README "Install as an app"). Native apps wait for the source |
-| 4. Met | `met_core` (refractivity, k-factor, ducts, hydrometeor and gas attenuation), Open-Meteo collector, met per time step in EMO runs and the timeline, met layer and caveat | 2 | |
+| 4. Met | `met_core` (refractivity, k-factor, ducts, hydrometeor and gas attenuation), Open-Meteo collector, met per time step in EMO runs and the timeline, met layer and caveat | 2 | Part 1 done 18 Nov: `met_core`, `met.py` (Open-Meteo, cached), k, rain and fog per run, timeline step and export phase, duct flags, Met card, caveat. Part 2: met map layer, sea clutter and platform limits (with phase 5), HF and GNSS by time step |
 | 5. Corridors: core | Cost-grid search in space and time, corridor band, legs with EMCON and comms plan, verify by exact pairwise runs; ground, low-level air (rotary and UAS) and maritime surface first; scenarios moved to JSON with a schema check (finding 13) | 3 | |
 | 6. Corridors: other domains | Amphibious, sub-surface exposure windows, dismounted and SOF, spectrum (frequency-time), satcom and GNSS windows, grey (civil) corridors | 2 to 3 | |
 | 7. Outputs | Word corridor brief, Ask answers with positions and legs, AR overlay if the apps return | 1 | |
@@ -56,8 +56,10 @@ of the best path's cost. Each leg carries an EMCON state, the nets and relays it
 
 ## Meteorology
 
-Today the model uses a fixed 4/3 earth, no rain and no ducting (`MODEL_CAVEAT`). `link_core` already takes a k-factor,
-rain rate and gaseous attenuation, so met mostly needs data and per-time-step plumbing rather than new propagation code.
+Until 18 Nov the model used a fixed 4/3 earth, no rain and no ducting. Now (part 1, docs/EMO.md "Met") a run can take
+the forecast's k-factor, rain and fog at the scenario centre and time, and reports ducts with their cut-off frequency.
+Still to do: the met layer on the map, sea clutter and platform limits (wind, sea state, cloud base, icing) for the
+corridor planner, HF and GNSS degradation per time step, and a parabolic-equation solver for chosen duct paths.
 
 | Effect | What it changes | Data | How it enters |
 | --- | --- | --- | --- |

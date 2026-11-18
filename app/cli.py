@@ -5,10 +5,16 @@
   python -m app.cli ask "question"         ask the monitor
   python -m app.cli status                 print collector health
   python -m app.cli context                print the brief prompt the model would see
+  python -m app.cli user add <name>        create an internet log-in (prompts for the password twice)
+  python -m app.cli user passwd <name>     change a password (signs that user out everywhere)
+  python -m app.cli user signout <name>    end all of that user's sessions
+  python -m app.cli user del <name>        delete a log-in
+  python -m app.cli user list              list log-ins, last sign-in, open sessions, locks
 """
 from __future__ import annotations
 
 import asyncio
+import getpass
 import json
 import sys
 
@@ -48,6 +54,50 @@ async def _ask(q: str) -> None:
     print()
 
 
+def _ask_password() -> str:
+    """Typed twice at a terminal, or one line on stdin when piped (for scripted set-up)."""
+    if not sys.stdin.isatty():
+        return sys.stdin.readline().rstrip("\n")
+    a = getpass.getpass("New password: ")
+    if a != getpass.getpass("Again: "):
+        raise ValueError("the two passwords differ")
+    return a
+
+
+def _user(args: list[str]) -> int:
+    from . import auth
+    if not args:
+        print(__doc__)
+        return 1
+    op, name = args[0], (args[1] if len(args) > 1 else "")
+    try:
+        if op == "list":
+            for u in auth.list_users():
+                lock = "  LOCKED" if u["locked"] else ""
+                print(f"{u['username']:20s} created {u['created_at']}  last sign-in {u['last_login'] or '-'}  sessions {u['sessions']}{lock}")
+            return 0
+        if not name:
+            print("name required")
+            return 1
+        if op == "add":
+            auth.add_user(name, _ask_password())
+            print(f"user {auth._norm(name)} added")
+        elif op == "passwd":
+            auth.set_password(name, _ask_password())
+            print(f"password changed; {auth._norm(name)} signed out everywhere")
+        elif op == "signout":
+            print(f"{auth.sign_out_everywhere(name)} session(s) ended")
+        elif op == "del":
+            print("deleted" if auth.delete_user(name) else f"no user {name}")
+        else:
+            print(__doc__)
+            return 1
+    except ValueError as e:
+        print(f"error: {e}")
+        return 2
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
@@ -63,6 +113,8 @@ def main(argv: list[str]) -> int:
     elif cmd == "status":
         for r in get_db().runs():
             print(f"{r['name']:14s} ok={r['ok']} count={r['count']} {r['finished_at']}  {r['message']}")
+    elif cmd == "user":
+        return _user(args)
     elif cmd == "context":
         msgs, n = llm.build_brief_messages(get_db())
         print(f"# {n} items, {sum(len(m['content']) for m in msgs)} chars\n")

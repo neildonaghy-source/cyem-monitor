@@ -54,18 +54,17 @@ def test_client_ip():
 
 
 def test_password_gate_runs_before_workspace_middleware():
-    from app.auth import PasswordGate
+    from app.auth import LoginGate
     from app.main import app
     # Starlette: user_middleware[0] is the outermost layer (runs first).
     order = [getattr(m, "kwargs", {}).get("dispatch", m.cls).__name__ for m in app.user_middleware]
-    assert order.index("PasswordGate") < order.index("cyem_ws_middleware")
+    assert order.index("LoginGate") < order.index("cyem_ws_middleware")
 
 
 def test_unauthenticated_funnel_post_does_not_snapshot(monkeypatch):
     from fastapi.testclient import TestClient
     from app import emo_api
     from app.main import app
-    monkeypatch.setenv("CYEM_PASSWORD", "pw")
     snaps = []
     monkeypatch.setattr(emo_api, "emo_snapshot", lambda label: snaps.append(label))
     c = TestClient(app)

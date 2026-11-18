@@ -1,5 +1,6 @@
 # CyEM Monitor — cyber and electromagnetic situational awareness, self-hosted.
-# Ollama is shared with trading-bot (service "ollama" on network trading-bot_default).
+# The language model is Ollama on the EVO-X2 (OLLAMA_URL in .env). Internet access is through Tailscale Funnel
+# with a username and password (app/auth.py); the tailnet needs no log-in.
 services:
   cyem:
     build: .
@@ -12,18 +13,16 @@ services:
       # "pull access denied for cyem-monitor".)
       - "com.centurylinklabs.watchtower.enable=false"
     ports:
-      - "127.0.0.1:3020:8080"      # Tailscale serve proxies 8443/8444 -> 3020
+      - "127.0.0.1:3020:8080"      # Tailscale serve (tailnet) and Funnel (internet) proxy to 3020
     environment:
       TZ: "Europe/London"
       CYEM_DATA_DIR: "/data"
-      OLLAMA_URL: "http://ollama:11434"
+      OLLAMA_URL: "${OLLAMA_URL:-http://127.0.0.1:11434}"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen3.5:4b}"
       AISSTREAM_KEY: "${AISSTREAM_KEY:-}"
       OPENCELLID_KEY: "${OPENCELLID_KEY:-}"
       SEARXNG_URL: "http://searxng:8080"
       SDR_INGEST_TOKEN: "${SDR_INGEST_TOKEN:-}"
-      CYEM_PASSWORD: "${CYEM_PASSWORD:-}"
-      CYEM_SECRET: "${CYEM_SECRET:-}"
       OLLAMA_THINK: "false"
       OLLAMA_NUM_CTX: "8192"
       BRIEF_HOURS: "${BRIEF_HOURS:-06,12,18,00}"
@@ -37,9 +36,6 @@ services:
       OPENCTI_TOKEN: "${OPENCTI_TOKEN:-}"
     volumes:
       - ./data-store:/data
-    networks:
-      - default
-      - trading-bot
     mem_limit: 1g        # 2026-10-03: was 768m (ran at 83%)
     cpus: 4.0
     logging:
@@ -60,7 +56,3 @@ services:
       driver: json-file
       options: { max-size: "5m", max-file: "2" }
 
-networks:
-  trading-bot:
-    external: true
-    name: trading-bot_default

@@ -11,6 +11,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   (`POST /api/emo/plan/corridor`: ground, sea, low-level air; ES detection, DF fix, radar track and own C2 from
   reciprocity grids; transmit or silent per cell; each leg re-checked with the exact pairwise model).
 - No Home Assistant panel (removed at Neil's request). Never add one back unasked.
+- Internet log-in: one shared account, `cyem-team` (created 18 Nov at Neil's request; the password went to him in chat
+  and is stored nowhere else). Change it with `docker exec -it cyem python -m app.cli user passwd cyem-team`.
 
 ## Next, in order (tick off here when merged and deployed)
 
@@ -72,7 +74,6 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- His internet account: `ssh -t Neil@100.91.241.55 wsl -d CyEM -u cyem --cd /home/cyem/cyem -- docker exec -it cyem python -m app.cli user add neil`
 - Off-box copy of `data-store`: proposed nightly push from the EVO to trade with a key limited to one folder, then
   trade's OneDrive job takes it off-site. Needs his yes.
 - API keys for aisstream, OpenCelliD and Cloudflare Radar (into `/home/cyem/cyem/.env` on the EVO).

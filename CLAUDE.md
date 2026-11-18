@@ -67,6 +67,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
   P.840 fog) and `met.py` (Open-Meteo forecast, historical-forecast and marine APIs, table `met_cache`, `/api/met`, CLI `met`).
   RunIn `met`/`met_time`/`k_factor`/`rain_mm_h`/`visibility_m`; `run()` sets the `ATM` contextvar, planning calls outside a
   run use the last run's; `_P2P` and `_COV` keys include the atmosphere signature. Ducts are flagged, never modelled.
+- Corridors (phase 5): `corridor_core.py` (Dijkstra from both ends, band, legs; tested) and `corridor_api.py`
+  (`POST /api/emo/plan/corridor`). Scheduled runs continue the rebuild from `docs/CONTINUE.md`: keep it current.
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
 - Remote: `origin` is the private GitHub repo neildonaghy-source/cyem-monitor. Work on a branch, open a pull request, merge to
   `main`; `main` is what gets deployed. Run long jobs with nohup and read the logs (tool calls time out).

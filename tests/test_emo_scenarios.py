@@ -315,3 +315,55 @@ def test_timeline_and_export_use_the_met_for_each_time(emo, monkeypatch):
     assert [b["met"]["rain_mm_h"] for b in tl["board"]] == [0.0, 0.0, 1.5]
     text = "\n".join(p.text for p in Document(io.BytesIO(body)).paragraphs)
     assert "Met from Open-Meteo" in text and "met forecast from 2026-11-18T10:00" in text
+
+
+# ---- corridors (phase 5, part 1) ---------------------------------------------------------------------------------
+def test_corridor_steers_round_df_and_chooses_emcon(emo, monkeypatch):
+    """Flat land at 100 m. A 10 dBm VHF patrol radio crosses 42 km east past two red DF sites 5.5 km north of the direct
+    line. Transmitting all the way, the corridor bends about 6 km south (detection 25% at worst, against more on the
+    direct line); left to choose, it transmits near home and goes silent past the DF sites; legs are re-checked."""
+    from app import dem, corridor_api
+    monkeypatch.setattr(dem, "heights", lambda pts: [100.0] * len(pts))
+    monkeypatch.setattr(dem, "grid_sampler", lambda s, w, n, e, res_deg=1 / 1800: (lambda la, lo: np.full(np.shape(la), 100.0, np.float32)))
+    hq = _add(emo, name="Blue HQ", side="blue", lat=51.0, lon=-1.32, eirp_dbm=40, h_agl=10)
+    pat = _add(emo, name="Blue patrol", side="blue", kind="receiver", lat=51.0, lon=-1.3, eirp_dbm=10)
+    with emo.get_db().tx() as cur:
+        cur.execute("UPDATE emo_entities SET net=? WHERE id=?", (hq["id"], pat["id"]))
+    for i, lo in enumerate((-1.05, -0.95)):
+        _add(emo, name=f"Red DF {i + 1}", side="red", kind="sensor", category="df", lat=51.05, lon=lo, h_agl=10,
+             freq_mhz=30.0, f_hi_mhz=88.0, bw_khz=25, df_rms_deg=2)
+
+    async def go():
+        await emo.run(emo.RunIn(), light=True)
+        body = dict(mover="Blue patrol", to_lat=51.0, to_lon=-0.7, cell_m=1000)
+        loud = await corridor_api.plan_corridor(corridor_api.CorridorIn(**body, emcon="emit"))
+        auto = await corridor_api.plan_corridor(corridor_api.CorridorIn(**body, emcon="auto", silent_cost=0.2))
+        return loud, auto
+    loud, auto = asyncio.run(go())
+    s = loud["summary"]
+    assert min(lat for lat, _ in loud["path"]) < 50.97 and s["km"] > s["direct_km"]       # bent south, away from the DF
+    assert s["cost"] < s["direct_cost"] and s["transmit_pct"] == 100 and loud["band"]
+    assert set(s["sensors"]) == {"Red DF 1", "Red DF 2"} and s["c2"] == "hears Blue HQ"
+    assert {lg["emcon"] for lg in auto["legs"]} == {"transmit", "silent"}                  # silent past the DF sites
+    assert auto["summary"]["max_p_fix"] <= loud["summary"]["max_p_fix"]
+    for lg in loud["legs"]:
+        v = lg["verified"]
+        assert 0 <= v["p_detect"] <= 100 and v["p_c2"] is not None
+        assert abs(v["p_detect"] - lg["p_detect"]) <= 35                                  # grid and exact model agree broadly
+
+
+def test_corridor_refuses_impossible_routes(emo, monkeypatch):
+    from fastapi import HTTPException
+    from app import dem, corridor_api
+    monkeypatch.setattr(dem, "grid_sampler", lambda s, w, n, e, res_deg=1 / 1800: (lambda la, lo: np.full(np.shape(la), 100.0, np.float32)))
+    _add(emo, name="Boat", side="blue", lat=51.0, lon=-1.0, eirp_dbm=30)
+
+    async def go(**kw):
+        await emo.run(emo.RunIn(), light=True)
+        return await corridor_api.plan_corridor(corridor_api.CorridorIn(mover="Boat", to_lat=51.0, to_lon=-0.8, **kw))
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(go(domain="sea", cell_m=1000))                 # all land: no water to sail on
+    assert e.value.status_code == 422
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(corridor_api.plan_corridor(corridor_api.CorridorIn(mover="Nobody", to_lat=51.0, to_lon=-0.8)))
+    assert e.value.status_code == 404

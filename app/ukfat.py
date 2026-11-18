@@ -83,6 +83,7 @@ def parse_pdf(pdf_path: Path) -> dict:
                         row = [_clean(c) for c in row] + ["", ""]
                         if row[0].startswith("UK"):
                             fns[row[0]] = row[1][:1500]
+            page.close()        # free the page's cached layout; kept, they took the parse past the container's 1 GB
     if cur:
         entries.append(cur)
     # Fallback: some rows never reach extract_tables(); recover them from the page text.
@@ -112,6 +113,7 @@ def parse_pdf(pdf_path: Path) -> dict:
                                 "rr_region1": "", "source": "text",
                                 "rows": [{"service": svc[0], "status": prse, "footnotes": fn}] + [{"service": x, "status": "", "footnotes": ""} for x in svc[1:3]]})
                 covered.append((lo, hi))
+            page.close()
     entries.sort(key=lambda e: e["lo_hz"])
     for e in entries:
         codes = set()

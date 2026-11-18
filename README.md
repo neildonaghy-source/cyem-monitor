@@ -1,8 +1,8 @@
 # CyEM Monitor
 
-> **Status (18 Nov 2026): not running.** Retired 7 Oct 2026 and removed from trade on 17 Oct. A rebuild is in
-> progress on branches (see `docs/REBUILD-PLAN.md`); nothing is deployed and the tailnet URLs below are not live.
-> Do not follow the release steps until the rebuild plan says the new host is ready.
+> **Status (18 Nov 2026): running on the EVO-X2** (`docs/DEPLOY-EVO.md`) at https://nucbox-evo-x2.tail013324.ts.net/:
+> no log-in on the tailnet, username and password from the internet. It was retired on 7 Oct and rebuilt from 18 Nov
+> (`docs/REBUILD-PLAN.md`). The trade URLs, ports and paths further down are historical.
 
 Self-hosted cyber and electromagnetic (CyEM) situational awareness: a dark map with
 live layers, a feed rail, space-weather and HF status, and Ollama-generated

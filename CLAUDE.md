@@ -1,5 +1,9 @@
 # CyEM Monitor — project notes for Claude Code
 
+> **Status (18 Nov 2026): not running.** Retired 7 Oct 2026 and removed from trade on 17 Oct. A rebuild is in
+> progress on branches (see `docs/REBUILD-PLAN.md`); nothing is deployed and the tailnet URLs below are not live.
+> Do not follow the release steps until the rebuild plan says the new host is ready.
+
 Self-hosted cyber + electromagnetic situational awareness dashboard. Replaced the worldmonitor
 fork on this host on 2026-09-21. Owner: Neil (Royal Signals / CEMA background); write for a
 senior practitioner, British English, no marketing tone.
@@ -10,7 +14,10 @@ senior practitioner, British English, no marketing tone.
 - `app/collectors/*.py` one `@register(name, interval_s, domain, description)` function per source. Each returns `Result(count, message, ok)`; failures are caught in `run_collector` and shown in Health. Never let a collector raise into the scheduler.
 - `app/feeds.py` curated RSS list; `app/tagging.py` keyword tags + severity heuristics; `app/geo.py` country detection (`data/countries.json`).
 - `app/llm.py` Ollama client (`/api/chat`, `think:false`), brief context builder, ask context.
-- `static/` vanilla JS UI (`app.js`), Leaflet + marked vendored under `static/vendor/`. No build step.
+- `static/` vanilla JS UI: edit `static/src/*.js`, then `sh static/build.sh` to rebuild `app.js` (concatenation, no bundler).
+  Leaflet, marked, DOMPurify and milsymbol are vendored under `static/vendor/`. Model output is cleaned by DOMPurify against an
+  allowlist (`sanitize()` in 07-brief.js; check with `python3 tests/ui/sanitize_check.py`); the server sends a CSP with
+  script-src 'self', so no inline scripts or inline event handlers.
 - Spectrum deconfliction: `app/spectrum_core.py` (pure, stdlib, unit-tested in `tests/`), `app/spectrum_store.py` (tables `wtr`, `planned_emitters`; bulk load on its own connection into `wtr_new` then swap), `app/spectrum_api.py` (router `/api/spectrum/*`), `app/collectors/wtr.py` (Ofcom WTR, daily, ETag). UI is the Spectrum button + `planned` and `wtr` layers in `static/app.js`.
 - `data/` reference JSON (emitters, APT groups, countries, `uk_bandplan.json`). `data-store/` bind mount with the SQLite DB (git-ignore worthy, not in the tarball).
 
@@ -24,7 +31,8 @@ docker compose exec cyem python -m app.cli context              # exactly what t
 python3 -m pyflakes app                                          # lint (host python is 3.14; the image is 3.12)
 node --check static/app.js
 ```
-Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for the HA iframe).
+Was reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for the HA iframe) until 7 Oct 2026;
+the new host and URLs are set in docs/REBUILD-PLAN.md.
 
 ## Conventions and gotchas
 - Sources must degrade gracefully without keys; keyed sources use `enabled=lambda: bool(settings.<key>)`.
@@ -38,18 +46,23 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - Spectrum: open data only; never add MOD/unit/role data. Keep licensee surname/first name out of the WTR load.
   Area-defined WTR rows have NULL lat/lon by design. Conflict logic changes go in `spectrum_core.py` with tests.
 - UI tests: tests/ui/run.sh (EMO), and the same docker command with plan_smoke.py or ui_audit.py in place of emo_smoke.py.
-- Tests: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q pytest && python -m pytest -q tests"`
+- Tests: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q -r requirements.txt pytest && python -m pytest -q tests"`
+  (tests/test_emo_scenarios.py runs every example on synthetic terrain with a throw-away database; about 40 s)
 - Work on branches; `main` is what is deployed once merged. A pre-change DB copy is at `data-store/backup/cyem-pre-spectrum.sqlite3`.
 - Box-level changes (backup excludes, `~/bin/runbook_gen.py`) must be kept in step with this file and the README.
 - Harmonic and IM3 screening live in `spectrum_core` (`harmonic_emitters`, `im3_emitters`, `check_products`); `run_conflicts` takes `harm_order` and `cosite_km`. Keep product severities below fundamental ones except IM3 on own nets.
 - Link planner: `link_core.py` stays stdlib-only and tested; terrain via `dem.heights()` (rasterio, lazy import, run in a thread). Saved links own their planned emitters via `link_id`; keep create/delete in step.
 - Coverage: `coverage_core.polar_prx` is vectorised Deygout (3 edges) per radial; keep it consistent with `link_core.deygout_loss_db` (depth 1). Cross-check any model change against the link planner on a real path before shipping. Saved sites own their planned emitter via `site_id`.
-- Web client (browser; bump `BUILD` in `static/app.js`, the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the Mac bundle: `git archive --prefix=cyem/ main` to `~/Documents/Codex/CyEM/cyem-deploy/cyem-monitor-vNN.tgz` on the Mac. No git remote exists.
+- Web client (browser; bump `BUILD` in `static/app.js`, the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the offline copy on the Mac mini: `git bundle create ~/Backups/cyem-monitor/cyem-monitor-YYYYMMDD.bundle --all`
+  plus its `.sha256` (the copy of 18 Nov 2026 is there with a README).
 - Keys (AISSTREAM_KEY, OPENCELLID_KEY) live only in `.env`; never log or echo URLs containing them. `.env.*` is ignored except `.env.example`.
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
-- Push after each merge: `git push origin main` (remote alias github-cyem). Tool-call timeouts from the Mac are common: run long jobs with nohup and read logs.
+- Remote: `origin` is the private GitHub repo neildonaghy-source/cyem-monitor. Work on a branch, open a pull request, merge to
+  `main`; `main` is what gets deployed. Run long jobs with nohup and read the logs (tool calls time out).
 
-- Clients: native CyEM apps on the Mac and iPhone (source ~/Documents/Codex/CyEM/cyem-app on the Mac) embed Tailscale and load https://trade.tail013324.ts.net:8443; keep that URL and the Tailscale serve on 8443 stable.
+- Clients: the native Mac and iPhone apps (Swift, embedded Tailscale) loaded https://trade.tail013324.ts.net:8443. Their source
+  is not in this repo and was not found on the MacBook or the Mac mini on 18 Nov 2026 (it was built on another Mac).
+  Until it is recovered, the client is the web app; any rebuilt app must point at the new host's URL.
 - EMO (`emo_api.py`): symmetric red/blue ES/EA/EP on terrain; reuses coverage_api._compute (power capped at 70 dBm, offset added for higher EIRP) and link_core.analyse for per-pair paths; heavy work limited by asyncio.Semaphore(3); cyem container cpus 4.0. Notional data only.
 
 ## EMO planning layer (added 2026-09-25)
@@ -62,4 +75,5 @@ Reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for 
 - After a dependency change: python3 tools/software_inventory.py (updates docs/SOFTWARE.md + software.json, copied into the nightly trade runbook).
 - Release: bump BUILD in static/app.js, ?v= in index.html/sw.js, cache name in sw.js; commit; push; docker compose up -d --build cyem.
 
-- Mac-side CyEM files (app source, deploy bundles, scratch) live in ~/Documents/Codex/CyEM on the Mac since 2026-09-28; iPhone signing renewal: cd ~/Documents/Codex/CyEM/cyem-app && ./build.sh iphone
+- ~/Documents/Codex/CyEM on the Mac now holds spectrum policy papers only; the September app source, deploy bundles and
+  scratch files there are gone.

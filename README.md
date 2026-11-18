@@ -1,5 +1,9 @@
 # CyEM Monitor
 
+> **Status (18 Nov 2026): not running.** Retired 7 Oct 2026 and removed from trade on 17 Oct. A rebuild is in
+> progress on branches (see `docs/REBUILD-PLAN.md`); nothing is deployed and the tailnet URLs below are not live.
+> Do not follow the release steps until the rebuild plan says the new host is ready.
+
 Self-hosted cyber and electromagnetic (CyEM) situational awareness: a dark map with
 live layers, a feed rail, space-weather and HF status, and Ollama-generated
 intelligence briefs. Replaces worldmonitor on the trade box. No accounts, no

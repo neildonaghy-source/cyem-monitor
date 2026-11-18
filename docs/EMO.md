@@ -9,7 +9,7 @@ below is computed on the box; positions and effects are proposals to test, not s
 |---|---|
 | Emitters (nets, radars, SATCOM, GNSS) | Terrain coverage (Deygout 3-edge) at ground height; nets have users with sensitivity and a J/S failure threshold |
 | ES sensors | Detection margin per emitter at the sensor's height; DF bearings; fixes (best pair, or least squares for 3+ bearings); targetable if the fix error is inside the scenario threshold |
-| EA effectors | J/S at every user of every overlapping net (bandwidth, hopping and processing-gain penalties); denied, holds, no signal, or spoofed (EA mode `spoof`, accepted at 3-30 dB over the true signal) |
+| EA effectors | J/S at every user of every overlapping net (bandwidth, hopping and processing-gain penalties); denied, degraded, unaffected, no link (no usable signal), or deceived (EA mode `spoof`, accepted at 3-30 dB over the true signal) |
 | Radars | Range equation per opposing air or sea platform (RCS default by platform, gain, minimum detectable echo, two-way terrain loss); radar EA with mainlobe, self-screening or sidelobe noise and burn-through range |
 | Grey (civil) | Heard by both sides; jamming them counts as collateral; their fixes read "located", not targetable |
 | Probabilities | Every margin becomes a probability with a combined 9 dB uncertainty (`sigma_db`) |
@@ -19,7 +19,9 @@ Near-terminal clutter: within 150 m of each antenna the surface model is capped 
 
 ## Workflow
 
-1. **Load** a scenario (examples 0b Suwałki, 0c Littoral, 0 NW Scotland, 1 BG vignette, 2 Brecon, 3 Solent, 4 A303, 5 C-UAS) or build one. Run.
+1. **Load** a scenario or build one, then Run. Examples: 0 NW Scotland and the Minches (operational MDO), 0b Suwałki Gap,
+   0c Vestfjord and Lofoten (littoral A2/AD), 0d Sussex coast (AR), 0e Corsham hub (AR), 1 Battlegroup vignette
+   (Salisbury Plain), 2 Brecon siting, 3 Solent maritime, 4 A303 GNSS jamming, 5 C-UAS against a datalink.
 2. **Save the baseline as a COA** (panel: Courses of action).
 3. **Understand:** tap a symbol for its footprint and who hears, fixes or jams it. *Compare with others* and add from the list to see a jammer's denial zone over a net, or where a sensor hears an emitter. Run the **timeline** for advantage windows and route survivability.
 4. **Plan (EP):** focus a net control station. *Find a better site* draws the score map (green good). *Tune* gives the power cut, best sector antenna and clear channels, each with Apply. *Joint re-site* moves users then control, verified with the exact model.
@@ -54,10 +56,16 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 
 ## Tests
 
-- Unit: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q pytest numpy==2.1.3 fastapi httpx; python -m pytest -q tests --ignore=tests/ui"`
+- Unit and scenario: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q -r requirements.txt pytest; python -m pytest -q tests --ignore=tests/ui"`
+  (scenario tests run every example on synthetic terrain with a throw-away database; no network needed)
+- Sanitiser (headless Chromium, no server): `python3 tests/ui/sanitize_check.py`
 - Browser smoke (on the box, private workspace, ~3 min): `bash tests/ui/run.sh`
 
 ## Known limits
+
+- Net availability counts a user only if it holds its own control station (in range, control on air) and is not
+  denied or deceived; users out of range or with the control off air are listed under *links* in the run and in the export.
+- Model limits, in one place: `MODEL_CAVEAT` in `app/emo_api.py` (shown in run notes and both Word exports).
 
 - Surface-model terrain; clutter clearance only on pairwise paths, not on the map rasters (a few dB difference at 1 km pixels).
 - Air and space paths use the standard analysis with earth curvature, not ITU-R P.528; within 100 km at aircraft heights this is line of sight anyway.

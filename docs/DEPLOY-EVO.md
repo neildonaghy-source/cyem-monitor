@@ -51,9 +51,16 @@ Publishing, on Windows as an administrator:
 4. Register the keep-alive task (copy of the ImmichML one with `-d CyEM`), then `tailscale serve` and `tailscale funnel`
    as above, then create the accounts.
 
+## Home Assistant panel
+
+Dashboard `cyem-panel` ("CyEM Monitor", storage mode, admin only, as the Rack dashboard is): one panel view with an
+iframe card on `https://nucbox-evo-x2.tail013324.ts.net/`. Created on 18 Nov by `~/ha-review/ha-cyem-panel-20261118.py`
+on trade (idempotent; rerun it to repair the panel) and checked by `cyem-panel-probe-20261118.py` beside it, which opens
+the panel from `http://homeassistant:8123` and `https://homeassistant.tail013324.ts.net` and looks for the map inside
+the frame. The frame only loads where HA's origin is in `FRAME_ANCESTORS` (default in docker-compose.yml).
+
 ## Not yet done
 
 - Off-box copy of `data-store` (accounts, EMO scenarios and COAs, saved links and sites); everything else is re-downloadable.
-- The Home Assistant panel (point an iframe card at the tailnet URL).
 - Keyed feeds: aisstream, OpenCelliD, Cloudflare Radar keys in `.env`.
 - SDR sweeps: the RTL-SDR on the MS-A2 serves trade's Ecowitt receiver.

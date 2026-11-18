@@ -105,3 +105,36 @@ def test_address_rate_limit_and_sdr_token(client, auth, monkeypatch):
 def test_login_page_escapes_next(client):
     r = client.get('/login?next=/a"><script>alert(1)</script>', headers=FUNNEL)
     assert r.status_code == 200 and "<script>" not in r.text and 'name="username"' in r.text
+
+
+def test_changes_from_another_site_are_refused_on_both_paths(client, auth):
+    # /api/collect/<unknown> answers 404 once past the guard, so 404 means "allowed", 403 means "refused"
+    post = lambda **h: client.post("/api/collect/no-such-collector", headers=h).status_code
+    assert post() == 404                                                        # scripts and servers: no headers
+    assert post(origin="https://testserver") == 404                             # a CyEM page
+    assert post(**{"sec-fetch-site": "same-origin", "origin": "https://testserver"}) == 404
+    assert post(**{"sec-fetch-site": "cross-site", "origin": "https://evil.example"}) == 403
+    assert post(**{"sec-fetch-site": "same-site", "origin": "https://trade.tail013324.ts.net"}) == 403
+    assert post(origin="https://evil.example") == 403                           # older browser: Origin alone
+    assert post(origin="null") == 403                                           # sandboxed frame or data: page
+    # behind a proxy that rewrites Host, X-Forwarded-Host carries the name the browser used
+    assert post(host="127.0.0.1:3020", **{"x-forwarded-host": "cyem.example", "origin": "https://cyem.example"}) == 404
+    # reading is never refused; the cross-site guard is for changes only
+    assert client.get("/api/me", headers={"sec-fetch-site": "cross-site"}).status_code == 200
+    # on the internet a forged sign-in is refused before the password is looked at
+    auth.add_user("neil", "long enough password")
+    form = {"username": "neil", "password": "long enough password", "next": "/"}
+    r = client.post("/login", data=form, headers={**FUNNEL, "sec-fetch-site": "cross-site"}, follow_redirects=False)
+    assert r.status_code == 403 and "set-cookie" not in r.headers
+    r = client.post("/login", data=form, headers={**FUNNEL, "sec-fetch-site": "same-origin"}, follow_redirects=False)
+    assert r.status_code == 302
+
+
+def test_only_this_site_and_home_assistant_may_frame_it(client):
+    from app.main import build_csp
+    assert client.get("/").headers["content-security-policy"].endswith("frame-ancestors 'self'")    # default
+    csp = build_csp("https://homeassistant.tail013324.ts.net, http://192.168.68.85:8123 'self' "
+                    "https://*.example.org bad;script-src * 'unsafe-inline' javascript:alert(1)")
+    fa = csp.split("frame-ancestors ", 1)[1]
+    assert fa == "'self' https://homeassistant.tail013324.ts.net http://192.168.68.85:8123 https://*.example.org"
+    assert csp.count(";") == build_csp().count(";")                            # nothing smuggled in as a directive

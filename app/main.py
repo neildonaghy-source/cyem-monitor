@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -435,16 +436,29 @@ async def collect(name: str):
 
 # Content-Security-Policy for every response. Scripts only from this origin (no inline script), so injected markup
 # in model output cannot run; base-uri 'none' stops a stray <base> tag re-pointing relative links. Map tiles and
-# symbol images may come from any https host; the live SDR receiver is an https iframe. frame-ancestors is left
-# open on purpose so Home Assistant can embed the dashboard (no X-Frame-Options either).
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
-       "connect-src 'self'; font-src 'self' data:; frame-src 'self' https:; media-src 'self' https: blob:; "
-       "worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'")
+# symbol images may come from any https host; the live SDR receiver is an https iframe. frame-ancestors lets only
+# this site and the Home Assistant origins in FRAME_ANCESTORS embed the dashboard: the tailnet needs no log-in, so any
+# other site a tailnet browser visits could otherwise frame it and steer clicks. No X-Frame-Options: it cannot list
+# several origins, and browsers that understand frame-ancestors ignore it.
+_SOURCE = re.compile(r"^(?:https?://(?:\*\.)?[A-Za-z0-9.-]+(?::\d{1,5})?|'self')$")
+
+
+def build_csp(frame_ancestors: str = "") -> str:
+    extra = [s for s in frame_ancestors.replace(",", " ").split() if _SOURCE.match(s) and s != "'self'"]
+    dropped = [s for s in frame_ancestors.replace(",", " ").split() if not _SOURCE.match(s)]
+    if dropped:
+        log.warning("FRAME_ANCESTORS: ignored %s (expected scheme://host[:port])", dropped)
+    return ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+            "connect-src 'self'; font-src 'self' data:; frame-src 'self' https:; media-src 'self' https: blob:; "
+            "worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+            "frame-ancestors " + " ".join(["'self'", *extra]))
+
+
+CSP = build_csp(settings.frame_ancestors)
 
 
 @app.middleware("http")
-async def no_frame_block(request: Request, call_next):
-    # Deliberately no X-Frame-Options so Home Assistant can embed the dashboard in an iframe.
+async def security_headers(request: Request, call_next):
     resp = await call_next(request)
     resp.headers.setdefault("Cache-Control", "no-store" if request.url.path.startswith("/api/") else "public, max-age=300")
     if not request.url.path.startswith(("/api/docs", "/openapi.json")):     # FastAPI's own docs page loads its UI from a CDN

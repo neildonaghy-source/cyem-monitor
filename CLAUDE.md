@@ -59,6 +59,11 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Internet access: Tailscale Funnel requests (header `Tailscale-Funnel-Request`) must sign in (`app/auth.py`: users and sessions
   tables, scrypt, 30-day sessions, 5 tries per address per 15 min, 10 per account then a 15-minute lock). Tailnet requests
   need no log-in. Accounts: `python -m app.cli user add|passwd|signout|del|list`. With no accounts the internet is refused.
+- Cross-site guard (`auth.cross_site`, both paths): POST/PUT/PATCH/DELETE sent by another site's page is refused with 403
+  (Sec-Fetch-Site, else Origin against Host/X-Forwarded-Host); requests with neither header (scripts, HA) pass. Framing:
+  CSP `frame-ancestors 'self'` plus `FRAME_ANCESTORS` (HA origins, default in docker-compose.yml). HA panel: dashboard
+  `cyem-panel` (storage mode, admin only), set by `~/ha-review/ha-cyem-panel-20261118.py` on trade, checked by
+  `~/ha-review/cyem-panel-probe-20261118.py` (loads the panel from each HA origin and looks for the map in the frame).
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
 - Remote: `origin` is the private GitHub repo neildonaghy-source/cyem-monitor. Work on a branch, open a pull request, merge to
   `main`; `main` is what gets deployed. Run long jobs with nohup and read the logs (tool calls time out).

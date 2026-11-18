@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-18d';
+  const BUILD = '2026-11-18e';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -2104,9 +2104,11 @@
     if (!m) return '';
     const u = m.used || {}, fc = m.source === 'open-meteo';
     const ev = m.evap_duct, sea = m.sea;
+    const wi = (used, base) => used != null && base != null && Math.abs(used - base) > 1e-6;   // a what-if replaced the forecast value
+    const kNow = u.k ?? m.k ?? 1.333;
     const cells = [
-      ['k-factor', `<b>${(u.k ?? m.k ?? 1.333).toFixed(2)}</b> ${fc ? `<span class="dim">${esc(m.refraction || '')}, ${m.dn_per_km} N/km</span>` : '<span class="dim">standard</span>'}`],
-      ['Rain', `${u.rain_mm_h ?? 0} mm/h`],
+      ['k-factor', `<b>${kNow.toFixed(2)}</b> ${wi(kNow, m.k) ? `what-if <span class="dim">(${fc ? `forecast ${m.k.toFixed(2)}, ${esc(m.refraction || '')}, ${m.dn_per_km} N/km` : 'standard 1.33'})</span>` : fc ? `<span class="dim">${esc(m.refraction || '')}, ${m.dn_per_km} N/km</span>` : '<span class="dim">standard</span>'}`],
+      ['Rain', `${u.rain_mm_h ?? 0} mm/h${wi(u.rain_mm_h, m.rain_mm_h ?? 0) ? ` what-if <span class="dim">(${fc ? 'forecast' : 'standard'} ${m.rain_mm_h ?? 0})</span>` : ''}`],
       ['Visibility', m.visibility_m == null ? '–' : `${m.visibility_m >= 1000 ? (m.visibility_m / 1000).toFixed(1) + ' km' : Math.round(m.visibility_m) + ' m'}${u.fog_lwc_gm3 ? ` <span class="dim">fog ${u.fog_lwc_gm3} g/m³</span>` : ''}`],
       ...(fc ? [['Wind', `${m.wind_ms ?? '–'} m/s from ${m.wind_dir ?? '–'}°, gusts ${m.gust_ms ?? '–'}`],
         ['Cloud', `${m.cloud_low_pct ?? '–'}% low, base about ${m.cloud_base_m ?? '–'} m · freezing level ${m.freezing_level_m ?? '–'} m`],

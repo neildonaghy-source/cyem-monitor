@@ -1,8 +1,8 @@
 # CyEM Monitor — project notes for Claude Code
 
-> **Status (18 Nov 2026): not running.** Retired 7 Oct 2026 and removed from trade on 17 Oct. A rebuild is in
-> progress on branches (see `docs/REBUILD-PLAN.md`); nothing is deployed and the tailnet URLs below are not live.
-> Do not follow the release steps until the rebuild plan says the new host is ready.
+> **Status (18 Nov 2026): running on the EVO-X2** (`docs/DEPLOY-EVO.md`) at https://nucbox-evo-x2.tail013324.ts.net/:
+> no log-in on the tailnet, username and password from the internet. It was retired on 7 Oct and rebuilt from 18 Nov
+> (`docs/REBUILD-PLAN.md`). The trade URLs, ports and paths further down are historical.
 
 Self-hosted cyber + electromagnetic situational awareness dashboard. Replaced the worldmonitor
 fork on this host on 2026-09-21. Owner: Neil (Royal Signals / CEMA background); write for a
@@ -31,8 +31,8 @@ docker compose exec cyem python -m app.cli context              # exactly what t
 python3 -m pyflakes app                                          # lint (host python is 3.14; the image is 3.12)
 node --check static/app.js
 ```
-Was reachable on the tailnet at https://trade.tail013324.ts.net:8443 (and :8444 for the HA iframe) until 7 Oct 2026;
-the new host and URLs are set in docs/REBUILD-PLAN.md.
+Runs on the EVO-X2 in the WSL distro CyEM (docs/DEPLOY-EVO.md): https://nucbox-evo-x2.tail013324.ts.net/ on the tailnet and,
+through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade at :8443/:8444.
 
 ## Conventions and gotchas
 - Sources must degrade gracefully without keys; keyed sources use `enabled=lambda: bool(settings.<key>)`.

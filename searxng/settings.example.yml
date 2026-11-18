@@ -1,0 +1,14 @@
+# Copy to searxng/settings.yml (git-ignored) and set secret_key, e.g.:
+#   sed "s/CHANGE_ME/$(openssl rand -hex 32)/" searxng/settings.example.yml > searxng/settings.yml
+# Create the file BEFORE the first `docker compose up`: if it is missing, Docker creates a directory in its place and
+# SearXNG exits ("settings.yml is not a valid file"); then remove the directory and run
+#   docker compose up -d --force-recreate --renew-anon-volumes searxng
+use_default_settings: true
+server:
+  secret_key: "CHANGE_ME"
+  limiter: false
+  image_proxy: false
+  public_instance: false
+search:
+  safe_search: 0
+  formats: [html, json]

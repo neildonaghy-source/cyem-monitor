@@ -10,6 +10,7 @@
   python -m app.cli user signout <name>    end all of that user's sessions
   python -m app.cli user del <name>        delete a log-in
   python -m app.cli user list              list log-ins, last sign-in, open sessions, locks
+  python -m app.cli met <lat> <lon> [time] met for a place and hour (UTC ISO time, default now), as EMO uses it
 """
 from __future__ import annotations
 
@@ -98,6 +99,24 @@ def _user(args: list[str]) -> int:
     return 0
 
 
+def _met(args: list[str]) -> int:
+    from datetime import datetime, timezone
+    from . import met
+    if len(args) < 2:
+        print("usage: python -m app.cli met <lat> <lon> [time]")
+        return 2
+    when = None
+    if len(args) > 2:
+        when = datetime.fromisoformat(args[2])
+        when = when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when
+    st = asyncio.run(met.met_state(float(args[0]), float(args[1]), when))
+    levels = st.pop("levels", [])
+    print(json.dumps(st, indent=1, default=str))
+    if levels:
+        print("profile (m above ground, N, M): " + "; ".join(f"{x['h']} {x['n']} {x['m']}" for x in levels))
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__)
@@ -115,6 +134,8 @@ def main(argv: list[str]) -> int:
             print(f"{r['name']:14s} ok={r['ok']} count={r['count']} {r['finished_at']}  {r['message']}")
     elif cmd == "user":
         return _user(args)
+    elif cmd == "met":
+        return _met(args)
     elif cmd == "context":
         msgs, n = llm.build_brief_messages(get_db())
         print(f"# {n} items, {sum(len(m['content']) for m in msgs)} chars\n")

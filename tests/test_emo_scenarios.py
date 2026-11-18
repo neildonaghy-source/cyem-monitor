@@ -223,3 +223,95 @@ def test_timeline_steps_through_the_tracks_and_finds_windows(emo):
         assert len(r["heard"]) == len(tl["steps"])
     w = tl["windows"]
     assert w["net"] == net and w["users"] and "steps with the control station undetected" in w["summary"]
+
+
+# ---- met (phase 4): the forecast changes paths only where the physics says it should ----------------------------
+def _wx(**kw):
+    from app import met
+    st = met.standard()
+    st.update({"source": "open-meteo", "valid_time": "2026-11-18T21:00Z", "k": 1.333, "dn_per_km": -40.0, "refraction": "normal",
+               "rain_mm_h": 0.0, "visibility_m": 20000.0, "fog_lwc_gm3": 0.0, "temp_c": 10.0, "wind_ms": 4.0, "wind_dir": 200,
+               "cloud_base_m": 300, "ducts": [], "evap_duct": None, "warnings": [], "notes": []})
+    st.update(kw)
+    return st
+
+
+def test_rain_and_k_factor_change_the_right_paths(emo, monkeypatch):
+    """Flat land 100 m, antennas 20 m. 20 mm/h of rain costs about 6 dB over 20 km at 10 GHz (P.838 0.46 dB/km, P.530
+    reduction 0.65) and nothing at 400 MHz. k = 4 puts a 60 km UHF path inside the radio horizon (37 km at 4/3, 64 km
+    at k = 4)."""
+    from app import dem, met
+    monkeypatch.setattr(dem, "heights", lambda pts: [100.0] * len(pts))
+    pairs = [("X", 10000.0, 51.18, -1.00), ("U", 400.0, 51.18, -1.02), ("F", 400.0, 51.54, -1.04)]
+    for tag, f, la, lo in pairs:
+        c = _add(emo, name=f"{tag} HQ", side="blue", lat=51.0, lon=lo, eirp_dbm=40, freq_mhz=f, h_agl=20)
+        u = _add(emo, name=f"{tag} out", side="blue", kind="receiver", lat=la, lon=lo, freq_mhz=f, h_agl=20)
+        with emo.get_db().tx() as cur:
+            cur.execute("UPDATE emo_entities SET net=? WHERE id=?", (c["id"], u["id"]))
+    seen = []
+
+    async def fake_state(lat, lon, when=None):
+        seen.append((round(lat, 2), when.strftime("%Y-%m-%dT%H:%M")))
+        return _wx(rain_mm_h=20.0)
+    monkeypatch.setattr(met, "met_state", fake_state)
+
+    async def go():
+        std = await emo.run(emo.RunIn(), light=True)
+        wet = await emo.run(emo.RunIn(met="forecast", met_time="2026-11-18T20:40:00Z"), light=True)
+        far = await emo.run(emo.RunIn(k_factor=4.0), light=True)
+        return std, wet, far
+    std, wet, far = asyncio.run(go())
+    lv = lambda r: {lk["receiver"]: lk["s_dbm"] for lk in r["links"]}
+    assert 3.5 < lv(std)["X out"] - lv(wet)["X out"] < 9.0
+    assert abs(lv(std)["U out"] - lv(wet)["U out"]) < 0.2
+    # beyond the horizon at 4/3 (diffraction about 24 dB), inside it at k = 4, where plane-earth reflection
+    # (139 dB at 60 km for two 20 m masts) is the floor: about 4.7 dB better
+    assert 3 < lv(far)["F out"] - lv(std)["F out"] < 8
+    assert std["met"]["source"] == "standard" and std["met"]["used"]["k"] == 1.333
+    assert wet["met"]["source"] == "open-meteo" and wet["met"]["used"]["rain_mm_h"] == 20.0
+    assert far["met"]["used"]["k"] == 4.0 and "What-if overrides: k 4" in far["met"]["notes"][-1]
+    assert seen == [(51.15, "2026-11-18T20:40")]                            # centre of the scenario, the chosen time
+
+
+def test_bad_met_time_is_refused(emo):
+    from fastapi import HTTPException
+    _add(emo, name="A", side="blue", lat=51.0, lon=-1.0, eirp_dbm=30)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(emo.run(emo.RunIn(met="forecast", met_time="next tuesday"), light=True))
+    assert e.value.status_code == 422
+
+
+def test_ducts_name_the_emitters_they_could_carry(emo):
+    ents = [{"name": "Radar", "side": "red", "kind": "emitter", "freq_mhz": 9400.0, "h_agl": 25, "eirp_dbm": 80},
+            {"name": "VHF", "side": "red", "kind": "emitter", "freq_mhz": 60.0, "h_agl": 10, "eirp_dbm": 40},
+            {"name": "Airborne", "side": "blue", "kind": "emitter", "freq_mhz": 1000.0, "h_agl": 600, "eirp_dbm": 40},
+            {"name": "Listener", "side": "blue", "kind": "sensor", "freq_mhz": 9400.0, "h_agl": 5}]
+    st = {"evap_duct": {"height_m": 12.0, "cutoff_ghz": 2.6},
+          "ducts": [{"kind": "elevated", "base_m": 400, "top_m": 800, "cutoff_ghz": 0.3}]}
+    got = {x["name"]: x["duct"] for x in emo._duct_exposed(st, ents)}
+    assert got == {"Radar": "evaporation (if over the sea)", "Airborne": "elevated 400-800 m"}
+
+
+def test_timeline_and_export_use_the_met_for_each_time(emo, monkeypatch):
+    from docx import Document
+    from app import met
+    hours = []
+
+    async def fake_state(lat, lon, when=None):
+        hours.append(when.strftime("%H:%M"))
+        return _wx(rain_mm_h=1.5 if when.minute >= 30 else 0.0)
+    monkeypatch.setattr(met, "met_state", fake_state)
+    from app import emo_plan
+
+    async def go():
+        await emo.load_example("bg-vignette")
+        await emo.run(emo.RunIn(met="forecast", met_time="2026-11-18T10:00"), light=True)
+        tl = await emo_plan.timeline(emo_plan.TimelineIn(step_min=20, max_steps=3))
+        resp = await emo.emo_export(phases="0")
+        body = b"".join([chunk async for chunk in resp.body_iterator])
+        return tl, body
+    tl, body = asyncio.run(go())
+    assert hours[:4] == ["10:00", "10:00", "10:20", "10:40"]                # the run, then one per timeline step
+    assert [b["met"]["rain_mm_h"] for b in tl["board"]] == [0.0, 0.0, 1.5]
+    text = "\n".join(p.text for p in Document(io.BytesIO(body)).paragraphs)
+    assert "Met from Open-Meteo" in text and "met forecast from 2026-11-18T10:00" in text

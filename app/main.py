@@ -31,6 +31,7 @@ from .ar_api import router as ar_router
 from .sdr_api import ensure_sdr_schema, router as sdr_router
 from .insights_api import router as insight_router
 from .emo_plan import router as emo_plan_router
+from .met import router as met_router
 from .spectrum_store import ensure_schema
 from .prefs_api import router as prefs_router
 
@@ -137,6 +138,7 @@ app.include_router(ar_router)
 app.include_router(sdr_router)
 app.include_router(insight_router)
 app.include_router(emo_plan_router)
+app.include_router(met_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

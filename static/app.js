@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-18c';
+  const BUILD = '2026-11-18d';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -2086,6 +2086,7 @@
     const fx = r.fixes.filter((f) => f.fix || f.lobs);
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     out.innerHTML = `
+      ${emoMetCard(r.met)}
       ${r.score ? `<h3 class="sec">Scoreboard</h3><table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>
         ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters detected by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Located by the other side'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['spoofed', 'Outstations deceived'], ['collateral', 'Collateral (civil)'], ['net_area_denied_pct', 'Own net coverage denied %'], ['radar_tracks', 'Radar tracks held'], ['radar_screened', 'Own platforms screened from radar']]
           .map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>` : ''}
@@ -2099,8 +2100,39 @@
       ${r.jamming.length ? `<table class="grid"><tr><th>Effector</th><th>Victim</th><th>J/S</th><th>Result</th></tr>${r.jamming.map((j) => row([esc(j.effector), esc(j.victim), `${j.js_db} dB`, `<b style="color:${j.status === 'denied' ? '#dc3cdc' : j.status === 'holds' ? '#45d38a' : '#8593a6'}">${esc(j.status)}</b>`])).join('')}</table>` : '<p class="dim">No EA against any net.</p>'}
       <p class="dim">${esc(r.notes)}</p>`;
   }
+  function emoMetCard(m) {
+    if (!m) return '';
+    const u = m.used || {}, fc = m.source === 'open-meteo';
+    const ev = m.evap_duct, sea = m.sea;
+    const cells = [
+      ['k-factor', `<b>${(u.k ?? m.k ?? 1.333).toFixed(2)}</b> ${fc ? `<span class="dim">${esc(m.refraction || '')}, ${m.dn_per_km} N/km</span>` : '<span class="dim">standard</span>'}`],
+      ['Rain', `${u.rain_mm_h ?? 0} mm/h`],
+      ['Visibility', m.visibility_m == null ? '–' : `${m.visibility_m >= 1000 ? (m.visibility_m / 1000).toFixed(1) + ' km' : Math.round(m.visibility_m) + ' m'}${u.fog_lwc_gm3 ? ` <span class="dim">fog ${u.fog_lwc_gm3} g/m³</span>` : ''}`],
+      ...(fc ? [['Wind', `${m.wind_ms ?? '–'} m/s from ${m.wind_dir ?? '–'}°, gusts ${m.gust_ms ?? '–'}`],
+        ['Cloud', `${m.cloud_low_pct ?? '–'}% low, base about ${m.cloud_base_m ?? '–'} m · freezing level ${m.freezing_level_m ?? '–'} m`],
+        ['Air', `${m.temp_c ?? '–'} °C, ${m.rh_pct ?? '–'} %`]] : []),
+      ...(sea ? [['Sea', `${sea.sst_c} °C, waves ${sea.wave_m ?? '–'} m / ${sea.wave_period_s ?? '–'} s${ev ? ` · evaporation duct <b>${ev.height_m} m</b> (${esc(ev.stability)}${ev.cutoff_ghz ? `, traps above ${ev.cutoff_ghz} GHz` : ''})` : ''}`]] : []),
+      ...((m.ducts || []).map((d) => ['Duct', `${esc(d.kind)} ${d.base_m}–${d.top_m} m, traps above ${d.cutoff_ghz < 1 ? Math.round(d.cutoff_ghz * 1000) + ' MHz' : d.cutoff_ghz + ' GHz'}`])),
+      ...(m.space_weather?.kp != null ? [['Space weather', `Kp ${m.space_weather.kp}`]] : [])];
+    return `<h3 class="sec">Met ${fc ? `<span class="dim">Open-Meteo, valid ${esc(m.valid_time || '')} at ${m.lat}, ${m.lon}</span>` : '<span class="dim">standard atmosphere</span>'}</h3>
+      <table class="grid">${cells.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table>
+      ${(m.warnings || []).map((w) => `<p class="warn">${esc(w)}</p>`).join('')}${(m.notes || []).map((w) => `<p class="dim">${esc(w)}</p>`).join('')}`;
+  }
+  function emoTimelineMet(r) {
+    const ms = (r.board || []).map((b) => b.met).filter(Boolean);
+    if (!ms.length || ms.every((m) => m.k === ms[0].k && m.rain_mm_h === ms[0].rain_mm_h && m.fog_lwc_gm3 === ms[0].fog_lwc_gm3 && !m.ducts)) return '';
+    return `<p>Met by step: ${(r.board || []).map((b) => b.met ? `T+${b.t} k ${b.met.k}${b.met.rain_mm_h ? `, rain ${b.met.rain_mm_h}` : ''}${b.met.fog_lwc_gm3 ? ', fog' : ''}${b.met.ducts ? ', duct' : ''}` : '').filter(Boolean).join(' · ')}</p>`;
+  }
+  function emoMetParams() {
+    const v = (id) => { const x = $(id)?.value; return x === '' || x == null ? null : +x; };
+    EMO.params.met = $('#emo-met').value;
+    EMO.params.met_time = $('#emo-mettime').value || null;
+    EMO.params.k_factor = v('#emo-k'); EMO.params.rain_mm_h = v('#emo-rain'); EMO.params.visibility_m = v('#emo-vis');
+    try { localStorage.setItem('cyem-emo-met', EMO.params.met); } catch (e) { /* private window */ }
+  }
   async function openEMO() {
     emoEnable();
+    if (!EMO.params.met) { try { EMO.params.met = localStorage.getItem('cyem-emo-met') === 'forecast' ? 'forecast' : 'standard'; } catch (e) { EMO.params.met = 'standard'; } }
     try { if (!EMO.examples) EMO.examples = (await api('/api/emo/examples')).examples; await emoLoad(); EMO.scen = (await api('/api/emo/scenarios')).scenarios; } catch (err) { return openModal('EMO', `<p class="bad">${esc(err.message)}</p>`); }
     const list = EMO.ents.length ? `<table class="grid"><tr><th>Entity</th><th>Role</th><th>MHz</th><th></th></tr>${EMO.ents.map((e) => `<tr class="${e.id === EMO.editId ? 'sel' : ''}"><td style="color:${SIDE_COL[e.side]}">${esc(e.name)}${e.active || e.kind === 'sensor' || e.kind === 'receiver' ? '' : ' <span class="dim">(off-air)</span>'}</td><td class="dim">${esc(KIND_TXT[e.kind])}${e.category ? ' · ' + esc(e.category) : ''}</td><td class="mono">${e.freq_mhz}${e.f_hi_mhz ? '–' + e.f_hi_mhz : ''}</td><td><button data-emo-edit="${esc(e.id)}">Edit</button></td></tr>`).join('')}</table>` : '<p class="dim">No entities: load an example.</p>';
     const H = Math.max(EMO.horizon, 0);
@@ -2114,6 +2146,11 @@
       <div class="specset">${EMO_LAYERS.map(([k, l, c]) => `<label style="white-space:nowrap"><input type="checkbox" data-emo-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${c}">■</span> ${esc(l)}</label>`).join(' ')}</div>
       <div class="specset">Targetable if fix within <input id="emo-tgt" type="number" min="50" step="50" value="${EMO.params.df_fix_good_m}" style="width:80px"> m
         <span class="dim">(tactical ~1000, operational ~5000)</span> · <span class="dim">Map washes are for ground receivers (2 m); airborne results are in the cards and tables.</span></div>
+      <div class="specset">Met <select id="emo-met"><option value="standard"${EMO.params.met !== 'forecast' ? ' selected' : ''}>Standard atmosphere (4/3 earth, dry)</option><option value="forecast"${EMO.params.met === 'forecast' ? ' selected' : ''}>Forecast at the scenario centre (Open-Meteo)</option></select>
+        T+0 <input id="emo-mettime" type="datetime-local" step="3600" value="${esc(EMO.params.met_time || '')}" style="width:190px" title="UTC; empty means now. Forecasts run 16 days ahead; older dates use archived forecasts."> UTC
+        <span class="dim">what-if:</span> k <input id="emo-k" type="number" step="0.1" min="0.5" max="10" placeholder="auto" value="${EMO.params.k_factor ?? ''}" style="width:58px">
+        rain <input id="emo-rain" type="number" step="1" min="0" max="200" placeholder="auto" value="${EMO.params.rain_mm_h ?? ''}" style="width:56px"> mm/h
+        visibility <input id="emo-vis" type="number" step="50" min="10" placeholder="auto" value="${EMO.params.visibility_m ?? ''}" style="width:68px"> m</div>
       <div class="specset"><input id="emo-askq" placeholder="Ask about this scenario, e.g. which blue emitter is most at risk?" style="flex:1;min-width:200px"> <button id="emo-ask">Ask AI</button></div>
       <div id="emo-askout" class="md"></div>
       <div class="specset">Briefing phases (minutes) <input id="emo-phases" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
@@ -2183,13 +2220,14 @@
         const w = r.windows;
         out.innerHTML = `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}
           ${w ? `<h4>Windows of EM advantage for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
-          <p class="dim">${esc(r.notes)}</p>`;
+          ${emoTimelineMet(r)}<p class="dim">${esc(r.notes)}</p>`;
       } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
     });
     $('#emo-coa-ml').addEventListener('click', () => coa('mlcoa'));
     $('#emo-coa-md').addEventListener('click', () => coa('mdcoa'));
     $('#emo-coa-rev').addEventListener('click', () => coa('revert'));
     $('#emo-tgt').addEventListener('change', (e) => { EMO.params.df_fix_good_m = Math.max(50, +e.target.value || 1000); emoRun(); });
+    ['#emo-met', '#emo-mettime', '#emo-k', '#emo-rain', '#emo-vis'].forEach((id) => $(id).addEventListener('change', () => { emoMetParams(); emoRun(); }));
     $('#emo-export').addEventListener('click', (e) => {
       e.preventDefault();
       const ph = $('#emo-phases').value.split(/[,\s]+/).filter((x) => x !== '' && !isNaN(+x)).join(',') || '0';
@@ -2219,7 +2257,7 @@
       emoStatus('loading…');
       try {
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
-        EMO.ents = r.entities; EMO.about = r.about; EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        EMO.ents = r.entities; EMO.about = r.about; EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
       } catch (err) { emoStatus(err.message); }
     });

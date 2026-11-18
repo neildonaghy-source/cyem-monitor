@@ -63,6 +63,10 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
   (Sec-Fetch-Site, else Origin against Host/X-Forwarded-Host); requests with neither header (scripts, HA) pass. Framing:
   CSP `frame-ancestors 'self'` plus `FRAME_ANCESTORS` (empty by default). No HA panel: added and then removed on
   18 Nov 2026 at Neil's request (`~/ha-review/ha-cyem-panel-20261118.py` on trade recreates it if ever wanted).
+- Met (18 Nov 2026): `met_core.py` (pure, stdlib, tested: P.453 refractivity, k, ducts and cut-off, neutral evaporation duct,
+  P.840 fog) and `met.py` (Open-Meteo forecast, historical-forecast and marine APIs, table `met_cache`, `/api/met`, CLI `met`).
+  RunIn `met`/`met_time`/`k_factor`/`rain_mm_h`/`visibility_m`; `run()` sets the `ATM` contextvar, planning calls outside a
+  run use the last run's; `_P2P` and `_COV` keys include the atmosphere signature. Ducts are flagged, never modelled.
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
 - Remote: `origin` is the private GitHub repo neildonaghy-source/cyem-monitor. Work on a branch, open a pull request, merge to
   `main`; `main` is what gets deployed. Run long jobs with nohup and read the logs (tool calls time out).

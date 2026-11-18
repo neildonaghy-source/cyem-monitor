@@ -21,7 +21,7 @@ the planning. Notional data only, as before.
 | --- | --- | --- | --- |
 | 1. Fix | Audit findings 1 to 12 (13 moves to phase 5); Pillow 13.0.0; DOMPurify and CSP; scenario tests on synthetic terrain | 1 | Merged 18 Nov (PR #4) |
 | 2. Redeploy | EVO WSL distro, Docker, internet log-in, data re-download (Copernicus tiles on demand, Ofcom WTR, UKFAT), new API keys (aisstream, OpenCelliD, Cloudflare), tailnet routes, HA panel, backups, runbook | 2 | Running on the EVO since 18 Nov (docs/DEPLOY-EVO.md); HA panel back 18 Nov, with a cross-site guard and frame-ancestors; still to do: off-box data copy, API keys |
-| 3. Clients | Installable web app on Mac and iPhone; native apps if the source turns up (repoint and re-sign: 1 session; rebuild from scratch: 2 to 3) | 1 | |
+| 3. Clients | Installable web app on Mac and iPhone; native apps if the source turns up (repoint and re-sign: 1 session; rebuild from scratch: 2 to 3) | 1 | Web app done 18 Nov: installable from the tailnet and the internet (manifest and icons outside the log-in; README "Install as an app"). Native apps wait for the source |
 | 4. Met | `met_core` (refractivity, k-factor, ducts, hydrometeor and gas attenuation), Open-Meteo collector, met per time step in EMO runs and the timeline, met layer and caveat | 2 | |
 | 5. Corridors: core | Cost-grid search in space and time, corridor band, legs with EMCON and comms plan, verify by exact pairwise runs; ground, low-level air (rotary and UAS) and maritime surface first; scenarios moved to JSON with a schema check (finding 13) | 3 | |
 | 6. Corridors: other domains | Amphibious, sub-surface exposure windows, dismounted and SOF, spectrum (frequency-time), satcom and GNSS windows, grey (civil) corridors | 2 to 3 | |

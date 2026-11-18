@@ -39,7 +39,7 @@ IP_TRIES, IP_WINDOW = 5, 900               # 5 failed sign-ins per address per 1
 USER_TRIES, USER_LOCK = 10, 900            # 10 consecutive failures lock the account for 15 minutes
 SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1}
 MAXMEM = 64 * 1024 * 1024
-EXEMPT_PREFIX = ("/api/sdr/ingest", "/api/sdr/heartbeat", "/login", "/static/style.css", "/manifest", "/sw.js", "/icon")
+EXEMPT_PREFIX = ("/api/sdr/ingest", "/api/sdr/heartbeat", "/login", "/static/style.css", "/manifest", "/sw.js", "/static/icons/")
 _attempts: dict[str, list[float]] = {}
 _schema_for: set[str] = set()
 

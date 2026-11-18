@@ -130,6 +130,20 @@ def test_changes_from_another_site_are_refused_on_both_paths(client, auth):
     assert r.status_code == 302
 
 
+def test_installable_from_the_internet_before_sign_in(client):
+    # a browser fetches the manifest and icons without cookies, so they must not bounce to /login, or the web app
+    # installs from the internet with no name or icon; the app itself stays behind the log-in
+    get = lambda p: client.get(p, headers=FUNNEL, follow_redirects=False)
+    assert 'href="/manifest.webmanifest"' in client.get("/").text            # the page links the open route
+    r = get("/manifest.webmanifest")
+    assert r.status_code == 200 and r.json()["start_url"] == "/"
+    for icon in r.json()["icons"]:
+        assert get(icon["src"]).status_code == 200, icon["src"]
+    assert get("/static/icons/apple-touch-icon.png").status_code == 200
+    assert get("/sw.js").status_code == 200
+    assert get("/static/app.js").status_code == 302 and get("/").status_code == 302
+
+
 def test_only_this_site_and_home_assistant_may_frame_it(client):
     from app.main import build_csp
     assert client.get("/").headers["content-security-policy"].endswith("frame-ancestors 'self'")    # default

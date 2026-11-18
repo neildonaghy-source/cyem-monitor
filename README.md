@@ -105,6 +105,17 @@ the actual map symbols per layer and can be resized by dragging its bottom-right
 high bands); "geomag inactive / quiet" is hamqsl's geomagnetic field state and means calm conditions,
 which is good for HF and GNSS. "unsettled / active / storm" turn the pill amber.
 
+## Install as an app
+
+CyEM is an installable web app (manifest, icons, service worker), so it runs full-screen with its own icon:
+
+* iPhone or iPad: open `https://nucbox-evo-x2.tail013324.ts.net/` in Safari, Share, Add to Home Screen.
+* Mac: Safari, File, Add to Dock (or Chrome, Install CyEM Monitor).
+
+On the tailnet it opens straight in. Off the tailnet it shows the sign-in page first; an installed iPhone app keeps its
+own cookies, so sign in once inside the app (sessions last 30 days). The manifest and icons sit outside the log-in so
+the app installs with its name and icon from either path; the app itself stays behind it.
+
 ## Home Assistant
 
 The "CyEM Monitor" panel (dashboard `cyem-panel`, storage mode, admin only) is one panel view with an iframe card

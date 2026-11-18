@@ -76,4 +76,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 - Off-box copy of `data-store`: proposed nightly push from the EVO to trade with a key limited to one folder, then
   trade's OneDrive job takes it off-site. Needs his yes.
 - API keys for aisstream, OpenCelliD and Cloudflare Radar (into `/home/cyem/cyem/.env` on the EVO).
-- The native app source: is the Mac it was built on in September still around?
+- The native app source: Neil still has the Mac it was built on in September and will check it on 19 Nov. When the
+  source is shared (private GitHub repo, or a zip without DerivedData), the work is: point the apps at
+  `https://nucbox-evo-x2.tail013324.ts.net/`, rebuild and re-sign on his Mac with Xcode (about one session; signing
+  needs his Apple ID, so it cannot be a scheduled run). Do not ask again until he reports back.

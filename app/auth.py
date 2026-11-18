@@ -7,6 +7,11 @@ before, so tailnet devices and the Home Assistant panel need no log-in. The toke
 
 Fails closed: with no accounts set up, nobody gets in from the internet.
 Accounts: python -m app.cli user add|passwd|del|list|signout <name>   (passwords are typed, never passed as arguments)
+
+On both paths, a browser request that changes something (POST, PUT, PATCH, DELETE) must come from a CyEM page: one
+sent by another site is refused (Sec-Fetch-Site, then Origin). The tailnet has no log-in to stop a page elsewhere
+posting to CyEM from a tailnet browser, and on the internet this also blocks sign-in forgery. Scripts and Home
+Assistant's own calls send neither header and are unaffected.
 """
 from __future__ import annotations
 
@@ -18,7 +23,7 @@ import os
 import secrets
 import time
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -272,8 +277,36 @@ def from_internet(request: Request) -> bool:
     return bool(request.headers.get("tailscale-funnel-request"))
 
 
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def cross_site(request: Request) -> bool:
+    """True for a state-changing browser request that another site started.
+
+    Browsers send Sec-Fetch-Site on every request (Chrome 76+, Firefox 90+, Safari 16.4+) and Origin on every POST,
+    PUT, PATCH and DELETE; a page cannot set either. Sec-Fetch-Site decides when present ('same-site' is refused too:
+    other tailnet hosts share the ts.net site and have no reason to post here). Otherwise the Origin host must be the
+    host the request was sent to (Host, or X-Forwarded-Host if a proxy rewrote Host). No header at all is a script, a
+    server or an old browser, which CSRF cannot use: it gets through, and the log-in still applies on the internet."""
+    if request.method in SAFE_METHODS:
+        return False
+    h = request.headers
+    site = (h.get("sec-fetch-site") or "").lower()
+    if site in ("cross-site", "same-site"):
+        return True
+    if site in ("same-origin", "none"):
+        return False
+    origin = h.get("origin")
+    if origin is None:
+        return False
+    hosts = {(h.get("host") or "").lower(), (h.get("x-forwarded-host") or "").lower()} - {""}
+    return origin == "null" or urlsplit(origin).netloc.lower() not in hosts
+
+
 class LoginGate(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        if cross_site(request):
+            return JSONResponse({"error": "refused: this request came from another site"}, status_code=403)
         if not from_internet(request):
             return await call_next(request)                 # tailnet and the box itself: no log-in
         path = request.url.path

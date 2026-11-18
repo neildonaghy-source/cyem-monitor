@@ -23,6 +23,8 @@ services:
       OPENCELLID_KEY: "${OPENCELLID_KEY:-}"
       SEARXNG_URL: "http://searxng:8080"
       SDR_INGEST_TOKEN: "${SDR_INGEST_TOKEN:-}"
+      # Home Assistant origins allowed to show CyEM in its panel iframe (CSP frame-ancestors; 'self' is always allowed)
+      FRAME_ANCESTORS: "${FRAME_ANCESTORS:-https://homeassistant.tail013324.ts.net http://homeassistant:8123 http://homeassistant.local:8123 http://192.168.68.85:8123 http://100.80.169.95:8123}"
       OLLAMA_THINK: "false"
       OLLAMA_NUM_CTX: "8192"
       BRIEF_HOURS: "${BRIEF_HOURS:-06,12,18,00}"

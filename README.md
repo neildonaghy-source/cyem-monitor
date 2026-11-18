@@ -11,12 +11,13 @@ upsell, no cloud dependencies beyond the public data sources themselves.
 
 ## Where it runs
 
-* Container `cyem` from `~/cyem/docker-compose.yml`, listening on `127.0.0.1:3020`.
-* Tailnet URLs (Tailscale serve): `https://trade.tail013324.ts.net:8443` (and `:8444`,
-  kept for the Home Assistant iframe). No X-Frame-Options are sent, so no proxy is needed.
-* Data: SQLite in `~/cyem/data-store/cyem.sqlite3` (items, snapshots, briefs, collector health).
-* LLM: the existing `trading-bot-ollama-1` container, reached as `http://ollama:11434`
-  over the shared `trading-bot_default` network. Model `qwen3.5:4b`, thinking disabled.
+* Since 18 Nov 2026: the EVO-X2, WSL distro `CyEM`, container `cyem` from `/home/cyem/cyem/docker-compose.yml`,
+  listening on `127.0.0.1:3020` (`docs/DEPLOY-EVO.md`). Until 7 Oct 2026 it ran on trade.
+* `https://nucbox-evo-x2.tail013324.ts.net/`: Tailscale serve on the tailnet (no log-in) and Funnel on the internet
+  (username and password). Home Assistant shows it in the admin-only "CyEM Monitor" panel; the CSP's
+  `frame-ancestors` allows this site and the HA origins in `FRAME_ANCESTORS`, and nothing else may frame it.
+* Data: SQLite in `data-store/cyem.sqlite3` (items, snapshots, briefs, collector health, accounts, EMO work).
+* LLM: Ollama on the EVO-X2 (`OLLAMA_URL`, `OLLAMA_MODEL` in `.env`), thinking disabled.
 
 ## Operating it
 
@@ -106,7 +107,10 @@ which is good for HF and GNSS. "unsettled / active / storm" turn the pill amber.
 
 ## Home Assistant
 
-Point the existing iframe card at `https://trade.tail013324.ts.net:8444/` (unchanged URL).
+The "CyEM Monitor" panel (dashboard `cyem-panel`, storage mode, admin only) is one panel view with an iframe card
+pointing at `https://nucbox-evo-x2.tail013324.ts.net/`. It loads on tailnet devices; the internet log-in cannot work
+inside HA's iframe (the session cookie is SameSite=Lax), so off the tailnet open CyEM directly instead. If HA is
+reached from a new address, add that origin to `FRAME_ANCESTORS` or the frame stays blank.
 On a phone the feed and brief panels become full-screen views via the bottom bar.
 
 ## Decommissioning record (2026-09-21)

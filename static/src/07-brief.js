@@ -1,10 +1,23 @@
   // ---------------------------------------------------------------- brief
-  function sanitize(html) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    doc.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach((n) => n.remove());
-    doc.querySelectorAll('*').forEach((n) => { for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name) || (a.name === 'href' && /^javascript:/i.test(a.value))) n.removeAttribute(a.name); });
-    return doc.body.innerHTML;
+  // sanitize:begin (tests/ui/sanitize_check.py runs this block on its own)
+  // Model output (briefs, Ask) is rendered as markdown and then cleaned against an ALLOWLIST with DOMPurify
+  // (static/vendor/purify.min.js). Feed text and web results reach the model, so treat its HTML as hostile.
+  // Without DOMPurify the text is shown escaped, never as markup. The page's CSP (script-src 'self',
+  // base-uri 'none') is the second line of defence.
+  const MD_TAGS = ['p', 'br', 'hr', 'strong', 'b', 'em', 'i', 'del', 's', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'span', 'sup', 'sub'];
+  const MD_ATTR = ['href', 'title', 'class', 'colspan', 'rowspan', 'align', 'start'];
+  if (window.DOMPurify && DOMPurify.addHook) {
+    DOMPurify.addHook('afterSanitizeAttributes', (n) => {
+      if (n.tagName === 'A' && n.getAttribute('href')) { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); }
+    });
   }
+  function sanitize(html) {
+    if (!window.DOMPurify) return esc(html);
+    return DOMPurify.sanitize(html, { ALLOWED_TAGS: MD_TAGS, ALLOWED_ATTR: [...MD_ATTR, 'target', 'rel'],
+      ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#|\/(?!\/))/i, ALLOW_DATA_ATTR: false });
+  }
+  // sanitize:end
   function renderMd(md) {
     let html = marked.parse(md || '', { gfm: true, breaks: false });
     html = sanitize(html).replace(/\[(\d{1,3})\]/g, '<span class="cite" title="source item in the brief context">[$1]</span>');

@@ -9,4 +9,6 @@
   setInterval(refreshStatus, 60000);
   setInterval(loadFeed, 150000);
   setInterval(() => { minute += 1; loadLayers(minute); }, 60000);
+  // offline shell (was an inline script in index.html; the CSP allows scripts from this origin only)
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

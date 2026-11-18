@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-18a';
+  const BUILD = '2026-11-18b';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -52,6 +52,10 @@
   window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };
   async function api(path, opts) {
     const r = await fetch(path, opts);
+    if (r.status === 401) {                  // internet session expired or signed out elsewhere: back to the log-in page
+      location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+      throw new Error(`${path}: sign in required`);
+    }
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
     return r.json();
   }
@@ -2418,4 +2422,12 @@
   setInterval(() => { minute += 1; loadLayers(minute); }, 60000);
   // offline shell (was an inline script in index.html; the CSP allows scripts from this origin only)
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // Sign out: shown only on an internet session (the tailnet needs no log-in)
+  fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((m) => {
+    const b = $('#btn-signout');
+    if (!m || !m.user || !b) return;
+    b.hidden = false;
+    b.title = `Signed in as ${m.user} from the internet`;
+    b.addEventListener('click', () => { location.href = '/logout'; });
+  }).catch(() => {});
 })();

@@ -8,10 +8,10 @@ the planning. Notional data only, as before.
 
 | Item | Decision | Status |
 | --- | --- | --- |
-| Host | Own VM on the MS-A2 (Proxmox), Ubuntu 24.04 LTS, Docker; 4 vCPU, 8 GB RAM, 40 GB disk; in the nightly vzdump copied to the Mac mini | Assumed; confirm before phase 2 |
-| Access | Tailnet only; no Funnel or password gate unless asked | Assumed |
-| Language model | Ollama on the EVO-X2 for briefs and Ask | Assumed |
-| SDR | Dongle passed through to the new VM (it was on the trade VM via the MS-A2) | Phase 2 |
+| Host | The EVO-X2: a dedicated WSL2 distro (Ubuntu 24.04) running Docker Engine, kept up at boot by a scheduled task; Ollama is local there. The MS-A2 had no RAM to spare for a VM (24 of 29 GB allocated) | Decided 18 Nov |
+| Access | Tailnet without log-in (and the HA panel); the internet through Tailscale Funnel with a username and password (`app/auth.py`, accounts via `python -m app.cli user`). Password only, no second factor | Decided 18 Nov |
+| Language model | Ollama on the EVO-X2 for briefs and Ask | Decided |
+| SDR | The RTL-SDR on the MS-A2 is passed to trade for the Ecowitt weather receiver; CyEM sweeps wait for a second dongle or the Pi | Open |
 | Clients | Web app first. Native Mac and iPhone apps only if their source is recovered: it is not on the MacBook (Xcode there was first used on 5 Oct) or the Mac mini (no Xcode); it was built in September on another Mac | Open |
 | Code copy off GitHub | `~/Backups/cyem-monitor` on the Mac mini (bundle, SHA-256, README); refresh after merges | Done 18 Nov |
 
@@ -20,7 +20,7 @@ the planning. Notional data only, as before.
 | Phase | Work | Sessions | State |
 | --- | --- | --- | --- |
 | 1. Fix | Audit findings 1 to 12 (13 moves to phase 5); Pillow 13.0.0; DOMPurify and CSP; scenario tests on synthetic terrain | 1 | Done on branch `rebuild/phase-1-fixes` |
-| 2. Redeploy | VM, Docker, data re-download (Copernicus tiles on demand, Ofcom WTR, UKFAT), new API keys (aisstream, OpenCelliD, Cloudflare), tailnet routes, HA panel, backups, runbook | 2 | Next |
+| 2. Redeploy | EVO WSL distro, Docker, internet log-in, data re-download (Copernicus tiles on demand, Ofcom WTR, UKFAT), new API keys (aisstream, OpenCelliD, Cloudflare), tailnet routes, HA panel, backups, runbook | 2 | Next |
 | 3. Clients | Installable web app on Mac and iPhone; native apps if the source turns up (repoint and re-sign: 1 session; rebuild from scratch: 2 to 3) | 1 | |
 | 4. Met | `met_core` (refractivity, k-factor, ducts, hydrometeor and gas attenuation), Open-Meteo collector, met per time step in EMO runs and the timeline, met layer and caveat | 2 | |
 | 5. Corridors: core | Cost-grid search in space and time, corridor band, legs with EMCON and comms plan, verify by exact pairwise runs; ground, low-level air (rotary and UAS) and maritime surface first; scenarios moved to JSON with a schema check (finding 13) | 3 | |

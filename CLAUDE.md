@@ -56,6 +56,9 @@ the new host and URLs are set in docs/REBUILD-PLAN.md.
 - Web client (browser; bump `BUILD` in `static/app.js`, the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the offline copy on the Mac mini: `git bundle create ~/Backups/cyem-monitor/cyem-monitor-YYYYMMDD.bundle --all`
   plus its `.sha256` (the copy of 18 Nov 2026 is there with a README).
 - Keys (AISSTREAM_KEY, OPENCELLID_KEY) live only in `.env`; never log or echo URLs containing them. `.env.*` is ignored except `.env.example`.
+- Internet access: Tailscale Funnel requests (header `Tailscale-Funnel-Request`) must sign in (`app/auth.py`: users and sessions
+  tables, scrypt, 30-day sessions, 5 tries per address per 15 min, 10 per account then a 15-minute lock). Tailnet requests
+  need no log-in. Accounts: `python -m app.cli user add|passwd|signout|del|list`. With no accounts the internet is refused.
 - New modules: `omni.py` (search/Ask context), `websearch.py` (SearXNG), `export.py`, `ukfat.py`, `satnogs.py`, `hf_core.py` + `hf_api.py`, `cells.py`, collectors `ais`, `cells`, `air`, `ukfat`, `satnogs`.
 - Remote: `origin` is the private GitHub repo neildonaghy-source/cyem-monitor. Work on a branch, open a pull request, merge to
   `main`; `main` is what gets deployed. Run long jobs with nohup and read the logs (tool calls time out).

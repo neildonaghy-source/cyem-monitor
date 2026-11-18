@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-18a';
+  const BUILD = '2026-11-18b';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -52,6 +52,10 @@
   window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };
   async function api(path, opts) {
     const r = await fetch(path, opts);
+    if (r.status === 401) {                  // internet session expired or signed out elsewhere: back to the log-in page
+      location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+      throw new Error(`${path}: sign in required`);
+    }
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
     return r.json();
   }

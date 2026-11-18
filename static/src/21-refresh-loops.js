@@ -11,4 +11,12 @@
   setInterval(() => { minute += 1; loadLayers(minute); }, 60000);
   // offline shell (was an inline script in index.html; the CSP allows scripts from this origin only)
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // Sign out: shown only on an internet session (the tailnet needs no log-in)
+  fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((m) => {
+    const b = $('#btn-signout');
+    if (!m || !m.user || !b) return;
+    b.hidden = false;
+    b.title = `Signed in as ${m.user} from the internet`;
+    b.addEventListener('click', () => { location.href = '/logout'; });
+  }).catch(() => {});
 })();

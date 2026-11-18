@@ -144,7 +144,7 @@ def test_installable_from_the_internet_before_sign_in(client):
     assert get("/static/app.js").status_code == 302 and get("/").status_code == 302
 
 
-def test_only_this_site_and_home_assistant_may_frame_it(client):
+def test_only_this_site_and_listed_origins_may_frame_it(client):
     from app.main import build_csp
     assert client.get("/").headers["content-security-policy"].endswith("frame-ancestors 'self'")    # default
     csp = build_csp("https://homeassistant.tail013324.ts.net, http://192.168.68.85:8123 'self' "

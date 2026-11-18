@@ -14,8 +14,8 @@ upsell, no cloud dependencies beyond the public data sources themselves.
 * Since 18 Nov 2026: the EVO-X2, WSL distro `CyEM`, container `cyem` from `/home/cyem/cyem/docker-compose.yml`,
   listening on `127.0.0.1:3020` (`docs/DEPLOY-EVO.md`). Until 7 Oct 2026 it ran on trade.
 * `https://nucbox-evo-x2.tail013324.ts.net/`: Tailscale serve on the tailnet (no log-in) and Funnel on the internet
-  (username and password). Home Assistant shows it in the admin-only "CyEM Monitor" panel; the CSP's
-  `frame-ancestors` allows this site and the HA origins in `FRAME_ANCESTORS`, and nothing else may frame it.
+  (username and password). No Home Assistant panel (removed 18 Nov 2026); the CSP's `frame-ancestors` lets only
+  CyEM itself frame its pages.
 * Data: SQLite in `data-store/cyem.sqlite3` (items, snapshots, briefs, collector health, accounts, EMO work).
 * LLM: Ollama on the EVO-X2 (`OLLAMA_URL`, `OLLAMA_MODEL` in `.env`), thinking disabled.
 
@@ -118,11 +118,8 @@ the app installs with its name and icon from either path; the app itself stays b
 
 ## Home Assistant
 
-The "CyEM Monitor" panel (dashboard `cyem-panel`, storage mode, admin only) is one panel view with an iframe card
-pointing at `https://nucbox-evo-x2.tail013324.ts.net/`. It loads on tailnet devices; the internet log-in cannot work
-inside HA's iframe (the session cookie is SameSite=Lax), so off the tailnet open CyEM directly instead. If HA is
-reached from a new address, add that origin to `FRAME_ANCESTORS` or the frame stays blank.
-On a phone the feed and brief panels become full-screen views via the bottom bar.
+None. The CyEM panel was removed from Home Assistant on 18 Nov 2026 as not needed; open CyEM directly or install
+it as an app (above).
 
 ## Decommissioning record (2026-09-21)
 

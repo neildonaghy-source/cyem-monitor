@@ -9,7 +9,7 @@ the planning. Notional data only, as before.
 | Item | Decision | Status |
 | --- | --- | --- |
 | Host | The EVO-X2: a dedicated WSL2 distro (Ubuntu 24.04) running Docker Engine, kept up at boot by a scheduled task; Ollama is local there. The MS-A2 had no RAM to spare for a VM (24 of 29 GB allocated) | Decided 18 Nov |
-| Access | Tailnet without log-in (and the HA panel); the internet through Tailscale Funnel with a username and password (`app/auth.py`, accounts via `python -m app.cli user`). Password only, no second factor | Decided 18 Nov |
+| Access | Tailnet without log-in; the internet through Tailscale Funnel with a username and password (`app/auth.py`, accounts via `python -m app.cli user`). Password only, no second factor | Decided 18 Nov |
 | Language model | Ollama on the EVO-X2 for briefs and Ask | Decided |
 | SDR | The RTL-SDR on the MS-A2 is passed to trade for the Ecowitt weather receiver; CyEM sweeps wait for a second dongle or the Pi | Open |
 | Clients | Web app first. Native Mac and iPhone apps only if their source is recovered: it is not on the MacBook (Xcode there was first used on 5 Oct) or the Mac mini (no Xcode); it was built in September on another Mac | Open |
@@ -20,7 +20,7 @@ the planning. Notional data only, as before.
 | Phase | Work | Sessions | State |
 | --- | --- | --- | --- |
 | 1. Fix | Audit findings 1 to 12 (13 moves to phase 5); Pillow 13.0.0; DOMPurify and CSP; scenario tests on synthetic terrain | 1 | Merged 18 Nov (PR #4) |
-| 2. Redeploy | EVO WSL distro, Docker, internet log-in, data re-download (Copernicus tiles on demand, Ofcom WTR, UKFAT), new API keys (aisstream, OpenCelliD, Cloudflare), tailnet routes, HA panel, backups, runbook | 2 | Running on the EVO since 18 Nov (docs/DEPLOY-EVO.md); HA panel back 18 Nov, with a cross-site guard and frame-ancestors; still to do: off-box data copy, API keys |
+| 2. Redeploy | EVO WSL distro, Docker, internet log-in, data re-download (Copernicus tiles on demand, Ofcom WTR, UKFAT), new API keys (aisstream, OpenCelliD, Cloudflare), tailnet routes, backups, runbook (HA panel dropped 18 Nov: not needed) | 2 | Running on the EVO since 18 Nov (docs/DEPLOY-EVO.md); cross-site guard and frame-ancestors 'self' added 18 Nov; still to do: off-box data copy, API keys |
 | 3. Clients | Installable web app on Mac and iPhone; native apps if the source turns up (repoint and re-sign: 1 session; rebuild from scratch: 2 to 3) | 1 | Web app done 18 Nov: installable from the tailnet and the internet (manifest and icons outside the log-in; README "Install as an app"). Native apps wait for the source |
 | 4. Met | `met_core` (refractivity, k-factor, ducts, hydrometeor and gas attenuation), Open-Meteo collector, met per time step in EMO runs and the timeline, met layer and caveat | 2 | |
 | 5. Corridors: core | Cost-grid search in space and time, corridor band, legs with EMCON and comms plan, verify by exact pairwise runs; ground, low-level air (rotary and UAS) and maritime surface first; scenarios moved to JSON with a schema check (finding 13) | 3 | |

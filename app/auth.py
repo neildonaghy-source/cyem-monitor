@@ -3,7 +3,7 @@
 Requests that come in from the internet through Tailscale Funnel carry the `Tailscale-Funnel-Request` header, which
 tailscaled sets and a client cannot remove. Those requests need a session from /login: a username and password checked
 against the `users` table (scrypt). Requests from the tailnet arrive without that header and pass straight through, as
-before, so tailnet devices and the Home Assistant panel need no log-in. The token-protected SDR endpoints are exempt.
+before, so tailnet devices need no log-in. The token-protected SDR endpoints are exempt.
 
 Fails closed: with no accounts set up, nobody gets in from the internet.
 Accounts: python -m app.cli user add|passwd|del|list|signout <name>   (passwords are typed, never passed as arguments)

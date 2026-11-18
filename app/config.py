@@ -54,7 +54,7 @@ class Settings:
     abusech_auth_key: str = field(default_factory=lambda: _env("ABUSECH_AUTH_KEY"))
     opencti_url: str = field(default_factory=lambda: _env("OPENCTI_URL").rstrip("/"))
     opencti_token: str = field(default_factory=lambda: _env("OPENCTI_TOKEN"))
-    # Origins allowed to show CyEM in an iframe (the Home Assistant panel), space-separated; 'self' is always allowed.
+    # Extra origins allowed to show CyEM in an iframe, space-separated (none by default; 'self' is always allowed).
     frame_ancestors: str = field(default_factory=lambda: _env("FRAME_ANCESTORS"))
 
     @property

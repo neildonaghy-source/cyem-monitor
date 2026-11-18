@@ -437,8 +437,8 @@ async def collect(name: str):
 # Content-Security-Policy for every response. Scripts only from this origin (no inline script), so injected markup
 # in model output cannot run; base-uri 'none' stops a stray <base> tag re-pointing relative links. Map tiles and
 # symbol images may come from any https host; the live SDR receiver is an https iframe. frame-ancestors lets only
-# this site and the Home Assistant origins in FRAME_ANCESTORS embed the dashboard: the tailnet needs no log-in, so any
-# other site a tailnet browser visits could otherwise frame it and steer clicks. No X-Frame-Options: it cannot list
+# this site (plus any origins in FRAME_ANCESTORS, none by default) embed the dashboard: the tailnet needs no log-in, so
+# any other site a tailnet browser visits could otherwise frame it and steer clicks. No X-Frame-Options: it cannot list
 # several origins, and browsers that understand frame-ancestors ignore it.
 _SOURCE = re.compile(r"^(?:https?://(?:\*\.)?[A-Za-z0-9.-]+(?::\d{1,5})?|'self')$")
 

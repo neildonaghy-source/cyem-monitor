@@ -142,6 +142,9 @@ Pole-21, Buk 9S18M1, Zoopark-1, Orlan-10, Il-22PP, Monolit-B, Steregushchiy). Va
 
 ## AR view (iPhone)
 
+> Not available since the September iPhone app was lost (19 Nov 2026): `/api/ar` and `/api/insight/ar` remain on the
+> server, but no client calls them. The new native apps host the web interface and have no AR view yet.
+
 Tap a label for its sheet: details, who detects it, status, EMCON, Move here, Undo and Ask. The sheet stays open while the
 analysis re-runs and then says what changed ("now detected by 1, was 3"). Filters: source, Detected only, range 5/10/30 km.
 Recalibrate restarts the AR session when the compass has drifted. The nearest 25 labels are drawn; the count beyond is shown.

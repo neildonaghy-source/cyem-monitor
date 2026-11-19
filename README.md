@@ -63,7 +63,7 @@ panel; the ask box streams answers.
 | Infra | TeleGeography submarine cable geometry | 7d |
 | Infra | Cloudflare Radar outages, attack origins, BGP hijacks, optional `CLOUDFLARE_API_TOKEN` | 1h |
 | OSINT | GDELT DOC 2.0 articles for cyber / GNSS-EW / connectivity / space themes, placed by country detected in the headline (GDELT's GEO API was retired) | 2h |
-| All | ~45 curated RSS feeds (NCSC, CISA, CERT-EU, The Record, C4ISRNET EW, RNTF, Breaking Defense, TeleGeography, RUSI, Google News topic queries ...) | 20m |
+| All | 43 curated RSS feeds (NCSC, CISA, CERT-EU, The Record, C4ISRNET EW, RNTF, Breaking Defense, TeleGeography, RUSI, Google News topic queries ...) | 20m |
 
 Feeds are defined in `app/feeds.py`; tag rules and severity heuristics in `app/tagging.py`;
 country detection in `app/geo.py`. Edit, then `docker compose up -d --build`.
@@ -73,7 +73,7 @@ country detection in `app/geo.py`. Edit, then `docker compose up -d --build`.
 Scheduled at 06:00, 12:00, 18:00 and 00:00 Europe/London (`BRIEF_HOURS`), plus on demand.
 The model is given a structured status block (space weather, HF, GNSS hexes, outages,
 KEV/ransomware/C2 statistics, GDELT) and up to ~45 recent items, numbered, and is
-instructed to cite them. A brief takes roughly 2 to 5 minutes on the i5-8500T; four a day
+instructed to cite them. A brief takes a few minutes on the EVO-X2's local Ollama; four a day
 is a small fraction of what worldmonitor's 15-minute classifier used.
 
 ## Map
@@ -129,7 +129,7 @@ the four cron entries (seeders, fast/slow lanes, gpsjam refresh; crontab backup 
 `~/crontab.pre-cyem.bak`), and the trading-bot link (`WORLDMONITOR_STRESS_URL` and
 `WORLDMONITOR_REDIS_TOKEN` blanked in `~/trading-bot/.env`, backup `.env.bak-20260921`;
 `ai_strategy.fetch_stress_index` returns None when the URL is empty). Tailscale serve
-8443 and 8444 now proxy to `127.0.0.1:3020`. Docker build cache was pruned (4.3 GB).
+8443 and 8444 then proxied to `127.0.0.1:3020` (historical: CyEM left trade on 7 Oct 2026 and runs on the EVO-X2).
 
 ## Attribution
 
@@ -225,16 +225,15 @@ and the interference footprint above the site threshold.
 Next options: export of the plan (frequencies, conflicts, links, coverage) to a document; finer coverage sampling
 on demand; HF skywave planning using the existing MUF layer.
 
-## Clients and copies (updated 2026-09-23)
+## Clients and copies (updated 19 Nov 2026)
 
-- **Mac app:** Safari "Add to Dock" web app `~/Applications/CyEM OSINT Platform.app` on Neil's Mac, pointing at
-  https://trade.tail013324.ts.net:8443/. It loads the live site, so it updates itself; static assets carry
-  `?v=<BUILD>` so a stale cache cannot persist. Confirm the build shown at the top of the layers panel.
-  To force a refresh, quit and reopen the app.
-- **Deploy bundles:** `~/Documents/Codex/CyEM/cyem-deploy/cyem-monitor-v14.tgz` on the Mac is `git archive` of `main` at 154f3b1
-  (code only: no `.env`, database, Ofcom CSV or DEM tiles). v13 was the 21 Sep initial import.
-- **Version control:** local git on the trade box only (no remote). Off-box copies are the OneDrive home backup
-  and the Mac deploy bundles. Work on branches; merge to `main` with fast-forward.
+- **Web app:** https://nucbox-evo-x2.tail013324.ts.net/ (tailnet without log-in; internet through Funnel with the CyEM
+  log-in); installable on Mac and iPhone (see "Install as an app").
+- **Native apps:** Mac and iPhone apps in `native/` host the web interface, with built-in Tailscale using a tagged
+  key (`native/README.md`, `docs/NATIVE-PLAN.md`). The September apps and their source were lost.
+- **Code:** private GitHub repo neildonaghy-source/cyem-monitor (work on a branch, pull request, merge to `main`, then
+  deploy on the EVO, `docs/DEPLOY-EVO.md`). Verified git bundles on the Mac mini in `~/Backups/cyem-monitor`.
+- **Data:** nightly database snapshot from the EVO to trade `~/cyem-offbox`, off-site with trade's OneDrive job.
 
 ## Added 2026-09-23 (second pass)
 
@@ -296,7 +295,7 @@ Code: `app/emo_api.py`, `app/emo_examples.py`, `app/ems_core.py`; tests `tests/t
 - **Focus (added 2026-09-25):** tap a symbol to see only that entity: its footprint in strength bands against the opposing sensors, who picks it up (margin, DF), what it hears, what it jams or is jammed by, and its fix. Whole-picture washes are off by default (tick boxes in the panel). Footprints stop at the entity compute radius (Edit to change).
 - **Footprint radius (2026-09-25):** up to 100 km; blank = automatic (airborne 100, HF/VHF 80, UHF 60, 1 GHz+ 40 km). Pairwise detections and DF fixes are computed along full terrain paths at any range; only the map footprints use the radius. Same compute cost (fixed 600 samples per radial, coarser steps at long range). DEM keeps up to 40 tiles open.
 - **Batch 2 (2026-09-25):** frequency hopping (hopset width) and processing gain per net; on-air windows (timeline); scenario save/load; 17 generic emitter templates; scenario targetable threshold (tactical 1 km, MDO example 5 km); Ask AI on the scenario (pre-sorted facts to a small model, about 1 minute); EMO briefing export to Word, one section per phase with a schematic (no basemap) and tables (Pillow added). Map washes are for ground receivers; airborne results are in cards and tables.
-- **SDR nodes (2026-09-25):** Raspberry Pi 5 + RTL-SDR Blog V4 on the tailnet (pi/setup.sh, pi/README.md): OpenWebRX+ live receiver behind tailscale serve, and a sweep agent posting 24-1766 MHz spectra to /api/sdr/ingest (Bearer SDR_INGEST_TOKEN in .env). SDR panel: node status, spectrum, peaks labelled from UKFAT, open live receiver, set position from the phone. UKFAT parse has 8 gaps (incl. 87.5-108 MHz) to fix.
+- **SDR nodes (2026-09-25; dormant since the rebuild):** Raspberry Pi 5 + RTL-SDR Blog V4 on the tailnet (pi/setup.sh, pi/README.md): OpenWebRX+ live receiver behind tailscale serve, and a sweep agent posting 24-1766 MHz spectra to /api/sdr/ingest (Bearer SDR_INGEST_TOKEN in the EVO .env, set 19 Nov 2026). No receiver reports today: the Pi was retired and the only dongle (on trade) is held by the Ecowitt weather receiver; the empty SDR panel says so. SDR panel: node status, spectrum, peaks labelled from UKFAT, open live receiver, set position from the phone. UKFAT coverage gaps were noted in September (incl. 87.5-108 MHz) and are unverified since.
 
 ## Planning area (2026-09-26)
 
@@ -329,4 +328,4 @@ SDR panel: type a UK postcode, place name or `lat, lon` and press **Set position
 
 ## UI tests
 
-`tests/ui/`: `emo_smoke.py` (15 checks), `plan_smoke.py` (12), `layer_click.py [emo]` (clicks a GNSS hex, a submarine cable, an Ofcom site and an aircraft and expects each pop-up), `dock_check.py` (phone dock labels), `startup_check.py` (start-up default applied, then restored). The map uses one shared canvas renderer: a second canvas stacks on top and swallows clicks for every vector layer beneath it.
+`tests/ui/`: `emo_smoke.py` (15 checks), `plan_smoke.py` (12), `corridor_check.py` (corridor card on a live server), `sanitize_check.py` (model output cleaning), `delete_check.py`, `sdr_live_check.py`, `layer_click.py [emo]` (clicks a GNSS hex, a submarine cable, an Ofcom site and an aircraft and expects each pop-up), `dock_check.py` (phone dock labels), `startup_check.py` (start-up default applied, then restored). The map uses one shared canvas renderer: a second canvas stacks on top and swallows clicks for every vector layer beneath it.

@@ -38,3 +38,13 @@ Hotspot; the Pi joins it automatically and reconnects to the tailnet.
 - If OpenWebRX+ does not see the V4, run the host driver as a network source: `rtl_tcp -a 0.0.0.0 -p 1234`,
   then add an "RTL-SDR (rtl_tcp)" device at 172.17.0.1:1234 in the OpenWebRX+ settings.
 - Sweeps pause while anyone has the live receiver open, and resume on the next interval.
+
+## Shared receiver on trade (19 Nov 2026)
+
+trade's RTL-SDR also feeds the Ecowitt weather receiver (rtl_433), so it cannot sweep continuously. `pi/trade/` holds a
+root wrapper (`cyem-sdr-sweep`) that stops `ecowitt-receiver`, runs one `cyem_sweep.py --once` pass (24 to 1766 MHz,
+about two minutes), posts it as node `trade-sdr`, and always restarts the weather receiver; a systemd timer runs it four
+times a day (02:20, 08:20, 14:20, 20:20 UK, up to 20 minutes later). Install once on trade:
+`sudo bash ~/cyem-sdr/install-trade-sweep.sh` (the ingest token is staged in `~/cyem-sdr/token` and moved to
+`/etc/cyem-sweep.env`). Sweep now: `sudo systemctl start cyem-sdr-sweep`. Remove: the same script with `--remove`.
+Each sweep leaves a gap of about three minutes in the weather data.

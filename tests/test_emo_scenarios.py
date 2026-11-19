@@ -346,6 +346,9 @@ def test_corridor_steers_round_df_and_chooses_emcon(emo, monkeypatch):
     assert set(s["sensors"]) == {"Red DF 1", "Red DF 2"} and s["c2"] == "hears Blue HQ"
     assert {lg["emcon"] for lg in auto["legs"]} == {"transmit", "silent"}                  # silent past the DF sites
     assert auto["summary"]["max_p_fix"] <= loud["summary"]["max_p_fix"]
+    for a, b in zip(auto["legs"], auto["legs"][1:]):                                   # leg polylines chain for the map
+        assert a["path"][-1] == b["path"][0] == a["to"]
+    assert auto["legs"][0]["path"][0] == auto["path"][0] and auto["legs"][-1]["path"][-1] == auto["path"][-1]
     for lg in loud["legs"]:
         v = lg["verified"]
         assert 0 <= v["p_detect"] <= 100 and v["p_c2"] is not None

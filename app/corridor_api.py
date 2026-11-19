@@ -185,7 +185,8 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                          "p_detect": _pct(max(float(p_det[q]) for q in cells) if emit[cells[0]] else 0.0),
                          "p_fix": _pct(max(float(p_fix[q]) for q in cells) if emit[cells[0]] else 0.0),
                          "p_radar": _pct(max(float(p_trk[q]) for q in cells)),
-                         "p_c2": _pct(min(float(p_c2[q]) for q in cells)), "heard_by": names, "worst": _ll(LA, LO, worst)})
+                         "p_c2": _pct(min(float(p_c2[q]) for q in cells)), "heard_by": names, "worst": _ll(LA, LO, worst),
+                         "path": _thin(LA, LO, path[max(0, a - 1):b + 1])})              # joined to the leg before
     await _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, pos)
     km = sum(x["km"] for x in out_legs)
     direct = haversine_m(*start, *goal) / 1000
@@ -238,6 +239,11 @@ def _seg_km(LA, LO, a, b):
 
 def _ll(LA, LO, c):
     return [round(float(LA[c]), 5), round(float(LO[c]), 5)]
+
+
+def _thin(LA, LO, cells, most=60):
+    """A leg's cells as lat/lon for the map, at most about `most` points, ends kept."""
+    return [_ll(LA, LO, q) for q in cells[:-1:max(1, len(cells) // most)]] + [_ll(LA, LO, cells[-1])]
 
 
 def _pct(x: float) -> int:

@@ -84,9 +84,9 @@ def _undo_label(method: str, path: str) -> str | None:
     """Which EMO requests change the scenario, and how to name them in the undo list."""
     import re as _re
     if method == "POST":
-        if _re.fullmatch(r"/api/emo/[0-9a-f]{8}/move", path):
+        if _re.fullmatch(r"/api/emo/[0-9a-f]{8,32}/move", path):
             return "move"
-        if _re.fullmatch(r"/api/emo/[0-9a-f]{8}/active", path):
+        if _re.fullmatch(r"/api/emo/[0-9a-f]{8,32}/active", path):
             return "EMCON"
         if path == "/api/emo":
             return "edit"
@@ -94,9 +94,9 @@ def _undo_label(method: str, path: str) -> str | None:
             return {"coa": "adversary COA", "joint": "joint re-site", "apply": "EP measure"}[path.rsplit("/", 1)[1]]
         if path.startswith("/api/emo/examples/") or _re.fullmatch(r"/api/emo/(scenarios|coas)/[^/]+/load", path):
             return "load"
-    if method == "PUT" and _re.fullmatch(r"/api/emo/[0-9a-f]{8}", path):
+    if method == "PUT" and _re.fullmatch(r"/api/emo/[0-9a-f]{8,32}", path):
         return "edit"
-    if method == "DELETE" and _re.fullmatch(r"/api/emo/[0-9a-f]{8}", path):
+    if method == "DELETE" and _re.fullmatch(r"/api/emo/[0-9a-f]{8,32}", path):
         return "delete"
     return None
 

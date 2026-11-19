@@ -511,6 +511,8 @@ async def red_coa(body: CoaIn, t_min: float = 0):
     target = _hq_net(ents, opp)
     if not target:
         raise HTTPException(400, f"{opp} has no net to target")
+    if len(_SNAP) >= 80:
+        _SNAP.pop(next(iter(_SNAP)))
     _SNAP[(emo_api.WS.get(), side)] = {e["id"]: (e["lat"], e["lon"]) for e in ents.values() if e["side"] == side}
     moves = []
     # units on a track are left alone: moving the start point would redraw the route and change the timeline

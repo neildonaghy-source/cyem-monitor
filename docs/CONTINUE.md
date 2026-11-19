@@ -53,9 +53,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    rebuild web features natively (Neil, 19 Nov). Build and look at it on the MacBook (`native/README.md`).
 3a. **Audit follow-ups** (audit of 19 Nov, Claude Doc "CyEM audit, 19 Nov 2026"; slices 1 to 4 merged as PRs #33 to #35,
    #37, #38): float32 EMO rasters and a smaller `_COV` (memory); purge on publish time; keep a failed scheduled brief
-   retryable without hammering Ollama; LRU caps on per-workspace EMO state and per-workspace cache clearing; full
-   UUID entity ids; one copy of the EMO tools (the panel calls the dock's functions); non-blocking side sheets for
-   SDR and Health; labels and contrast; UKFAT coverage check run on the EVO; tests for purge and EMO undo.
+   retryable without hammering Ollama; one copy of the EMO tools (the panel calls the dock's functions); non-blocking side sheets for
+   SDR and Health; form labels; the UKFAT gap at 16.30-16.36 MHz; tests for purge and EMO undo. (Done 19 Nov: workspace caps, no
+   cross-workspace cache clearing, 64-bit entity ids, dim-text contrast, UKFAT coverage check.)
 4. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
 5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
@@ -105,7 +105,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- SDR hardware: buy a second RTL-SDR Blog V4 (about £35) for trade or the EVO, rebuild the Pi, or leave SDR dormant.
-  The software side is ready (ingest token set on the EVO 19 Nov; `pi/` posts to the EVO).
-- EMO examples on real defence sites (0e Corsham hub at Neston and Colerne, 0d Thorney Island, Boscombe Down radar
-  as "civil" in 1, 2 and 4): move to generic sites (recommended) or keep as open-source-only.
+- SDR: Neil chose shared sweeps on trade's dongle (19 Nov). Staged in trade `~/cyem-sdr` with the token; he runs
+  `sudo bash ~/cyem-sdr/install-trade-sweep.sh` once (four sweeps a day as node trade-sdr; each pauses the Ecowitt
+  receiver for about three minutes). A heartbeat from trade with the token already reached the EVO.
+- EMO examples on real sites (0e Corsham, 0d Thorney Island, Boscombe Down): Neil said leave them (19 Nov).

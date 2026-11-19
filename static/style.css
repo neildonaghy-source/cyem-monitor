@@ -5,7 +5,7 @@
   --border: #22303d;
   --text: #d8e0ea;
   --muted: #8593a6;
-  --dim: #5d6b7d;
+  --dim: #7f8c9e;      /* was #5d6b7d (about 3:1 on the panels); now about 4.6:1 for small print */
   --cyan: #3cc7ff;
   --amber: #f3b23e;
   --red: #ff5c5c;

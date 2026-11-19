@@ -11,8 +11,8 @@ struct CyEMApp: App {
                 .preferredColorScheme(.dark)
                 .tint(Palette.accent)
         }
-        #if os(macOS)
         .defaultSize(width: 1280, height: 820)
+        #if os(macOS)
         Settings {
             SettingsView().environment(model).frame(width: 460).padding()
         }

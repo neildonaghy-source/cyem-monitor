@@ -55,6 +55,9 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
 
 ## Conventions
 
+- App icon: source `Icon/cyem-icon.svg` (simplified mark `Icon/cyem-icon-small.svg` for 16-64 px). `python3 native/Icon/build_icons.py`
+  regenerates `Shared/Assets.xcassets/AppIcon.appiconset` (macOS set and iOS 1024) and the web icons in `static/icons/`.
+
 - Swift 6 language mode. The interface belongs to the web app: change it there (static/src), not here.
 - Same rules as the web app: notional data only, keyword positions are placement not attribution, British English.
 - Bundle ids `com.neildonaghy.cyem` (iPhone) and `com.neildonaghy.cyem.mac` (Mac, sandboxed: network client and server

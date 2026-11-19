@@ -69,7 +69,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   `ssh -o BatchMode=yes Neil@100.91.241.55 "wsl.exe -d CyEM -u cyem --cd /home/cyem -- bash -s" < /tmp/script.sh`
 - Script body: `cd /home/cyem/cyem && git fetch -q origin main && git merge -q --ff-only origin/main && docker compose
   up -d --build cyem`, then `docker inspect cyem --format '{{.RestartCount}} {{.State.Health.Status}}'` after 10 s.
-  Watch restarts for two minutes after a change that could use memory (the container has 3 GB since 19 Nov; 1 GB was OOM-killed by the littoral example).
+  Watch restarts for two minutes after a change that could use memory (the container has 5 GB since 19 Nov; 1 GB was OOM-killed by the littoral example).
 - Live checks: `docker exec cyem python -m app.cli met 51.25 -1.85`; EMO checks only in a private workspace
   (header `X-CyEM-WS: <name>`, or localStorage `cyem-ws-mode=device`, `cyem-ws=<name>` in a browser), emptied
   afterwards by deleting its entities. Browser checks run on trade (`ssh trade`, `~/ha-review/venv/bin/python`,

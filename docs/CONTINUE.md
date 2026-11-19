@@ -3,20 +3,27 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (18 Nov 2026, 21:45 UTC)
+## Where things are (19 Nov 2026, 06:30 UTC)
 
 - Running on the EVO-X2 (`docs/DEPLOY-EVO.md`), https://nucbox-evo-x2.tail013324.ts.net/ (tailnet, no log-in; internet
-  through Funnel with a log-in). `main` is deployed. Phases 1 to 3 done; phase 4 part 1 (met) done; phase 5 part 1
-  back end done: `app/corridor_core.py` (Dijkstra both ways, band, legs) and `app/corridor_api.py`
+  through Funnel with a log-in). `main` is deployed (release 2026-11-19c). Phases 1 to 3 done; phase 4 part 1 (met)
+  done; phase 5 part 1 done: `app/corridor_core.py` (Dijkstra both ways, band, legs), `app/corridor_api.py`
   (`POST /api/emo/plan/corridor`: ground, sea, low-level air; ES detection, DF fix, radar track and own C2 from
-  reciprocity grids; transmit or silent per cell; each leg re-checked with the exact pairwise model).
+  reciprocity grids; transmit or silent per cell; each leg re-checked with the exact pairwise model; each leg carries
+  its own `path`) and the Corridor card in the EMO dock (`static/src/18-emo-dock.js`, also reached from a row in the
+  EMO panel).
+- Browser check for corridors: `tests/ui/corridor_check.py [base-url] [png]` (private workspace `corrcheck2`, emptied
+  at the end). On trade run it with `PW_CHROME=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`
+  and `~/ha-review/venv/bin/python` (the venv's Playwright wants build 1243, which is not installed). The map uses the
+  canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
+- Inside the container the app listens on 8080 (3020 is the host port).
 - No Home Assistant panel (removed at Neil's request). Never add one back unasked.
 - Internet log-in: one shared account, `cyem-team` (created 18 Nov at Neil's request; the password went to him in chat
   and is stored nowhere else). Change it with `docker exec -it cyem python -m app.cli user passwd cyem-team`.
 
 ## Next, in order (tick off here when merged and deployed)
 
-1. **Corridor UI** in the EMO panel (`static/src/18-emo-dock.js`): a Corridor row with unit (blue or red entity),
+1. [x] **Corridor UI** (done 19 Nov, PRs #16 to #18) in the EMO panel (`static/src/18-emo-dock.js`): a Corridor row with unit (blue or red entity),
    domain (ground, sea, air with height), speed, EMCON (auto, transmit, silent), silent price, and "Pick destination"
    (next map click). Draw the band (`band` PNG over `bounds`), the path coloured by leg EMCON (transmit amber, silent
    green), and a legs table (km, minutes, EMCON, detect, fix, radar, C2, verified, heard by). Clear button. Release

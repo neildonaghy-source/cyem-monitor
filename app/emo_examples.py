@@ -87,6 +87,11 @@ EXAMPLES = {
                  "off-air (EMCON), and re-run to see who can see and fix whom, and whose nets are denied. First run "
                  "computes about 20 coverages (under a minute); later runs reuse them.",
         "centre": [51.22, -1.96], "zoom": 11, "entities": VIGNETTE,
+        "corridor": {"mover": "Blue B Coy", "to": [51.178, -1.995], "domain": "ground", "step_min": 10,
+                     "note": "Worked corridor (ground): B Coy moves forward to a blocking position south-west of Red Coy 2's "
+                             "axis while red's airborne ES flies its racetrack. Ten-minute time layers: the planner keeps "
+                             "B Coy in dead ground from the red DF pair, goes silent where a fix is likely and may hold "
+                             "while the airborne ES passes."},
     },
     "brecon-siting": {
         "title": "2. Siting and terrain masking (Brecon Beacons, Sennybridge)",
@@ -115,7 +120,14 @@ EXAMPLES = {
             es("Blue shore ES/DF (Needles)", B, 50.662, -1.580, 20, 225, 400, -115, df=2),
             es("Red ES vessel", R, 50.550, -1.900, 15, 225, 400, -115, df=3, sidc=HS, track=[[50.580, -1.200]], speed_kmh=18),
             ea("Red jammer vessel", R, "comms", 50.500, -1.400, 15, 252.4, 100, 60, sidc=HS),
+            em("Red vessel radar", R, "radar", 50.500, -1.400, 15, 9410, 20000, 80, sidc=HS,
+               notes="Surface search, X band, peak EIRP; the evaporation duct traps it"),
         ],
+        "corridor": {"mover": "Blue ship", "to": [50.640, -1.700], "domain": "sea", "step_min": 15,
+                     "note": "Worked corridor (maritime): the ship leaves the Solent by the Needles Channel past the red ES "
+                             "vessel tracking east and the X-band radar on the jammer vessel. Choose the forecast "
+                             "atmosphere and run first: an evaporation duct over the Channel is flagged on the sea legs "
+                             "(X band is trapped; the UHF net is not). Fifteen-minute layers."},
     },
     "a303-gnss": {
         "title": "4. GNSS L1 jamming along a road (A303, Salisbury Plain)",
@@ -132,6 +144,30 @@ EXAMPLES = {
             ea("Red GNSS jammer (vehicle)", R, "nav", 51.130, -2.100, 2, 1575.42, 2046, 40, radius_km=20,
                track=[[51.150, -1.950], [51.170, -1.780]], speed_kmh=80, notes="10 W EIRP"),
         ],
+    },
+    "uas-gnss": {
+        "title": "6. UAS transit through GNSS jamming (Salisbury Plain)",
+        "about": "A blue UAS transits west from its ground station to observe a red position on Imber. Red has a fixed GNSS "
+                 "jammer on the high ground, a second on a vehicle moving along the road to the south, an ES/DF pair on "
+                 "the datalink band and a short-range air-defence radar. The worked corridor finds a route and timing that "
+                 "keeps the UAV's GNSS, its datalink to the GCS and its exposure to red ES and radar within bounds.",
+        "centre": [51.215, -1.950], "zoom": 11,
+        "entities": [
+            em("Blue UAS GCS", B, "datalink", 51.200, -1.800, 5, 2350, 5000, 40, sens_dbm=-95, js_req_db=6),
+            rx("Blue UAV", B, "Blue UAS GCS", 51.205, -1.830, 120, 2350, 5000, 30, sidc=FA),
+            em("GPS L1 (space)", B, "nav", 51.215, -1.950, 0, 1575.42, 2046, None, fixed_level_dbm=-128, js_req_db=35, sens_dbm=-140),
+            rx("Blue UAV nav (GNSS)", B, "GPS L1 (space)", 51.205, -1.830, 120, 1575.42, 2046, sidc=FA),
+            ea("Red GNSS jammer (Imber)", R, "nav", 51.240, -1.990, 3, 1575.42, 2046, 23, radius_km=25, notes="200 mW EIRP on high ground"),
+            ea("Red GNSS jammer (vehicle)", R, "nav", 51.160, -2.060, 2, 1575.42, 2046, 20, radius_km=20,
+               track=[[51.185, -1.930]], speed_kmh=40, notes="100 mW EIRP, moving east along the road"),
+            es("Red ES/DF 1", R, 51.275, -2.070, 12, 2000, 2500, -110, df=2),
+            es("Red ES/DF 2", R, 51.160, -2.110, 12, 2000, 2500, -110, df=2),
+            em("Red SHORAD radar", R, "radar", 51.225, -2.080, 6, 9400, 10000, 80, notes="Short-range air defence, X band, peak EIRP"),
+        ],
+        "corridor": {"mover": "Blue UAV", "to": [51.250, -2.035], "domain": "air", "alt_m": 120, "step_min": 5, "speed_kmh": 100,
+                     "note": "Worked corridor (air): the UAV flies at 120 m to an observation point north of Imber. Five-minute "
+                             "layers: the vehicle jammer moves along the road, so the planner weighs GNSS denial, the datalink "
+                             "back to the GCS, red DF and the SHORAD radar leg by leg."},
     },
     "cuas-vs-datalink": {
         "title": "5. C-UAS against a UAS datalink (Salisbury Plain)",

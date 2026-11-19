@@ -55,3 +55,45 @@ def test_legs_split_on_emcon_and_risk_and_absorb_slivers():
 
 def test_phi():
     assert abs(float(cc.phi(0.0)) - 0.5) < 1e-9 and float(cc.phi(3.0)) > 0.998
+
+
+# ---- through time (phase 5, part 2) -------------------------------------------------------------------------------
+def test_one_layer_matches_the_one_step_search():
+    rng = np.random.default_rng(3)
+    cost = rng.random((8, 11)) * 3
+    ok = np.ones((8, 11), bool); ok[2:7, 5] = False
+    a = cc.corridor(cost, ok, (1, 0), (6, 10))
+    b = cc.corridor_time(cost[None], ok, (1, 0), (6, 10), layer_len=5.0)
+    assert math.isclose(a["cost"], b["cost"]) and [s[:2] for s in b["states"]] == a["path"]
+    assert b["waits"] == [] and (b["band"] == a["band"]).all()
+
+
+def _gate():
+    """A wall with one gap at (1, 4); the gap is covered (cost 50) in the first layer only. Layers last 6 cells."""
+    ok = np.ones((3, 9), bool); ok[:, 4] = False; ok[1, 4] = True
+    costs = np.zeros((2, 3, 9)); costs[0, 1, 4] = 50.0
+    return costs, ok
+
+
+def test_waits_for_the_gap_to_open():
+    costs, ok = _gate()
+    r = cc.corridor_time(costs, ok, (1, 0), (1, 8), layer_len=6.0, wait_cost=0.2)
+    gap = next(s for s in r["states"] if s[:2] == (1, 4))
+    assert gap[2] == 1                                          # through the gap once it is clear
+    assert r["waits"] and math.isclose(r["cost"], 8 + 3 * 0.2)  # holds at (1, 3) from t=3 to t=6
+    assert r["times"] == sorted(r["times"]) and r["states"][-1][:2] == (1, 8)
+
+
+def test_without_waiting_it_takes_the_gap_while_covered():
+    """One label per cell and layer: with waiting off, the search does not mark time by moving to and fro."""
+    costs, ok = _gate()
+    r = cc.corridor_time(costs, ok, (1, 0), (1, 8), layer_len=6.0, wait=False)
+    gap = next(s for s in r["states"] if s[:2] == (1, 4))
+    assert gap[2] == 0 and r["waits"] == [] and math.isclose(r["cost"], 8 + 50.0)
+    assert [s[2] for s in r["states"]] == [0] * 6 + [1] * 3   # crosses into the second layer at t=6
+
+
+def test_time_route_refuses_what_cannot_be_reached():
+    costs, ok = _gate(); ok[1, 4] = False
+    r = cc.corridor_time(costs, ok, (1, 0), (1, 8), layer_len=6.0)
+    assert r["states"] == [] and r["cost"] is None

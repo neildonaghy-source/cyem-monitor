@@ -18,6 +18,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
 - Off-box copy of the database since 19 Nov (Neil approved): EVO cron 00:50 UTC pushes a snapshot to trade
   `~/cyem-offbox` (7 kept), off-site with trade's OneDrive job; details in `docs/DEPLOY-EVO.md`.
+- Native apps: N1 done 19 Nov (`native/`, clone on the MacBook in `~/Developer/cyem-monitor`). Neil's iPhone is
+  paired with the MacBook ("Neils iPhone"); installs need it unlocked.
 - Inside the container the app listens on 8080 (3020 is the host port).
 - Keyed feeds live since 19 Nov: AISSTREAM_KEY, OPENCELLID_KEY and CLOUDFLARE_API_TOKEN in `/home/cyem/cyem/.env` (600;
   previous copy `.env.bak-20261119-keys`). First collects: ais 182 vessels, cloudflare 2 outages and 50 hijacks, cells 147,292.
@@ -36,13 +38,16 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 2. **Corridor vignettes and time**: corridors through time (time layers from the timeline, waiting allowed) and
    three worked vignettes in the examples: the battlegroup on Salisbury Plain (ground), Vestfjord or the Solent
    (maritime, with the evaporation duct from met), a UAS transit with GNSS jamming (air). Tests on synthetic terrain.
-3. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
-4. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
+3. **Native apps, N2 to N7** (`docs/NATIVE-PLAN.md`, Neil 19 Nov: fully native SwiftUI Mac and iPhone apps). One N slice
+   per run, in order, interleaved with the items below (N2 next). Build and look at it on the MacBook through Desktop
+   Commander (`native/README.md`); install on the iPhone only when it is paired and unlocked, otherwise say so.
+4. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
+5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
    icing) feeding the corridor cost.
-5. **Phase 6**: amphibious, sub-surface exposure windows, dismounted and SOF, spectrum (frequency-time), satcom and
+6. **Phase 6**: amphibious, sub-surface exposure windows, dismounted and SOF, spectrum (frequency-time), satcom and
    GNSS windows, grey (civil) corridors (`docs/REBUILD-PLAN.md`, corridor table).
-6. **Phase 7**: Word corridor brief, Ask answers with positions and legs.
+7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.
 
 ## How to work
 
@@ -85,8 +90,4 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- The native app source: on 19 Nov Neil said it is on the Mac now, but no Xcode project or Swift package was found on
-  the linked MacBook Pro (Spotlight and a search of the home folder); asked him for the folder or another link. When the
-  source is shared (private GitHub repo, or a zip without DerivedData), the work is: point the apps at
-  `https://nucbox-evo-x2.tail013324.ts.net/`, rebuild and re-sign on his Mac with Xcode (about one session; signing
-  needs his Apple ID, so it cannot be a scheduled run). Do not ask again until he reports back.
+- None open (19 Nov). The September native app source was never found; new native apps replace it (track above).

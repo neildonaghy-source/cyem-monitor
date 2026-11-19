@@ -1,0 +1,51 @@
+# XcodeGen spec for the native CyEM apps (Mac and iPhone). Generate with: cd native && xcodegen
+# The .xcodeproj is generated and git-ignored; this file and the sources are the truth.
+name: CyEM
+options:
+  bundleIdPrefix: com.neildonaghy
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: 747JXF57MZ
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  CyEM-iOS:
+    type: application
+    platform: iOS
+    sources: [Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem
+        PRODUCT_NAME: CyEM
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CyEM
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+  CyEM-macOS:
+    type: application
+    platform: macOS
+    sources: [Shared]
+    entitlements:
+      path: CyEM-macOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem.mac
+        PRODUCT_NAME: CyEM
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CyEM
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        ENABLE_HARDENED_RUNTIME: YES

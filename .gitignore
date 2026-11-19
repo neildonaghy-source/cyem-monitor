@@ -13,3 +13,7 @@ searxng/settings.yml
 
 # Local configuration backups are private archive material
 docker-compose.yml.bak-*
+native/*.xcodeproj/
+native/build/
+native/DerivedData/
+native/CyEM-macOS.entitlements

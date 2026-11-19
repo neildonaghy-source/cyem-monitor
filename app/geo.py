@@ -41,10 +41,19 @@ AMBIGUOUS = {"Jordan", "Chad", "Georgia", "Turkey", "Guinea", "Niger", "Jersey",
 KEEP_AMBIGUOUS = {"Turkey", "Georgia", "Jordan", "Cuba", "Peru", "Malta", "Cyprus", "Oman", "Mali", "Niger", "Chad"}
 
 
+# A word several countries claim (a demonym, a capital) goes to the one people mean in the news: never to a
+# dependent territory when a state also claims it ("Indian" is India, not the British Indian Ocean Territory).
+TERRITORIES = {"IO", "HK", "MO", "RE", "YT", "PM", "MQ", "TF", "SJ", "MP", "GU", "AS", "VI", "PR", "UM", "NF", "GP", "GF",
+               "NC", "PF", "WF", "BL", "MF", "CX", "CC", "HM", "BV", "TK", "NU", "CK", "PN", "SH", "FK", "GS", "GI",
+               "BM", "KY", "TC", "VG", "AI", "MS", "AW", "CW", "SX", "BQ", "GL", "FO", "AX", "IM", "JE", "GG"}
+PREFER = {"Dominican": "DO", "Congolese": "CD"}     # the larger country when two states share the word
+
+
 @lru_cache(maxsize=1)
 def countries() -> dict[str, dict]:
     with open(settings.ref_dir / "countries.json", encoding="utf-8") as f:
         data = json.load(f)
+    data.pop("CS", None)                            # Serbia and Montenegro, dissolved 2006; shared Belgrade with RS
     data.setdefault("XK", {"iso2": "XK", "iso3": "XKX", "name": "Kosovo", "lat": 42.6, "lon": 20.9,
                            "capital": "Pristina", "demonym": "Kosovar", "aliases": [], "region": "Europe",
                            "subregion": "Southern Europe"})
@@ -88,7 +97,7 @@ def _name_index() -> dict[str, str]:
                 "cote d'ivoire": "CI", "côte d'ivoire": "CI", "dr congo": "CD", "congo, dem. rep.": "CD",
                 "republic of the congo": "CG", "eswatini": "SZ", "swaziland": "SZ", "burma": "MM", "myanmar": "MM",
                 "palestine": "PS", "vatican": "VA", "holy see": "VA", "hong kong": "HK", "macao": "MO",
-                "netherlands antilles": "AN", "kosovo": "XK", "england": "GB", "scotland": "GB", "wales": "GB"})
+                "kosovo": "XK", "england": "GB", "scotland": "GB", "wales": "GB"})
     return idx
 
 
@@ -105,20 +114,26 @@ def resolve(name: str | None) -> str | None:
 @lru_cache(maxsize=1)
 def _detector() -> tuple[re.Pattern, dict[str, str]]:
     terms: dict[str, str] = {}
+
+    def put(term: str, iso2: str) -> None:
+        old = terms.get(term)
+        if old is None or (old in TERRITORIES and iso2 not in TERRITORIES):
+            terms[term] = iso2
     for iso2, c in countries().items():
         n = c.get("name")
         if n and (n not in AMBIGUOUS or n in KEEP_AMBIGUOUS):
-            terms[n] = iso2
+            put(n, iso2)
         for a in c.get("aliases") or []:
             if a and re.fullmatch(r"[A-Za-z' ,.\-]+", a) and len(a) > 4:
-                terms[a] = iso2
+                put(a, iso2)
         d = c.get("demonym")
         if d and len(d) > 4 and d not in ("Chadian",):
-            terms[d] = iso2
+            put(d, iso2)
         cap = c.get("capital")
         if cap and len(cap) > 4 and cap not in ("Georgetown", "Victoria", "Kingston", "Saint George's", "Road Town",
                                                   "Andorra la Vella", "Santiago", "Georgia", "Washington, D.C."):
-            terms[cap] = iso2
+            put(cap, iso2)
+    terms.update(PREFER)
     terms.update(EXTRA_ALIASES)
     # Longest first so "Northern Ireland" beats "Ireland", "South Korea" beats "Korea".
     ordered = sorted(terms.keys(), key=len, reverse=True)

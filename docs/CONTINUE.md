@@ -50,6 +50,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    (maritime, with the evaporation duct from met), a UAS transit with GNSS jamming (air). Tests on synthetic terrain.
 3. **Native apps** (`docs/NATIVE-PLAN.md`): W3 notifications, then W5 widgets. The apps host the web interface; never
    rebuild web features natively (Neil, 19 Nov). Build and look at it on the MacBook (`native/README.md`).
+3a. **Audit follow-ups** (audit of 19 Nov, Claude Doc "CyEM audit, 19 Nov 2026"; slices 1 to 4 merged as PRs #33 to #35,
+   #37, #38): float32 EMO rasters and a smaller `_COV` (memory); purge on publish time; keep a failed scheduled brief
+   retryable without hammering Ollama; LRU caps on per-workspace EMO state and per-workspace cache clearing; full
+   UUID entity ids; one copy of the EMO tools (the panel calls the dock's functions); non-blocking side sheets for
+   SDR and Health; labels and contrast; UKFAT coverage check run on the EVO; tests for purge and EMO undo.
 4. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
 5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
@@ -99,4 +104,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- None open (19 Nov).
+- SDR hardware: buy a second RTL-SDR Blog V4 (about £35) for trade or the EVO, rebuild the Pi, or leave SDR dormant.
+  The software side is ready (ingest token set on the EVO 19 Nov; `pi/` posts to the EVO).
+- EMO examples on real defence sites (0e Corsham hub at Neston and Colerne, 0d Thorney Island, Boscombe Down radar
+  as "civil" in 1, 2 and 4): move to generic sites (recommended) or keep as open-source-only.

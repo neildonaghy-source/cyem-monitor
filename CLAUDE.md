@@ -18,7 +18,7 @@ senior practitioner, British English, no marketing tone.
   Leaflet, marked, DOMPurify and milsymbol are vendored under `static/vendor/`. Model output is cleaned by DOMPurify against an
   allowlist (`sanitize()` in 07-brief.js; check with `python3 tests/ui/sanitize_check.py`); the server sends a CSP with
   script-src 'self', so no inline scripts or inline event handlers.
-- Spectrum deconfliction: `app/spectrum_core.py` (pure, stdlib, unit-tested in `tests/`), `app/spectrum_store.py` (tables `wtr`, `planned_emitters`; bulk load on its own connection into `wtr_new` then swap), `app/spectrum_api.py` (router `/api/spectrum/*`), `app/collectors/wtr.py` (Ofcom WTR, daily, ETag). UI is the Spectrum button + `planned` and `wtr` layers in `static/app.js`.
+- Spectrum deconfliction: `app/spectrum_core.py` (pure, stdlib, unit-tested in `tests/`), `app/spectrum_store.py` (tables `wtr`, `planned_emitters`; bulk load on its own connection into `wtr_new` then swap), `app/spectrum_api.py` (router `/api/spectrum/*`), `app/collectors/wtr.py` (Ofcom WTR, daily, ETag). UI is the Plan button (Spectrum tab) + `planned` and `wtr` layers.
 - `data/` reference JSON (emitters, APT groups, countries, `uk_bandplan.json`). `data-store/` bind mount with the SQLite DB (git-ignore worthy, not in the tarball).
 
 ## Run / test
@@ -37,7 +37,7 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 ## Conventions and gotchas
 - Sources must degrade gracefully without keys; keyed sources use `enabled=lambda: bool(settings.<key>)`.
 - RSS fetches send a Chrome-like User-Agent and `Accept: */*` (CISA 403s otherwise). GDELT: one request per 5 s per IP, keep the 30 s pacing. ADS-B: adsb.fi primary, adsb.lol fallback (airplanes.live 403s).
-- Ollama is the trading-bot's container on `trading-bot_default`; keep briefs to a few per day, do not add per-item LLM calls (that is what made worldmonitor pin the CPU).
+- Ollama runs on the EVO-X2 (`OLLAMA_URL` in `.env`); keep briefs to a few per day, do not add per-item LLM calls (that is what made worldmonitor pin the CPU).
 - Item ids are sha1 of source + guid; `upsert_items` ignores existing ids, so re-runs are idempotent.
 - The container runs as uid 1000 to match `trade`; keep that if you change the Dockerfile.
 - Country/lat-lon on news items are heuristics for map placement, not attribution. Say so in UI text.
@@ -54,7 +54,7 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Harmonic and IM3 screening live in `spectrum_core` (`harmonic_emitters`, `im3_emitters`, `check_products`); `run_conflicts` takes `harm_order` and `cosite_km`. Keep product severities below fundamental ones except IM3 on own nets.
 - Link planner: `link_core.py` stays stdlib-only and tested; terrain via `dem.heights()` (rasterio, lazy import, run in a thread). Saved links own their planned emitters via `link_id`; keep create/delete in step.
 - Coverage: `coverage_core.polar_prx` is vectorised Deygout (3 edges) per radial; keep it consistent with `link_core.deygout_loss_db` (depth 1). Cross-check any model change against the link planner on a real path before shipping. Saved sites own their planned emitter via `site_id`.
-- Web client (browser; bump `BUILD` in `static/app.js`, the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the offline copy on the Mac mini: `git bundle create ~/Backups/cyem-monitor/cyem-monitor-YYYYMMDD.bundle --all`
+- Web client (browser; bump `BUILD` in `static/src/00-head.js` (then `sh static/build.sh`), the `?v=` in `index.html` and the cache name in `sw.js` together). After a release, refresh the offline copy on the Mac mini: `git bundle create ~/Backups/cyem-monitor/cyem-monitor-YYYYMMDD.bundle --all`
   plus its `.sha256` (the copy of 18 Nov 2026 is there with a README).
 - Keys (AISSTREAM_KEY, OPENCELLID_KEY) live only in `.env`; never log or echo URLs containing them. `.env.*` is ignored except `.env.example`.
 - Internet access: Tailscale Funnel requests (header `Tailscale-Funnel-Request`) must sign in (`app/auth.py`: users and sessions
@@ -86,7 +86,7 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Conventions: every solver proposes then verifies with the exact pairwise model; stand-off 10 km and own-side rule; civil (grey)
   is located, never targetable; planning answers in Ask bypass the language model.
 - After a dependency change: python3 tools/software_inventory.py (updates docs/SOFTWARE.md + software.json, copied into the nightly trade runbook).
-- Release: bump BUILD in static/app.js, ?v= in index.html/sw.js, cache name in sw.js; commit; push; docker compose up -d --build cyem.
+- Release: bump BUILD in static/src/00-head.js and run static/build.sh, ?v= in index.html/sw.js, cache name in sw.js; commit; push; docker compose up -d --build cyem.
 
 - ~/Documents/Codex/CyEM on the Mac now holds spectrum policy papers only; the September app source, deploy bundles and
   scratch files there are gone.

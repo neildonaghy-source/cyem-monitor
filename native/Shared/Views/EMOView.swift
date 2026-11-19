@@ -138,7 +138,7 @@ struct EMOView: View {
                     .padding(.horizontal, 6).padding(.vertical, 2).background(.quaternary, in: Capsule())
                 Text("T+\(Int(E.t)) min").font(.callout.monospacedDigit())
                 Slider(value: Binding(get: { E.t }, set: { E.t = $0.rounded(); E.stale = true }),
-                       in: 0...max(10, ((E.run?.horizon_min ?? 0) / 5).rounded(.up) * 5), step: 5)   // the range must hold at least one step { editing in
+                       in: 0...max(10, ((E.run?.horizon_min ?? 0) / 5).rounded(.up) * 5), step: 5) { editing in
                     if !editing { Task { await E.runNow(model.api) } }
                 }
                 .frame(maxWidth: 360)

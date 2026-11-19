@@ -57,8 +57,23 @@ No panel: added and then removed on 18 Nov 2026 as not needed. Only CyEM may fra
 'self'`); `FRAME_ANCESTORS` adds origins if a panel is ever wanted again (`~/ha-review/ha-cyem-panel-20261118.py` on
 trade recreates it).
 
+## Keyed feeds (19 Nov 2026)
+
+`AISSTREAM_KEY`, `OPENCELLID_KEY` and `CLOUDFLARE_API_TOKEN` are in `/home/cyem/cyem/.env` (mode 600, git-ignored).
+Never print them; check with `docker exec cyem python -m app.cli collect ais|cells|cloudflare`.
+
+## Off-box copy of the database (19 Nov 2026, approved by Neil)
+
+- The database holds what cannot be re-downloaded: accounts, EMO scenarios and COAs, saved links and sites.
+- EVO, user `cyem`: cron `50 0 * * *` runs `~/bin/cyem-offbox-push.sh`: SQLite backup-API snapshot, gzip, piped over SSH
+  with `~/.ssh/cyem_offbox` (used for nothing else) to trade. Log `~/logs/cyem-offbox.log`.
+- trade: that key's `authorized_keys` line is `restrict,from="100.91.241.55",command="/home/trade/bin/cyem-offbox-receive"`,
+  so it cannot open a shell; the receiver checks gzip and the SQLite header, stores `~/cyem-offbox/cyem-<UTC>.sqlite3.gz`
+  and keeps 7. trade's OneDrive job (01:43 UTC) takes the folder off-site.
+- Restore: `gzip -dc <newest> > cyem.sqlite3`; `docker compose stop cyem`; replace `data-store/cyem.sqlite3` and remove
+  its `-wal` and `-shm`; `docker compose up -d cyem`.
+- Remove: delete the `cyem-offbox@evo-x2` line on trade, `crontab -r` and `rm ~/.ssh/cyem_offbox*` on the EVO.
+
 ## Not yet done
 
-- Off-box copy of `data-store` (accounts, EMO scenarios and COAs, saved links and sites); everything else is re-downloadable.
-- Keyed feeds: aisstream, OpenCelliD, Cloudflare Radar keys in `.env`.
 - SDR sweeps: the RTL-SDR on the MS-A2 serves trade's Ecowitt receiver.

@@ -91,7 +91,7 @@
     }));
     body.querySelectorAll('button[data-lk-del]').forEach((b) => b.addEventListener('click', async () => {
       if (!armConfirm(b)) return;
-      await fetch(`/api/links/${encodeURIComponent(b.dataset.lkDel)}`, { method: 'DELETE' });
+      if (!await apiDel(`/api/links/${encodeURIComponent(b.dataset.lkDel)}`)) return;
       if (linkEditId === b.dataset.lkDel) { linkEditId = null; linkDraft = null; linkRes = null; }
       openLinks(); loadLinks().catch(() => {}); loadPlanned().catch(() => {});
     }));
@@ -103,12 +103,10 @@
     const pick = (end) => () => {
       linkDraft = readLink();
       $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => {
-        map.getContainer().style.cursor = '';
+      pickOnMap(`end ${end.toUpperCase()} of the link`, (e) => {
         linkDraft = { ...linkDraft, [`${end}_lat`]: +e.latlng.lat.toFixed(5), [`${end}_lon`]: +e.latlng.lng.toFixed(5) };
         openLinks();
-      });
+      }, () => openLinks());
     };
     $('#lk-pick-a').addEventListener('click', pick('a'));
     $('#lk-pick-b').addEventListener('click', pick('b'));

@@ -11,7 +11,7 @@
     if (b.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 250);
   }));
   // Phone layout hides the top-bar buttons; the Tools sheet exposes the same actions.
-  const MOB_TOOLS = [['btn-plan', 'Planning', 'Spectrum, links, coverage, HF'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-sdr', 'SDR', 'Live receiver and spectrum sweeps'], ['btn-health', 'Health', 'Collectors and data status']];
+  const MOB_TOOLS = [['btn-plan', 'Plan', 'Spectrum, links, coverage, HF'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-sdr', 'SDR', 'Live receiver and spectrum sweeps'], ['btn-health', 'Health', 'Collectors and data status']];
   $('#mob-tools').addEventListener('click', () => {
     const emoOn = !!document.getElementById('emo-chip');
     const item = ([id, t, d]) => `<button data-go="${id}"><b>${t}</b><span class="dim">${d}</span></button>`;

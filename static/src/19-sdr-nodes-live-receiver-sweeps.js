@@ -56,14 +56,13 @@
     $('#sdr-set').addEventListener('click', setQ);
     $('#sdr-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setQ(); } });
     $('#sdr-pick').addEventListener('click', () => {
-      $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
-      map.once('click', async (e) => {
-        map.getContainer().style.cursor = '';
+      $('#modal').classList.remove('show');
+      pickOnMap('the receiver position', async (e) => {
         const lat = +e.latlng.lat.toFixed(5), lon = +e.latlng.lng.toFixed(5);
         try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat, lon }); SDR.posMsg = `Position set from the map: ${lat}, ${lon}`; }
         catch (err) { SDR.posMsg = err.message; }
         openSDR();
-      });
+      }, () => openSDR());
     });
     $('#sdr-pos').addEventListener('click', () => {
       if (!navigator.geolocation) return toastSDR('No location on this device');

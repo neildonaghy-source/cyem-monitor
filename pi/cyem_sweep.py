@@ -35,7 +35,7 @@ def node_url() -> str | None:
 
 def sweep():
     """One rtl_power pass; returns (f0_hz, bin_hz, [dB...]) or None if the dongle is busy."""
-    cmd = ["rtl_power", "-f", f"{F_LO}:{F_HI}:{BIN}", "-g", GAIN, "-i", "2", "-1", "-c", "20%", "-"]
+    cmd = ["rtl_power", "-f", f"{F_LO}:{F_HI}:{BIN}", "-g", GAIN, "-i", "2", "-1", "-c", "0.2", "-"]
     for attempt in (1, 2):                          # a just-released dongle can take a few seconds to free
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if p.returncode == 0 and p.stdout.strip():

@@ -26,12 +26,13 @@ struct EMOView: View {
                 corridorLines(model.corridor)
                 ForEach(E.entities) { e in
                     Annotation(e.name, coordinate: E.position(e), anchor: .center) { UnitGlyph(e: e, onAir: E.onAir(e)) }
+                        .annotationTitles(.hidden)
                         .tag(e)
                 }
             }
             .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
             .onMapCameraChange(frequency: .continuous) { _ in cameraTick &+= 1 }
-            .overlay { washes(E, proxy).allowsHitTesting(false) }
+            .overlay { washes(E, proxy).allowsHitTesting(false).clipped() }
             .onTapGesture { pt in
                 guard let c = proxy.convert(pt, from: .local) else { return }
                 if model.corridor.picking { model.corridor.to = c; model.corridor.picking = false; tool = .corridor }
@@ -174,7 +175,7 @@ struct EMOView: View {
     private var E_stale: Bool { model.emo.stale }
 
     @MapContentBuilder private func fixLines(_ E: EMOModel) -> some MapContent {
-        let fixes: [EMOFix] = showFixes ? (E.run?.fixes ?? []).filter { $0.fix != nil && $0.target_side != "grey" } : []
+        let fixes: [EMOFix] = showFixes ? (E.run?.fixes ?? []).filter { $0.fix != nil && $0.target_side != "grey" && $0.targetable == true } : []
         ForEach(fixes) { f in
             let to: [Double] = f.fix?.fix ?? f.pos ?? [0, 0]
             let c: Color = f.targetable == true ? .red : .yellow
@@ -201,7 +202,7 @@ struct EMOView: View {
                 ForEach(EMOLayer.allCases.filter { E.on.contains($0) }) { l in
                     if let s = r.layers?[l.rawValue], let img = E.image("\(Int(r.t_min)):\(l.rawValue)", s),
                        let rect = rectFor(b, proxy) {
-                        Image(platform: img).resizable().frame(width: rect.width, height: rect.height).position(x: rect.midX, y: rect.midY).opacity(E.stale ? 0.3 : 0.85)
+                        Image(platform: img).resizable().frame(width: rect.width, height: rect.height).position(x: rect.midX, y: rect.midY).opacity(E.stale ? 0.25 : 0.6)
                     }
                 }
             }
@@ -394,7 +395,7 @@ struct EMOLayerSheet: View {
                     }
                 }
                 Section("Lines") {
-                    Toggle("DF bearings to fixes (red: target quality)", isOn: $showFixes)
+                    Toggle("DF bearings to target-quality fixes", isOn: $showFixes)
                     Toggle("Jamming that denies (magenta)", isOn: $showJamming)
                 }
             }

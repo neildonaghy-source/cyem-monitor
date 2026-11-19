@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19c';
+  const BUILD = '2026-11-19d';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -2402,9 +2402,21 @@
       <text x="${P}" y="12" fill="#8593a6" font-size="10">${hi.toFixed(0)} dB</text><text x="${P}" y="${H - 20}" fill="#8593a6" font-size="10">${lo.toFixed(0)} dB</text><text x="${W - 6}" y="${H - 4}" fill="#8593a6" font-size="10" text-anchor="end">MHz</text></svg>`;
   }
   async function openSDR() {
-    let nodes = [];
-    try { nodes = (await api('/api/sdr/nodes')).nodes; } catch (e) { return openModal('SDR', `<p class="bad">${esc(e.message)}</p>`); }
-    if (!nodes.length) return openModal('SDR receivers', '<p>No SDR node has reported yet. Set up the Raspberry Pi with <span class="mono">pi/setup.sh</span> (see <span class="mono">pi/README.md</span>); it appears here after its first sweep.</p>');
+    let nodes = [], st = {};
+    try { st = await api('/api/sdr/nodes'); nodes = st.nodes; } catch (e) { return openModal('SDR', `<p class="bad">${esc(e.message)}</p>`); }
+    if (!nodes.length) {
+      const rj = st.last_reject;
+      openModal('SDR receivers', `<p><b>No receiver is sending sweeps to this server.</b></p>
+        <ul>
+          <li>Ingest on this server: ${st.ingest_enabled ? '<span class="good">on</span> (a token is set)' : '<span class="bad">off</span>: SDR_INGEST_TOKEN is not set on the server'}.</li>
+          <li>Last rejected sweep: ${rj ? `<span class="bad">${esc(rj.node || '?')} at ${esc(fmtZ(rj.at))}: ${esc(rj.reason)}</span>` : 'none since the server started'}.</li>
+          <li>A receiver needs its own RTL-SDR: the dongle on trade is used full-time by the Ecowitt weather receiver and cannot be shared.</li>
+        </ul>
+        <p>To add one: a Raspberry Pi 5 with an RTL-SDR Blog V4, or a second V4 on trade or the EVO, running the sweep agent from the repo's <span class="mono">pi/</span> folder with this server's address and ingest token. It appears here within a few minutes of its first sweep.</p>
+        <p><button id="sdr-again">Check again</button></p>`);
+      $('#sdr-again').addEventListener('click', () => openSDR());
+      return;
+    }
     SDR.node = SDR.node && nodes.some((n) => n.node === SDR.node) ? SDR.node : nodes[0].node;
     const n = nodes.find((x) => x.node === SDR.node);
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;

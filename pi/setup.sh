@@ -6,7 +6,8 @@
 set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo"; exit 1; }
 : "${TS_AUTHKEY:?set TS_AUTHKEY (Tailscale auth key, tag:cyem-sdr)}"
-: "${SDR_INGEST_TOKEN:?set SDR_INGEST_TOKEN (from the trade box ~/cyem/.env)}"
+: "${SDR_INGEST_TOKEN:?set SDR_INGEST_TOKEN (from the EVO: /home/cyem/cyem/.env in the CyEM WSL distro)}"
+CYEM_URL=${CYEM_URL:-https://nucbox-evo-x2.tail013324.ts.net}
 HOST=${HOST:-cyem-sdr}
 USER_NAME=${SUDO_USER:-pi}
 
@@ -51,7 +52,7 @@ install -d /opt/cyem && install -m 755 "$(dirname "$0")/cyem_sweep.py" /opt/cyem
 umask 077
 cat > /etc/cyem-sweep.env <<EOF
 SDR_INGEST_TOKEN=$SDR_INGEST_TOKEN
-CYEM_URL=https://trade.tail013324.ts.net:8443
+CYEM_URL=$CYEM_URL
 NODE=$HOST
 F_LO=24M
 F_HI=1766M

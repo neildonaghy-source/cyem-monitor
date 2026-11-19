@@ -95,10 +95,18 @@ class Scheduler:
         finally:
             self.running.discard(name)
 
+    def _spawn(self, coro) -> None:
+        """Keep a reference until the task ends: asyncio holds tasks weakly, so an unreferenced one can be collected."""
+        if not hasattr(self, "_tasks"):
+            self._tasks: set[asyncio.Task] = set()
+        t = asyncio.create_task(coro)
+        self._tasks.add(t)
+        t.add_done_callback(self._tasks.discard)
+
     def trigger(self, name: str) -> bool:
         if name not in REGISTRY or name in self.running:
             return False
-        asyncio.create_task(self._run(name))
+        self._spawn(self._run(name))
         return True
 
     async def _loop(self) -> None:
@@ -119,14 +127,14 @@ class Scheduler:
                 now = datetime.now(timezone.utc)
                 for name, due in list(self.next_due.items()):
                     if now >= due and name not in self.running:
-                        asyncio.create_task(self._run(name))
+                        self._spawn(self._run(name))
                         self.next_due[name] = now + timedelta(seconds=REGISTRY[name].interval_s)  # provisional; _run resets
                 # Scheduled brief
                 local = now.astimezone(self.tz)
                 slot = llm.brief_due(self.db, local)
                 if slot and not llm.state.generating and local.minute < 20:
                     self.db.set_snapshot("brief_last_slot", slot)
-                    asyncio.create_task(llm.generate_brief(self.db, kind="scheduled"))
+                    self._spawn(llm.generate_brief(self.db, kind="scheduled"))
                 # Nightly purge
                 if self.last_purge is None or (now - self.last_purge) > timedelta(hours=24):
                     n = self.db.purge(settings.retention_days)

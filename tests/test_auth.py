@@ -171,3 +171,9 @@ def test_sdr_nodes_says_why_no_sweeps_arrive(client, monkeypatch):
     assert r["ingest_enabled"] is True and r["last_reject"]["reason"] == "wrong token" and r["last_reject"]["node"] == "cyem-sdr"
     assert client.post("/api/sdr/heartbeat", json=hb, headers={"authorization": "Bearer s3cret"}).status_code == 200
     assert client.get("/api/sdr/nodes").json()["nodes"][0]["node"] == "cyem-sdr"
+
+
+def test_exempt_paths_cannot_be_walked_out_of(client):
+    """/static/icons/ is open to the internet for the app manifest; '..' must not reach other files through it."""
+    r = client.get("/static/icons/%2e%2e/app.js", headers=FUNNEL, follow_redirects=False)
+    assert r.status_code in (302, 401, 404) and "function" not in r.text[:2000]

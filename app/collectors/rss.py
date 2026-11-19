@@ -94,4 +94,4 @@ async def collect_rss(ctx: Context) -> Result:
     new = ctx.db.upsert_items(items)
     states = ctx.db.feed_states()
     broken = sum(1 for s in states if (s.get("fail_count") or 0) >= 3)
-    return Result(new, f"{new} new from {len(FEEDS)} feeds; {broken} feeds failing")
+    return Result(new, f"{new} new from {len(FEEDS)} feeds; {broken} feeds failing", ok=broken <= len(FEEDS) // 2)

@@ -12,8 +12,10 @@ if [[ "${1:-}" == "--remove" ]]; then
   rm -rf /opt/cyem-sweep; systemctl daemon-reload; systemctl start ecowitt-receiver.service
   echo "removed"; exit 0
 fi
-TOKEN=$(tr -d '\n' < "$SRC/token")
-[[ -n "$TOKEN" ]] || { echo "no token in $SRC/token"; exit 1; }
+if [[ -f "$SRC/token" ]]; then TOKEN=$(tr -d '\n' < "$SRC/token")
+elif [[ -f /etc/cyem-sweep.env ]]; then TOKEN=$(sed -n 's/^SDR_INGEST_TOKEN=//p' /etc/cyem-sweep.env)   # re-run: keep it
+else TOKEN=""; fi
+[[ -n "$TOKEN" ]] || { echo "no token in $SRC/token or /etc/cyem-sweep.env"; exit 1; }
 install -d -m 755 /opt/cyem-sweep
 install -m 644 "$SRC/cyem_sweep.py" /opt/cyem-sweep/cyem_sweep.py
 install -m 755 "$SRC/cyem-sdr-sweep" /usr/local/sbin/cyem-sdr-sweep

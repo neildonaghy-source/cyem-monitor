@@ -25,7 +25,12 @@ struct MapScreen: View {
             }
         }
         .mapStyle(imagery ? .imagery(elevation: .flat) : .standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
-        .mapControls { MapCompass(); MapScaleView(); MapZoomStepper() }
+        .mapControls {
+            MapCompass(); MapScaleView()
+            #if os(macOS)
+            MapZoomStepper()
+            #endif
+        }
         .onMapCameraChange(frequency: .onEnd) { ctx in region = ctx.region }
         .safeAreaInset(edge: .bottom) { bottomBar(L, shown: pts.count) }
         .toolbar {

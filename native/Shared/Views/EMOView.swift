@@ -13,6 +13,9 @@ struct EMOView: View {
     @State private var cameraTick = 0
     @State private var showFixes = true
     @State private var showJamming = true
+    @State private var tool: EMOTool?
+    @State private var moving = false
+    @State private var note: String?
 
     var body: some View {
         let E = model.emo
@@ -20,6 +23,7 @@ struct EMOView: View {
             Map(position: $position, selection: $picked) {
                 fixLines(E)
                 jamLines(E)
+                corridorLines(model.corridor)
                 ForEach(E.entities) { e in
                     Annotation(e.name, coordinate: E.position(e), anchor: .center) { UnitGlyph(e: e, onAir: E.onAir(e)) }
                         .tag(e)
@@ -28,9 +32,14 @@ struct EMOView: View {
             .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
             .onMapCameraChange(frequency: .continuous) { _ in cameraTick &+= 1 }
             .overlay { washes(E, proxy).allowsHitTesting(false) }
+            .onTapGesture { pt in
+                guard let c = proxy.convert(pt, from: .local) else { return }
+                if model.corridor.picking { model.corridor.to = c; model.corridor.picking = false; tool = .corridor }
+                else if moving, let p = picked { moving = false; Task { await move(p, to: c) } }
+            }
         }
         .safeAreaInset(edge: .top) { topBar(E) }
-        .safeAreaInset(edge: .bottom) { if let f = E.focus { UnitCard(focus: f, entity: E.entities.first { $0.id == f.id }) { picked = nil; E.focus = nil } } }
+        .safeAreaInset(edge: .bottom) { if let f = E.focus { UnitCard(focus: f, entity: E.entities.first { $0.id == f.id }, move: { moving = true }) { picked = nil; E.focus = nil } } }
         .onChange(of: picked) { _, p in if let p { Task { await E.openFocus(model.api, id: p.id) } } else { E.focus = nil } }
         .task(id: model.wsKey) {
             await E.load(model.api)
@@ -43,6 +52,12 @@ struct EMOView: View {
                     ForEach(E.examples) { ex in Button(ex.title) { confirmExample = ex } }
                 } label: { Label("Examples", systemImage: "tray.and.arrow.down") }
             }
+            ToolbarItem {
+                Menu {
+                    ForEach(EMOTool.allCases) { t in Button { tool = t } label: { Label(t.label, systemImage: t.symbol) } }
+                } label: { Label("Tools", systemImage: "wrench.and.screwdriver") }
+            }
+            ToolbarItem { Button { Task { await undo() } } label: { Label("Undo", systemImage: "arrow.uturn.backward") } }
             ToolbarItem { Button { showLayers.toggle() } label: { Label("Overlays", systemImage: "square.3.layers.3d") } }
             ToolbarItem { Button { showScore.toggle() } label: { Label("Score", systemImage: "list.number") }.disabled(E.run == nil) }
         }
@@ -58,7 +73,53 @@ struct EMOView: View {
         } message: { Text(model.wsMode == .shared ? "Every device sees the shared scenario. Switch to This device in Settings to experiment privately." : "Only this device's private workspace changes.") }
         .sheet(isPresented: $showScore) { ScoreSheet().environment(model).presentationDetents([.medium, .large]) }
         .sheet(isPresented: $showLayers) { EMOLayerSheet(showFixes: $showFixes, showJamming: $showJamming).environment(model).presentationDetents([.medium]) }
+        .inspector(isPresented: Binding(get: { tool != nil && !model.corridor.picking }, set: { if !$0 { tool = nil } })) {
+            NavigationStack {
+                Group {
+                    switch tool {
+                    case .corridor: CorridorPanel()
+                    case .coas: COAPanel()
+                    case .adversary: AdversaryPanel()
+                    case .timeline: TimelinePanel()
+                    case nil: EmptyView()
+                    }
+                }
+                .navigationTitle(tool?.label ?? "")
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Close") { tool = nil } } }
+            }
+            .inspectorColumnWidth(min: 340, ideal: 440, max: 640)
+        }
         .navigationTitle("EMO")
+    }
+
+    private func move(_ e: EMOEntity, to c: CLLocationCoordinate2D) async {
+        struct B: Encodable, Sendable { var lat: Double; var lon: Double }
+        struct R: Decodable, Sendable { var moved: String? }
+        do {
+            let _: R = try await model.api.send("POST", "api/emo/\(e.id)/move", body: B(lat: (c.latitude * 1e5).rounded() / 1e5, lon: (c.longitude * 1e5).rounded() / 1e5))
+            note = "Moved \(e.name)"
+            await model.emo.load(model.api); await model.emo.runNow(model.api)
+        } catch { model.emo.error = error.localizedDescription }
+    }
+
+    private func undo() async {
+        do {
+            let r: Undone = try await model.api.send("POST", "api/emo/undo")
+            note = "Undid: \(r.undone ?? "last change")"
+            model.emo.focus = nil; picked = nil
+            await model.emo.load(model.api); await model.emo.runNow(model.api)
+        } catch { note = "Nothing to undo" }
+    }
+
+    @MapContentBuilder private func corridorLines(_ c: CorridorState) -> some MapContent {
+        let legs: [CorridorLeg] = c.result?.legs ?? []
+        ForEach(legs) { lg in
+            let col: Color = lg.emcon == "transmit" ? Color(red: 0.95, green: 0.70, blue: 0.24) : Color(red: 0.27, green: 0.83, blue: 0.54)
+            MapPolyline(coordinates: (lg.path ?? [lg.from, lg.to]).map { .init(latitude: $0[0], longitude: $0[1]) }).stroke(col, lineWidth: 5)
+        }
+        if let t = c.to {
+            Annotation("Destination", coordinate: t) { Image(systemName: "flag.checkered.circle.fill").font(.title3).foregroundStyle(.white, Palette.accent) }
+        }
     }
 
     private func fit(_ E: EMOModel) {
@@ -86,6 +147,9 @@ struct EMOView: View {
                 }
                 .disabled(E.running || E.entities.isEmpty)
             }
+            if moving { Text("Tap the map to move \(picked?.name ?? "the unit") there (T+0 position).").font(.caption).foregroundStyle(.yellow) }
+            if model.corridor.picking { Text("Tap the map for the corridor destination.").font(.caption).foregroundStyle(.yellow) }
+            if let n = note { Text(n).font(.caption).foregroundStyle(.secondary) }
             if E.running, let s = E.started {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Text("Computing… \(Int(Date.now.timeIntervalSince(s))) s (a new scenario takes about half a minute)").font(.caption).foregroundStyle(.secondary)
@@ -141,6 +205,9 @@ struct EMOView: View {
                     }
                 }
             }
+            if let r = model.corridor.result, let band = r.band, let b = r.bounds, let img = E.image("corr:\(band.count):\(r.legs.count):\(r.summary.km)", band), let rect = rectFor(b, proxy) {
+                Image(platform: img).resizable().frame(width: rect.width, height: rect.height).position(x: rect.midX, y: rect.midY).opacity(0.8)
+            }
             if let o = E.focus?.overlay, let img = E.image("focus:\(E.focus?.id ?? ""):\(Int(E.t))", o.png), let rect = rectFor(o.bounds, proxy) {
                 Image(platform: img).resizable().frame(width: rect.width, height: rect.height).position(x: rect.midX, y: rect.midY).opacity(0.8)
             }
@@ -182,6 +249,7 @@ struct UnitCard: View {
     @Environment(AppModel.self) private var model
     let focus: EMOFocus
     let entity: EMOEntity?
+    let move: () -> Void
     let close: () -> Void
 
     var body: some View {
@@ -195,6 +263,7 @@ struct UnitCard: View {
                     Toggle("On air", isOn: Binding(get: { focus.active ?? true }, set: { v in Task { await model.emo.setActive(model.api, e, v) } }))
                         .toggleStyle(.switch).controlSize(.small).fixedSize()
                 }
+                Button("Move", action: move).controlSize(.small)
                 Button(action: close) { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary)
             }
             if let e = entity {

@@ -15,6 +15,7 @@ final class AppModel {
     var mapItems: [Item] = []
     let layers = LayerStore()
     let emo = EMOModel()
+    let corridor = CorridorState()
     enum WSMode: String { case shared, device }
     /// EMO workspace: the shared scenario, or one private to this device (as the web app's "This device only").
     var wsMode: WSMode { didSet { UserDefaults.standard.set(wsMode.rawValue, forKey: "wsMode"); rebuild() } }

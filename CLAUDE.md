@@ -42,7 +42,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - The container runs as uid 1000 to match `trade`; keep that if you change the Dockerfile.
 - Country/lat-lon on news items are heuristics for map placement, not attribution. Say so in UI text.
 - Reference data in `data/emitters.json` is hand-curated with approximate positions; keep the "approx." notes when editing.
-- Backups: `~/bin/onedrive-backup.sh` snapshots the DB to `data-store/backup/cyem-backup.sqlite3` nightly; the live WAL DB is excluded from the sync.
+- Backups (EVO, since 19 Nov 2026): cron 00:50 UTC `~/bin/cyem-offbox-push.sh` (user cyem) sends a DB snapshot to trade
+  `~/cyem-offbox` (key limited to a receive-only forced command; 7 kept), which trade's OneDrive job takes off-site. See docs/DEPLOY-EVO.md.
 - Spectrum: open data only; never add MOD/unit/role data. Keep licensee surname/first name out of the WTR load.
   Area-defined WTR rows have NULL lat/lon by design. Conflict logic changes go in `spectrum_core.py` with tests.
 - UI tests: tests/ui/run.sh (EMO), and the same docker command with plan_smoke.py or ui_audit.py in place of emo_smoke.py.

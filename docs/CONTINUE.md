@@ -16,6 +16,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   at the end). On trade run it with `PW_CHROME=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`
   and `~/ha-review/venv/bin/python` (the venv's Playwright wants build 1243, which is not installed). The map uses the
   canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
+- Off-box copy of the database since 19 Nov (Neil approved): EVO cron 00:50 UTC pushes a snapshot to trade
+  `~/cyem-offbox` (7 kept), off-site with trade's OneDrive job; details in `docs/DEPLOY-EVO.md`.
 - Inside the container the app listens on 8080 (3020 is the host port).
 - Keyed feeds live since 19 Nov: AISSTREAM_KEY, OPENCELLID_KEY and CLOUDFLARE_API_TOKEN in `/home/cyem/cyem/.env` (600;
   previous copy `.env.bak-20261119-keys`). First collects: ais 182 vessels, cloudflare 2 outages and 50 hijacks, cells 147,292.
@@ -83,9 +85,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- Off-box copy of `data-store`: proposed nightly push from the EVO to trade with a key limited to one folder, then
-  trade's OneDrive job takes it off-site. Needs his yes.
-- The native app source: Neil still has the Mac it was built on in September and will check it on 19 Nov. When the
+- The native app source: on 19 Nov Neil said it is on the Mac now, but no Xcode project or Swift package was found on
+  the linked MacBook Pro (Spotlight and a search of the home folder); asked him for the folder or another link. When the
   source is shared (private GitHub repo, or a zip without DerivedData), the work is: point the apps at
   `https://nucbox-evo-x2.tail013324.ts.net/`, rebuild and re-sign on his Mac with Xcode (about one session; signing
   needs his Apple ID, so it cannot be a scheduled run). Do not ask again until he reports back.

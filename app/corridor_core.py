@@ -107,3 +107,79 @@ def legs(path: list[tuple[int, int]], state: np.ndarray, risk: np.ndarray, min_c
         else:
             merged.append(lg)
     return merged
+
+
+# ---- corridors through time (phase 5, part 2) ---------------------------------------------------------------------
+def dijkstra_time(costs: np.ndarray, passable: np.ndarray, src: tuple[int, int], layer_len: float,
+                  wait: bool = True, wait_cost: float = 1.0):
+    """Least cost through space and time. costs is (K, H, W): the cost grid for each time layer; layer k holds from
+    time k * layer_len to (k + 1) * layer_len, the last layer for ever. Time is counted in cell-lengths of travel (one
+    orthogonal step takes 1.0, a diagonal step sqrt 2), so layer_len is the layer's duration over the time to cross one
+    cell. A move is priced with the layer the unit leaves in and the layer it arrives in. With wait, the unit may hold
+    in a cell until the next layer starts, at (wait_cost + the cell's cost in that layer) per unit of time held.
+    Returns g (K, H, W), the arrival time tau (K, H, W) and the predecessor of each state (flat index, -1 for none).
+    Labels keep the cheapest arrival per (cell, layer), the screening simplification that keeps this a plain Dijkstra."""
+    K, H, W = costs.shape
+    g = np.full((K, H, W), np.inf)
+    tau = np.full((K, H, W), np.inf)
+    pred = np.full(K * H * W, -1, dtype=np.int64)
+    if not passable[src]:
+        return g, tau, pred
+    g[0][src] = 0.0
+    tau[0][src] = 0.0
+    heap = [(0.0, 0, src[0], src[1])]
+    while heap:
+        d, k, i, j = heapq.heappop(heap)
+        if d > g[k, i, j]:
+            continue
+        t = tau[k, i, j]
+        ci = costs[k, i, j]
+        here = (k * H + i) * W + j
+        for di, dj, ln in STEPS:
+            a, b = i + di, j + dj
+            if 0 <= a < H and 0 <= b < W and passable[a, b]:
+                if di and dj and not (passable[i + di, j] or passable[i, j + dj]):
+                    continue
+                t2 = t + ln
+                k2 = min(K - 1, int(t2 // layer_len))
+                nd = d + ln * (1.0 + 0.5 * (ci + costs[k2, a, b]))
+                if nd < g[k2, a, b]:
+                    g[k2, a, b], tau[k2, a, b] = nd, t2
+                    pred[(k2 * H + a) * W + b] = here
+                    heapq.heappush(heap, (nd, k2, a, b))
+        if wait and k < K - 1:
+            t2 = (k + 1) * layer_len
+            nd = d + (t2 - t) * (wait_cost + ci)
+            if nd < g[k + 1, i, j]:
+                g[k + 1, i, j], tau[k + 1, i, j] = nd, t2
+                pred[((k + 1) * H + i) * W + j] = here
+                heapq.heappush(heap, (nd, k + 1, i, j))
+    return g, tau, pred
+
+
+def corridor_time(costs: np.ndarray, passable: np.ndarray, start: tuple[int, int], goal: tuple[int, int],
+                  layer_len: float, margin: float = 0.15, wait: bool = True, wait_cost: float = 1.0) -> dict:
+    """Best route through space and time, as states (row, col, layer) with arrival times, and the band. The band uses
+    each cell's cost in the layer the unit would first reach it (the time a planner would be there), so it reads like
+    the one-step band; the route itself is the exact time-layered search."""
+    K, H, W = costs.shape
+    g, tau, pred = dijkstra_time(costs, passable, start, layer_len, wait, wait_cost)
+    gk = g[:, goal[0], goal[1]]
+    if not np.isfinite(gk).any():
+        return {"states": [], "times": [], "cost": None, "band": np.zeros((H, W), bool), "waits": []}
+    kbest = int(np.argmin(gk))
+    states, s = [], (kbest * H + goal[0]) * W + goal[1]
+    while s != -1:
+        k, r = divmod(int(s), H * W)
+        states.append((r // W, r % W, k))
+        s = int(pred[s])
+    states.reverse()
+    times = [float(tau[k, i, j]) for i, j, k in states]
+    waits = [n for n in range(1, len(states)) if states[n][:2] == states[n - 1][:2]]
+    first = np.argmin(np.where(np.isfinite(g), g, np.inf), axis=0)              # layer of each cell's cheapest label
+    first = np.where(np.isfinite(g).any(axis=0), first, K - 1)
+    eff = np.take_along_axis(costs, first[None], axis=0)[0]
+    band = corridor(eff, passable, start, goal, margin)["band"]
+    for i, j, _ in states:
+        band[i, j] = True
+    return {"states": states, "times": times, "cost": float(gk[kbest]), "band": band, "waits": waits}

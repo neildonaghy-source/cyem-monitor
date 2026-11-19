@@ -68,6 +68,7 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 | POST /plan/joint {net} | Greedy joint re-siting, verified |
 | POST /plan/coa {side, coa: mlcoa or mdcoa}, POST /plan/coa/revert | Other side's response, applied and reversible |
 | POST /plan/timeline {step_min, net} | Per-step strips, advantage windows, scoreboard per step |
+| POST /plan/corridor {mover, to_lat, to_lon, domain, step_min, wait, gnss, ...} | EM manoeuvre corridor: band, legs (EMCON, holds, T+), verified worst points |
 | GET/POST /coas, POST /coas/{id}/load, DELETE /coas/{id} | Courses of action |
 | POST /ask {question, selected} | Computed plan for siting questions, else Qwen summary |
 
@@ -77,6 +78,24 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
   (scenario tests run every example on synthetic terrain with a throw-away database; no network needed)
 - Sanitiser (headless Chromium, no server): `python3 tests/ui/sanitize_check.py`
 - Browser smoke (on the box, private workspace, ~3 min): `bash tests/ui/run.sh`
+
+## Corridors (phase 5, 18 to 19 Nov 2026)
+
+`POST /api/emo/plan/corridor` plans one blue or red unit's route to a point on the ground, at sea or at low level in
+the air. Cost per cell: detection and DF fix of its own emissions by opposing ES (reciprocity grids), radar track (air
+and sea), loss of own C2, and GNSS denial by opposing nav jammers (J/S against the satellite level and the receivers'
+threshold; weighted more heavily for air). Transmit or silent is chosen per cell. With `step_min` set, the picture is
+worked out every `step_min` minutes for up to `layers` layers (other units move on their tracks, emitters keep their
+schedules) and the search runs through space and time; with `wait` the unit may hold in place until the next layer
+(`wait_cost` per cell-crossing time plus the cell's cost). One label per cell and layer: without holds the search does
+not mark time by moving to and fro. Each leg's worst point is re-checked with the exact pairwise model, with the other
+units where they are at that time. Ducts the met reports are flagged on the legs (evaporation duct over the sea for
+antennas up to 50 m; surface-based ducts anywhere below their top), not modelled.
+
+Worked vignettes (the `corridor` field of an example; "Worked vignette" in the Corridor card fills it in): 1 Salisbury
+Plain (B Coy to a blocking position, ground, 10-minute layers), 3 Solent (the ship out by the Needles Channel past an
+X-band radar; choose the forecast atmosphere to see the evaporation duct flag), 6 UAS transit through GNSS jamming
+(air at 120 m, 5-minute layers, a moving jammer).
 
 ## Known limits
 

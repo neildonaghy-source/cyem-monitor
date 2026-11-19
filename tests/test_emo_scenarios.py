@@ -370,3 +370,92 @@ def test_corridor_refuses_impossible_routes(emo, monkeypatch):
     with pytest.raises(HTTPException) as e:
         asyncio.run(corridor_api.plan_corridor(corridor_api.CorridorIn(mover="Nobody", to_lat=51.0, to_lon=-0.8)))
     assert e.value.status_code == 404
+
+
+# ---- corridors through time, GNSS and the worked vignettes (phase 5, part 2) --------------------------------------
+def _flat(monkeypatch, z=100.0):
+    from app import dem
+    monkeypatch.setattr(dem, "heights", lambda pts: [z] * len(pts))
+    monkeypatch.setattr(dem, "grid_sampler", lambda s, w, n, e, res_deg=1 / 1800: (lambda la, lo: np.full(np.shape(la), z, np.float32)))
+
+
+def test_corridor_through_time_uses_where_the_sensor_will_be(emo, monkeypatch):
+    """A red ES vehicle sits on the patrol's route at T+0 and drives 40 km north at 60 km/h. Frozen at T+0 the route has
+    to bend round it or be heard; with ten-minute layers the planner knows it will have gone by the time the patrol
+    gets there, so the route stays close to direct and the worst detection is lower."""
+    from app import corridor_api
+    _flat(monkeypatch)
+    hq = _add(emo, name="Blue HQ", side="blue", lat=51.0, lon=-1.32, eirp_dbm=40, h_agl=10)
+    pat = _add(emo, name="Blue patrol", side="blue", kind="receiver", lat=51.0, lon=-1.3, eirp_dbm=10)
+    with emo.get_db().tx() as cur:
+        cur.execute("UPDATE emo_entities SET net=? WHERE id=?", (hq["id"], pat["id"]))
+    _add(emo, name="Red ES (mobile)", side="red", kind="sensor", category="es", lat=51.0, lon=-1.2, h_agl=10,
+         freq_mhz=30.0, f_hi_mhz=88.0, bw_khz=25, track=[[51.36, -1.2]], speed_kmh=60)
+
+    async def go():
+        await emo.run(emo.RunIn(), light=True)
+        body = dict(mover="Blue patrol", to_lat=51.0, to_lon=-1.1, cell_m=1000, emcon="emit")
+        frozen = await corridor_api.plan_corridor(corridor_api.CorridorIn(**body))
+        timed = await corridor_api.plan_corridor(corridor_api.CorridorIn(**body, step_min=10))
+        return frozen, timed
+    frozen, timed = asyncio.run(go())
+    assert frozen["summary"]["layers"] == 1 and timed["summary"]["layers"] >= 4
+    assert timed["summary"]["max_p_detect"] < frozen["summary"]["max_p_detect"]
+    assert timed["summary"]["km"] <= frozen["summary"]["km"] + 0.5
+    ts = [(lg["t_from"], lg["t_to"]) for lg in timed["legs"]]
+    assert all(a <= b for a, b in ts) and all(x[1] <= y[0] + 0.1 for x, y in zip(ts, ts[1:]))
+    assert abs(timed["summary"]["arrive_t"] - ts[-1][1]) < 0.2 and "time layers" in timed["notes"]
+
+
+def test_corridor_steers_an_aircraft_round_a_gnss_jammer(emo, monkeypatch):
+    """Flat land. A 100 mW GNSS jammer 2.5 km north of a UAV's direct line: with GNSS counted the route swings south."""
+    from app import corridor_api
+    _flat(monkeypatch)
+    _add(emo, name="GPS L1 (space)", side="blue", lat=51.0, lon=-1.0, eirp_dbm=None, freq_mhz=1575.42, bw_khz=2046,
+         category="nav", fixed_level_dbm=-128, js_req_db=35, h_agl=0)
+    _add(emo, name="Blue UAV", side="blue", kind="receiver", lat=51.0, lon=-1.2, freq_mhz=2350.0, bw_khz=5000, h_agl=120)
+    _add(emo, name="Red GNSS jammer", side="red", kind="effector", category="nav", lat=51.022, lon=-1.0, h_agl=3,
+         freq_mhz=1575.42, bw_khz=2046, eirp_dbm=20)
+
+    async def go():
+        await emo.run(emo.RunIn(), light=True)
+        body = dict(mover="Blue UAV", to_lat=51.0, to_lon=-0.8, domain="air", alt_m=120, cell_m=1000)
+        on = await corridor_api.plan_corridor(corridor_api.CorridorIn(**body))
+        off = await corridor_api.plan_corridor(corridor_api.CorridorIn(**body, gnss=False))
+        return on, off
+    on, off = asyncio.run(go())
+    assert on["summary"]["gnss_jammers"] == ["Red GNSS jammer"] and off["summary"]["gnss_jammers"] == []
+    assert min(lat for lat, _ in on["path"]) < min(lat for lat, _ in off["path"]) - 0.01
+    assert off["summary"]["max_p_gnss"] == 0 and on["summary"]["max_p_gnss"] < 100
+
+
+@pytest.mark.parametrize("name", ["bg-vignette", "solent-maritime", "uas-gnss"])
+def test_worked_corridor_vignettes(emo, monkeypatch, name):
+    """Each worked vignette plans end to end through time on synthetic terrain (the Solent one on open sea, with an
+    evaporation duct reported by the met that traps the red X-band radar but not the ship's UHF net)."""
+    from app import corridor_api
+    from app.emo_examples import EXAMPLES
+    if name == "solent-maritime":
+        _flat(monkeypatch, 0.0)
+    v = EXAMPLES[name]["corridor"]
+
+    async def go():
+        r = await emo.load_example(name)
+        assert r["corridor"] == v
+        await emo.run(emo.RunIn(), light=True)
+        if name == "solent-maritime":
+            emo._LAST["met"]["evap_duct"] = {"height_m": 12.0, "deficit_m": 4.0, "cutoff_ghz": 5.0}
+        body = {k: v[k] for k in ("mover", "domain", "step_min", "alt_m", "speed_kmh") if k in v}
+        return await corridor_api.plan_corridor(corridor_api.CorridorIn(**body, to_lat=v["to"][0], to_lon=v["to"][1], cell_m=1000))
+    out = asyncio.run(go())
+    s = out["summary"]
+    assert out["unit"] == v["mover"] and out["legs"] and s["layers"] > 1 and s["km"] >= s["direct_km"] * 0.9
+    for a, b in zip(out["legs"], out["legs"][1:]):
+        assert a["path"][-1] == b["path"][0] and a["t_to"] <= b["t_from"] + 0.1
+    for lg in out["legs"]:
+        assert lg["verified"]["p_detect"] is not None and 0 <= lg["p_gnss"] <= 100
+    if name == "solent-maritime":
+        assert s["max_p_radar"] > 0 and "Red vessel radar" in (s["duct"] or "") and "own 252" not in s["duct"]
+        assert all("duct" in lg for lg in out["legs"] if lg["over_sea"])
+    if name == "uas-gnss":
+        assert set(s["gnss_jammers"]) == {"Red GNSS jammer (Imber)", "Red GNSS jammer (vehicle)"} and s["c2"] == "hears Blue UAS GCS"

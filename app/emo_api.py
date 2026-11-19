@@ -914,7 +914,7 @@ async def score_now():
 async def examples():
     from .emo_examples import EXAMPLES
     return {"examples": [{"id": k, "title": v["title"], "about": v["about"], "centre": v["centre"], "zoom": v["zoom"],
-                          "entities": len(v["entities"])} for k, v in EXAMPLES.items()]}
+                          "entities": len(v["entities"]), "corridor": v.get("corridor")} for k, v in EXAMPLES.items()]}
 
 
 @router.post("/examples/{name}")
@@ -937,7 +937,7 @@ async def load_example(name: str):
                 c.execute("UPDATE emo_entities SET net=? WHERE id=?", (ids[d["net"]], ids[d["name"]]))
     _COV.clear(); _P2P.clear(); _LAST.clear()      # the previous scenario's analysis must not feed planning calls
     return {"loaded": name, "title": ex["title"], "about": ex["about"], "centre": ex["centre"], "zoom": ex["zoom"],
-            "params": ex.get("params", {}),
+            "params": ex.get("params", {}), "corridor": ex.get("corridor"),
             "entities": _all()}
 
 

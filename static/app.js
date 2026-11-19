@@ -1842,23 +1842,29 @@
     if (c.to) L.circleMarker(c.to, { radius: 6, color: '#fff', weight: 2, fillColor: '#3c8cff', fillOpacity: 0.9 }).bindTooltip('Corridor destination').addTo(corrLayer);
     const r = c.res; document.body.dataset.corrLegs = r ? r.legs.length : 0; if (!r) return;
     if (r.band) L.imageOverlay(r.band, r.bounds, { opacity: 0.8, interactive: false }).addTo(corrLayer);
-    r.legs.forEach((lg, i) => L.polyline(lg.path, { color: CORR_COL[lg.emcon], weight: 5, opacity: 0.95 })
-      .bindTooltip(`Leg ${i + 1}: ${lg.km} km, ${lg.minutes} min, ${lg.emcon}<br>detect ${lg.p_detect}% · fix ${lg.p_fix}% · radar ${lg.p_radar}% · C2 ${lg.p_c2}%`).addTo(corrLayer));
+    r.legs.forEach((lg, i) => {
+      const tip = `Leg ${i + 1}: ${lg.hold ? `hold ${lg.minutes} min` : `${lg.km} km, ${lg.minutes} min`}, ${lg.emcon}, T+${lg.t_from ?? '?'} to T+${lg.t_to ?? '?'}<br>detect ${lg.p_detect}% · fix ${lg.p_fix}% · radar ${lg.p_radar}% · GNSS ${lg.p_gnss ?? 0}% · C2 ${lg.p_c2}%`;
+      if (lg.hold) L.circleMarker(lg.from, { radius: 8, color: '#fff', weight: 2, fillColor: CORR_COL[lg.emcon], fillOpacity: 0.9 }).bindTooltip(tip).addTo(corrLayer);
+      else L.polyline(lg.path, { color: CORR_COL[lg.emcon], weight: 5, opacity: 0.95 }).bindTooltip(tip).addTo(corrLayer);
+    });
+    document.body.dataset.corrHolds = r.legs.filter((lg) => lg.hold).length;
   }
   function emoCorridorHtml(r) {
     const s = r.summary, v = (lg) => lg.verified ? `${lg.verified.p_detect}%${lg.verified.p_c2 != null ? ` / ${lg.verified.p_c2}%` : ''}` : '–';
-    return `<p><b>${esc(r.unit)}</b> (${esc(r.domain)}) ${s.km} km in about ${s.minutes} min at ${s.speed_kmh} km/h <span class="dim">(direct ${s.direct_km} km)</span>; transmitting on ${s.transmit_pct}% of the route.
-      Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost} against ${s.direct_cost} straight; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
-      <p><span style="color:${CORR_COL.transmit}">■</span> transmit leg <span style="color:${CORR_COL.silent}">■</span> silent leg <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
-      <table class="grid"><tr><th>Leg</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>C2</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
-      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_c2}%</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
+    const when = s.layers > 1 ? ` Through ${s.layers} time layers ${s.step_min} min apart; arrives T+${s.arrive_t} min${s.hold_min ? ` including ${s.hold_min} min holding` : ''}.` : '';
+    return `<p><b>${esc(r.unit)}</b> (${esc(r.domain)}) ${s.km} km in about ${s.minutes} min at ${s.speed_kmh} km/h <span class="dim">(direct ${s.direct_km} km)</span>; transmitting on ${s.transmit_pct}% of the route.${when}
+      Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, GNSS denied ${s.max_p_gnss ?? 0}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost} against ${s.direct_cost} straight; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
+      ${s.duct ? `<p class="warn">Duct: ${esc(s.duct)}</p>` : ''}${(s.gnss_jammers || []).length ? `<p class="dim">GNSS jammers counted: ${esc(s.gnss_jammers.join(', '))}.</p>` : ''}
+      <p><span style="color:${CORR_COL.transmit}">■</span> transmit leg <span style="color:${CORR_COL.silent}">■</span> silent leg <span style="color:#fff">●</span> hold <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
+      <table class="grid"><tr><th>Leg</th><th>T+</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>GNSS</th><th>C2</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
+      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.t_from ?? '–'}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.hold ? 'hold, ' : ''}${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_gnss ?? 0}%</td><td class="mono">${lg.p_c2}%</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
       ${s.sensors.length ? '' : '<p class="dim">No opposing ES sensor covers this unit\'s band.</p>'}<p class="dim">${esc(r.notes)}</p>`;
   }
   function emoCorridor() {
     const units = EMO.ents.filter((e) => e.side === 'blue' || e.side === 'red');
     if (!units.length) return emoDockCard('Corridor', '<p class="dim">No blue or red units in this scenario.</p>');
     const foc = EMO.ents.find((e) => e.id === EMO.focus && e.side !== 'grey');
-    const c = EMO.corr = EMO.corr || { domain: 'ground', emcon: 'auto', silent: 0.6, alt: 150, speed: '' };
+    const c = EMO.corr = EMO.corr || { domain: 'ground', emcon: 'auto', silent: 0.6, alt: 150, speed: '', step: 10, hold: true };
     if (!units.some((e) => e.name === c.mover)) c.mover = (foc || units.find((e) => e.side === EMO.side) || units[0]).name;
     const b = emoDockCard('Corridor', `<div class="specset">Unit <select id="corr-unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
         <select id="corr-dom">${[['ground', 'Ground'], ['sea', 'Sea'], ['air', 'Air (low level)']].map(([k, l]) => `<option value="${k}"${c.domain === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
@@ -1866,11 +1872,20 @@
       <div class="specset">Speed <input id="corr-speed" type="number" min="1" max="1000" placeholder="auto" value="${c.speed}" style="width:60px"> km/h
         EMCON <select id="corr-emcon">${[['auto', 'Auto'], ['emit', 'Transmit'], ['silent', 'Silent']].map(([k, l]) => `<option value="${k}"${c.emcon === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <span title="Cost per cell of moving without two-way C2: higher means the planner transmits more">silent price <input id="corr-sil" type="number" min="0" max="10" step="0.1" value="${c.silent}" style="width:52px"></span></div>
+      <div class="specset"><span title="Work the picture out every so many minutes as other units move (0: frozen at T+t)">Time layers every <input id="corr-step" type="number" min="0" max="120" value="${c.step}" style="width:52px"> min</span>
+        <label title="Allow holding in place until the picture changes"><input id="corr-hold" type="checkbox"${c.hold ? ' checked' : ''}> holds</label>
+        ${EMO.vignette ? '<button id="corr-vig" title="Fill in the worked corridor that comes with this example">Worked vignette</button>' : ''}</div>
+      ${EMO.vignette ? `<p class="dim" id="corr-vignote">${esc(EMO.vignette.note || '')}</p>` : ''}
       <div class="specset"><button id="corr-pick">Pick destination</button> <span id="corr-to" class="mono dim">${c.to ? `${c.to[0]}, ${c.to[1]}` : 'none'}</span>
         <button id="corr-go" class="primary"${c.to ? '' : ' disabled'}>Plan</button> <button id="corr-clear">Clear</button> <span id="corr-st" class="dim"></span></div>
-      <div id="corr-out">${c.res ? emoCorridorHtml(c.res) : `<p class="dim">At T+${Math.round(EMO.t)} min, with the last run's atmosphere. Notional data; screening grade.</p>`}</div>`);
+      <div id="corr-out">${c.res ? emoCorridorHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min, with the last run's atmosphere. Notional data; screening grade.</p>`}</div>`);
     const read = () => { c.mover = b.querySelector('#corr-unit').value; c.domain = b.querySelector('#corr-dom').value; c.alt = +b.querySelector('#corr-alt').value || 150;
-      c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0); };
+      c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0);
+      c.step = Math.max(0, +b.querySelector('#corr-step').value || 0); c.hold = b.querySelector('#corr-hold').checked; };
+    b.querySelector('#corr-vig')?.addEventListener('click', () => {
+      const v = EMO.vignette; read(); Object.assign(c, { mover: v.mover, domain: v.domain, to: v.to, step: v.step_min || 0, alt: v.alt_m || c.alt, speed: v.speed_kmh || '', emcon: v.emcon || 'auto', res: null });
+      emoCorridorDraw(); emoCorridor();
+    });
     b.querySelector('#corr-dom').addEventListener('change', (e) => { b.querySelector('#corr-altw').hidden = e.target.value !== 'air'; });
     b.querySelector('#corr-pick').addEventListener('click', () => {
       read();
@@ -1881,7 +1896,7 @@
       read(); const st = b.querySelector('#corr-st'), t0 = Date.now();
       const tick = setInterval(() => { st.textContent = `planning… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
       st.innerHTML = '<span class="spinner"></span> planning…';
-      const body = { mover: c.mover, to_lat: c.to[0], to_lon: c.to[1], domain: c.domain, emcon: c.emcon, silent_cost: c.silent };
+      const body = { mover: c.mover, to_lat: c.to[0], to_lon: c.to[1], domain: c.domain, emcon: c.emcon, silent_cost: c.silent, step_min: c.step, wait: c.hold };
       if (c.domain === 'air') body.alt_m = c.alt;
       if (+c.speed > 0) body.speed_kmh = +c.speed;
       try {
@@ -2355,7 +2370,7 @@
       try {
         emoAbortRun();
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
-        EMO.ents = r.entities; EMO.about = r.about; EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; emoCorridorClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
       } catch (err) { emoStatus(err.message); }
     });

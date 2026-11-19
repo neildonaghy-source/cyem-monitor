@@ -74,9 +74,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Remote: `origin` is the private GitHub repo neildonaghy-source/cyem-monitor. Work on a branch, open a pull request, merge to
   `main`; `main` is what gets deployed. Run long jobs with nohup and read the logs (tool calls time out).
 
-- Clients: the native Mac and iPhone apps (Swift, embedded Tailscale) loaded https://trade.tail013324.ts.net:8443. Their source
-  is not in this repo and was not found on the MacBook or the Mac mini on 18 Nov 2026 (it was built on another Mac).
-  Until it is recovered, the client is the web app; any rebuilt app must point at the new host's URL.
+- Clients: the web app, and from 19 Nov new native SwiftUI apps for Mac and iPhone in `native/` (XcodeGen; build on the
+  MacBook, see native/README.md and docs/NATIVE-PLAN.md). The September apps' source was never found.
 - EMO (`emo_api.py`): symmetric red/blue ES/EA/EP on terrain; reuses coverage_api._compute (power capped at 70 dBm, offset added for higher EIRP) and link_core.analyse for per-pair paths; heavy work limited by asyncio.Semaphore(3); cyem container cpus 4.0. Notional data only.
 
 ## EMO planning layer (added 2026-09-25)

@@ -18,8 +18,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
 - Off-box copy of the database since 19 Nov (Neil approved): EVO cron 00:50 UTC pushes a snapshot to trade
   `~/cyem-offbox` (7 kept), off-site with trade's OneDrive job; details in `docs/DEPLOY-EVO.md`.
-- Native apps: N1 done 19 Nov (`native/`, clone on the MacBook in `~/Developer/cyem-monitor`). Neil's iPhone is
-  paired with the MacBook ("Neils iPhone"); installs need it unlocked.
+- Native apps: Mac and iPhone shells around the web interface (`native/`, clone on the MacBook in
+  `~/Developer/cyem-monitor`; the Mac app is in `~/Applications/CyEM.app`). iPhone "Neils iPhone" is paired with the
+  MacBook, but Xcode has no Apple account, so no iPhone install yet.
 - Inside the container the app listens on 8080 (3020 is the host port).
 - Keyed feeds live since 19 Nov: AISSTREAM_KEY, OPENCELLID_KEY and CLOUDFLARE_API_TOKEN in `/home/cyem/cyem/.env` (600;
   previous copy `.env.bak-20261119-keys`). First collects: ais 182 vessels, cloudflare 2 outages and 50 hijacks, cells 147,292.
@@ -38,9 +39,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 2. **Corridor vignettes and time**: corridors through time (time layers from the timeline, waiting allowed) and
    three worked vignettes in the examples: the battlegroup on Salisbury Plain (ground), Vestfjord or the Solent
    (maritime, with the evaporation duct from met), a UAS transit with GNSS jamming (air). Tests on synthetic terrain.
-3. **Native apps, N2 to N7** (`docs/NATIVE-PLAN.md`, Neil 19 Nov: fully native SwiftUI Mac and iPhone apps). One N slice
-   per run, in order, interleaved with the items below (N2 next). Build and look at it on the MacBook through Desktop
-   Commander (`native/README.md`); install on the iPhone only when it is paired and unlocked, otherwise say so.
+3. **Native apps** (`docs/NATIVE-PLAN.md`): W3 notifications, then W5 widgets. The apps host the web interface; never
+   rebuild web features natively (Neil, 19 Nov). Build and look at it on the MacBook (`native/README.md`).
 4. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
 5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
@@ -90,4 +90,6 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- None open (19 Nov). The September native app source was never found; new native apps replace it (track above).
+- iPhone app: add your Apple ID in Xcode on the MacBook (Xcode > Settings > Accounts) so it can make a development
+  profile; then the next run installs CyEM on the iPhone (unlocked).
+- Embedded Tailscale in the apps (as in September): wanted? It needs a tailnet auth key.

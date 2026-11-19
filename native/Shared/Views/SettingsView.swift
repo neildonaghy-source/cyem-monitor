@@ -20,6 +20,14 @@ struct SettingsView: View {
             } header: { Text("Server") } footer: {
                 Text("On the tailnet no log-in is needed. From the internet (Tailscale Funnel) the app asks for the CyEM username and password.")
             }
+            Section {
+                Picker("EMO scenario", selection: $m.wsMode) {
+                    Text("Shared (all devices)").tag(AppModel.WSMode.shared)
+                    Text("This device only").tag(AppModel.WSMode.device)
+                }
+            } header: { Text("EMO") } footer: {
+                Text(model.wsMode == .shared ? "Changes here change what every device sees." : "Private workspace \(model.workspace): experiments stay off the shared scenario.")
+            }
             Section("Connection") {
                 LabeledContent("Route", value: model.me.map { $0.internet ? "Internet (signed in)" : "Tailnet" } ?? "–")
                 if let u = model.me?.user { LabeledContent("Signed in as", value: u) }

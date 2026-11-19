@@ -38,7 +38,7 @@ services:
       OPENCTI_TOKEN: "${OPENCTI_TOKEN:-}"
     volumes:
       - ./data-store:/data
-    mem_limit: 1g        # 2026-10-03: was 768m (ran at 83%)
+    mem_limit: 3g        # 2026-11-19: 1g OOM-killed on the littoral A2AD example (EVO WSL has 16 GB); was 768m before 3 Oct
     cpus: 4.0
     logging:
       driver: json-file

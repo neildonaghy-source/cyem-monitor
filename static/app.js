@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19b';
+  const BUILD = '2026-11-19c';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -1809,7 +1809,7 @@
   // ---- Corridor: one unit's EM manoeuvre corridor to a picked point (POST /api/emo/plan/corridor)
   const corrLayer = L.layerGroup().addTo(map);
   const CORR_COL = { transmit: '#f3b23e', silent: '#45d38a' };
-  function emoCorridorClear() { corrLayer.clearLayers(); if (EMO.corr) { EMO.corr.res = null; EMO.corr.to = null; } }
+  function emoCorridorClear() { if (EMO.corr) { EMO.corr.res = null; EMO.corr.to = null; } corrLayer.clearLayers(); document.body.dataset.corrLegs = 0; }
   function emoCorridorDraw() {
     corrLayer.clearLayers(); document.body.dataset.corrLegs = 0; const c = EMO.corr; if (!c) return;
     if (c.to) L.circleMarker(c.to, { radius: 6, color: '#fff', weight: 2, fillColor: '#3c8cff', fillOpacity: 0.9 }).bindTooltip('Corridor destination').addTo(corrLayer);

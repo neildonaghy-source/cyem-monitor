@@ -100,6 +100,9 @@ async def get_text(ctx: Context, url: str, **kw) -> str:
     return r.text
 
 
+RUN_TIMEOUT_S = 600          # the slowest source (OSM radars) takes about a minute
+
+
 async def run_collector(ctx: Context, name: str) -> Result:
     col = REGISTRY[name]
     ctx.db.start_run(name)
@@ -109,10 +112,16 @@ async def run_collector(ctx: Context, name: str) -> Result:
             res = Result(0, "disabled (missing API key)")
             ctx.db.finish_run(name, True, res.message, 0, 0.0)
             return res
-        res = await col.fn(ctx)
-        ctx.db.finish_run(name, True, res.message, res.count, asyncio.get_event_loop().time() - started)
+        # A hung source (slow-drip body, stuck socket) must not hold a scheduler slot for ever.
+        res = await asyncio.wait_for(col.fn(ctx), timeout=RUN_TIMEOUT_S)
+        ctx.db.finish_run(name, res.ok, res.message, res.count, asyncio.get_event_loop().time() - started)
         log.info("%s: %s (%d)", name, res.message, res.count)
         return res
+    except asyncio.TimeoutError:
+        msg = f"timed out after {RUN_TIMEOUT_S} s"
+        ctx.db.finish_run(name, False, msg, 0, asyncio.get_event_loop().time() - started)
+        log.warning("%s failed: %s", name, msg)
+        return Result(0, msg, ok=False)
     except Exception as e:  # noqa: BLE001 - collectors must never take the app down
         msg = f"{type(e).__name__}: {str(e)[:300]}"
         ctx.db.finish_run(name, False, msg, 0, asyncio.get_event_loop().time() - started)

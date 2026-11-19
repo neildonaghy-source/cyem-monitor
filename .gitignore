@@ -17,3 +17,4 @@ native/*.xcodeproj/
 native/build/
 native/DerivedData/
 native/CyEM-macOS.entitlements
+native/Vendor/

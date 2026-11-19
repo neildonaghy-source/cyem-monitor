@@ -35,7 +35,9 @@ def node_url() -> str | None:
 
 def sweep():
     """One rtl_power pass; returns (f0_hz, bin_hz, [dB...]) or None if the dongle is busy."""
-    cmd = ["rtl_power", "-f", f"{F_LO}:{F_HI}:{BIN}", "-g", GAIN, "-i", "2", "-1", "-c", "0.2", "-"]
+    # rtl_power keeps span / (1 - crop) in a 32-bit int: above about 2147 MHz it overflows and the dongle gets a 0 Hz rate
+    # (SIGFPE). 24-1766 MHz with 15% crop is 2049 MHz; 20% (the old value) overflowed.
+    cmd = ["rtl_power", "-f", f"{F_LO}:{F_HI}:{BIN}", "-g", GAIN, "-i", "2", "-1", "-c", "0.15", "-"]
     for attempt in (1, 2):                          # a just-released dongle can take a few seconds to free
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
         if p.returncode == 0 and p.stdout.strip():

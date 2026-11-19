@@ -103,9 +103,12 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   API keys; anything that spends money. If the next slice needs one of these, do the preparatory work, write the
   question at the top of this file under "Waiting for Neil", and stop.
 
+## Done 19 Nov: SDR
+
+- Shared sweeps live on trade (Neil installed them 12:43 UTC): timer cyem-sdr-sweep, four a day as node trade-sdr, each
+  pauses ecowitt-receiver for about 35 s. First sweep posted 10,980 bins, 28 peaks. rtl_power overflows on spans over
+  about 2147 MHz after crop, hence 15% crop for 24-1766 MHz (#47). Remove with `sudo bash ~/cyem-sdr/install-trade-sweep.sh --remove`.
+
 ## Waiting for Neil
 
-- SDR: Neil chose shared sweeps on trade's dongle (19 Nov). Staged in trade `~/cyem-sdr` with the token; he runs
-  `sudo bash ~/cyem-sdr/install-trade-sweep.sh` once (four sweeps a day as node trade-sdr; each pauses the Ecowitt
-  receiver for about three minutes). A heartbeat from trade with the token already reached the EVO.
 - EMO examples on real sites (0e Corsham, 0d Thorney Island, Boscombe Down): Neil said leave them (19 Nov).

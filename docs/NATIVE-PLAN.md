@@ -1,18 +1,18 @@
 # Native apps: plan (19 Nov 2026)
 
-Neil chose a fully native UI (SwiftUI, MapKit) for Mac and iPhone, installed from Xcode on the MacBook (cable or Wi-Fi;
-no TestFlight). The web app stays the reference; the apps use the same API and add nothing to the server unless a slice
-says so. Source: `native/` in this repo (see `native/README.md`).
+The September Mac and iPhone apps loaded the CyEM web interface (CLAUDE.md: they "loaded
+https://trade.tail013324.ts.net:8443"); their source was never found. A first attempt on 19 Nov rebuilt screens natively
+(N1 to N4) and lost what the web client has (milsymbol APP-6 symbols, the full map layer panel, the EMO dock and panel,
+spectrum, link planner, coverage, HF, SDR, briefs, Ask). Neil rejected it the same day. The apps now do what the
+originals did: a native shell around the web interface, so they always match the web client.
 
 | Slice | Work | State |
 | --- | --- | --- |
-| N1 Skeleton | XcodeGen project (iOS and macOS targets), API client with tailnet and internet sign-in, Overview tiles (space weather, HF, GNSS, counts, brief, sources), Feed (domain, window, search, detail, share), Map of placed items, Settings | Done 19 Nov: builds for both; Mac app checked against the live server |
-| N2 Map layers | Layer picker; GNSS interference, aircraft (ADS-B), AIS, outages, cables, radars, satellites, HF MUF contours, aurora; clustering; feed grouping (one row for a burst such as 50 BGP hijacks) | |
-| N3 EMO view | Workspace choice (shared or this device), entities on the map with side colours and simple APP-6 style frames, run at T+, scoreboard, unit card, time scrubber | |
-| N4 EMO tools | Corridor (as the web Corridor card), COAs list and load, adversary COA, timeline; edit and move units | |
-| N5 Spectrum and links | Spectrum deconfliction query, link planner (profile chart), coverage overlay | |
-| N6 Brief and Ask | Latest brief (Markdown), generate, Ask with streaming answer; Word exports through the share sheet | |
-| N7 Polish | App icon, widgets (Kp, GNSS, items), notifications for high-severity items, offline cache, iPad layout, accessibility | |
+| W1 Shell | SwiftUI app for Mac and iPhone hosting the web interface (WKWebView): persistent cookies and localStorage (internet log-in, EMO workspace choice), downloads (Mac: Downloads folder; iPhone: share sheet), file picker, JavaScript dialogs, external links in the browser, native page when the server cannot be reached, server setting, Reload/Back/Forward/Home | Done 19 Nov: Mac app checked against the live server |
+| W2 iPhone install | Needs Neil's Apple ID added in Xcode (Settings > Accounts) for a development profile; then install from the MacBook (`native/README.md`) | Waiting for Neil |
+| W3 Native extras | Notifications for high-severity items and finished briefs (local, polling `/api/items` and `/api/briefs/state` in the background), Share from the page, Handoff | |
+| W4 Embedded Tailscale | As the September apps: reach the tailnet without the Tailscale app (TailscaleKit / libtailscale, a tailnet auth key on first run). Optional; the Tailscale app or the internet log-in works meanwhile | Ask Neil before starting (needs a tailnet key) |
+| W5 Widgets | Kp, GNSS interference, item counts, latest brief time (WidgetKit, uses `APIClient` and `Models.swift`) | |
 
-Each slice: code in `native/`, build both targets on the MacBook (`xcodebuild`, see the README), run the Mac app against
-the live server and look at it, install on the iPhone when it is paired and unlocked, merge, record in `docs/CONTINUE.md`.
+Each slice: code in `native/`, build both targets on the MacBook (`native/README.md`), run the Mac app and look at it,
+install on the iPhone when Xcode has an account and the phone is unlocked, merge, record in `docs/CONTINUE.md`.

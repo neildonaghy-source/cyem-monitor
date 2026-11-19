@@ -61,6 +61,17 @@ def _label(f_hz: float) -> str:
     return "not listed in Ofcom's UKFAT table"
 
 
+_LAST_REJECT: dict = {}                                  # the panel's empty state says why sweeps are not arriving
+
+
+def _check(authorization: str | None, node: str) -> None:
+    tok = os.environ.get("SDR_INGEST_TOKEN")
+    if not bearer_ok(authorization, tok):
+        _LAST_REJECT.update(at=now_iso(), node=node,
+                            reason="ingest is off on this server (SDR_INGEST_TOKEN not set)" if not tok else "wrong token")
+        raise HTTPException(401, "bad token")
+
+
 def bearer_ok(authorization: str | None, tok: str | None) -> bool:
     """Constant-time check of an `Authorization: Bearer <tok>` header."""
     if not tok:
@@ -70,9 +81,7 @@ def bearer_ok(authorization: str | None, tok: str | None) -> bool:
 
 @router.post("/ingest")
 async def ingest(s: SweepIn, authorization: str | None = Header(default=None)):
-    tok = os.environ.get("SDR_INGEST_TOKEN")
-    if not bearer_ok(authorization, tok):
-        raise HTTPException(401, "bad token")
+    _check(authorization, s.node)
     db = get_db()
     node = db.one("SELECT * FROM sdr_nodes WHERE node=?", (s.node,))
     peaks = find_peaks(s.f0_hz, s.bin_hz, s.db)
@@ -101,9 +110,7 @@ class HeartbeatIn(BaseModel):
 @router.post("/heartbeat")
 async def heartbeat(h: HeartbeatIn, authorization: str | None = Header(default=None)):
     """Node check-in without a sweep, so the panel shows it online with its state."""
-    tok = os.environ.get("SDR_INGEST_TOKEN")
-    if not bearer_ok(authorization, tok):
-        raise HTTPException(401, "bad token")
+    _check(authorization, h.node)
     db = get_db()
     node = db.one("SELECT info FROM sdr_nodes WHERE node=?", (h.node,))
     info = json.loads(node["info"] or "{}") if node else {}
@@ -120,7 +127,8 @@ async def nodes():
     rows = get_db().query("SELECT n.*, (SELECT COUNT(*) FROM sdr_sweeps s WHERE s.node=n.node) AS sweeps FROM sdr_nodes n ORDER BY last_seen DESC")
     for r in rows:
         r["info"] = json.loads(r["info"] or "{}")
-    return {"nodes": rows}
+    return {"nodes": rows, "ingest_enabled": bool(os.environ.get("SDR_INGEST_TOKEN")),
+            "last_reject": dict(_LAST_REJECT) or None}
 
 
 @router.get("/latest")

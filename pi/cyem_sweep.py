@@ -13,7 +13,7 @@ import subprocess
 import time
 import urllib.request
 
-CYEM = os.environ.get("CYEM_URL", "https://trade.tail013324.ts.net:8443")
+CYEM = os.environ.get("CYEM_URL", "https://nucbox-evo-x2.tail013324.ts.net")
 TOKEN = os.environ["SDR_INGEST_TOKEN"]
 NODE = os.environ.get("NODE", socket.gethostname().lower())
 F_LO, F_HI = os.environ.get("F_LO", "24M"), os.environ.get("F_HI", "1766M")

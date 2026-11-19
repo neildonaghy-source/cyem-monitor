@@ -42,6 +42,13 @@ final class Tailnet {
     }()
     var hasKey: Bool { Tailnet.authKey != nil }
 
+    /// Node state per key: a new key in a new build joins afresh (with its tags) instead of reusing the old identity.
+    static var stateDir: String {
+        guard let k = authKey else { return "tailscale" }
+        let parts = k.split(separator: "-")
+        return parts.count > 2 ? "tailscale-\(parts[2])" : "tailscale-key"
+    }
+
     /// A stable per-install name, so several people's apps are told apart in the admin console.
     static let nodeName: String = {
         if let n = UserDefaults.standard.string(forKey: "tailnetNode") { return n }
@@ -60,7 +67,7 @@ final class Tailnet {
         error = nil
         do {
             let dir = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                .appending(path: "tailscale", directoryHint: .isDirectory)
+                .appending(path: Tailnet.stateDir, directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let cfg = Configuration(hostName: Tailnet.authKey == nil ? Tailnet.hostName : Tailnet.nodeName, path: dir.path(percentEncoded: false),
                                     authKey: Tailnet.authKey, controlURL: kDefaultControlURL, ephemeral: Tailnet.authKey != nil)

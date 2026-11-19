@@ -20,8 +20,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   `~/cyem-offbox` (7 kept), off-site with trade's OneDrive job; details in `docs/DEPLOY-EVO.md`.
 - Native apps 0.3.1: Mac and iPhone shells around the web interface with built-in Tailscale (`native/`, clone on the
   MacBook in `~/Developer/cyem-monitor`, TailscaleKit built into `native/Vendor/`). Mac app in `~/Applications/CyEM.app`;
-  iPhone app installed and trusted (19 Nov). Both carry the tailnet key and join as ephemeral cyem-app-<id> nodes, so
-  nobody signs in to Tailscale. Free-team iPhone builds expire after 7 days: reinstall from the MacBook.
+  iPhone app installed and trusted (19 Nov). Both carry the tagged key ki8d2qz29K11CNTRL (tag:cyem-app, reusable, ephemeral, 90 days to
+  17 Feb 2027) and join as cyem-app-<id>; the tailnet policy (hosts cyem-evo, grant tag:cyem-app to cyem-evo tcp:443,
+  allow-all narrowed to autogroup:member, a policy test) was saved on 19 Nov. Renew the key before 17 Feb 2027. Free-team iPhone builds expire after 7 days: reinstall from the MacBook.
 - Internet log-in: cyem-team's password was reset on 19 Nov at Neil's request and given to him in chat (stored nowhere else).
 - Inside the container the app listens on 8080 (3020 is the host port).
 - Keyed feeds live since 19 Nov: AISSTREAM_KEY, OPENCELLID_KEY and CLOUDFLARE_API_TOKEN in `/home/cyem/cyem/.env` (600;
@@ -92,8 +93,4 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- Tailnet policy for the apps' key. The key Neil made on 19 Nov is in the apps (`native/Config/tailnet.json` on the
-  MacBook) and works, but it carries no tag: app nodes (cyem-app-<id>) join as Neil's own devices with his access. Fix:
-  Access controls > JSON editor, add `"tagOwners": {"tag:cyem-app": ["autogroup:admin"]}` and a rule letting
-  `tag:cyem-app` reach only the EVO-X2 on tcp:443 (and narrow any allow-all rule), save; then generate a new key with
-  tag:cyem-app ticked (reusable, ephemeral, pre-approved), revoke the 19 Nov key, rebuild and reinstall both apps.
+- None open (19 Nov).

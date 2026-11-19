@@ -4,12 +4,14 @@ import SwiftUI
 struct CyEMApp: App {
     @State private var model = AppModel()
     @State private var web = WebController()
+    @State private var tailnet = Tailnet()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
                 .environment(web)
+                .environment(tailnet)
                 .preferredColorScheme(.dark)
         }
         .defaultSize(width: 1440, height: 900)
@@ -23,7 +25,7 @@ struct CyEMApp: App {
         }
         #if os(macOS)
         Settings {
-            SettingsView().environment(model).frame(width: 460).padding()
+            SettingsView().environment(model).environment(tailnet).frame(width: 460).padding()
         }
         #endif
     }
@@ -32,18 +34,24 @@ struct CyEMApp: App {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(WebController.self) private var web
+    @Environment(Tailnet.self) private var tailnet
     @State private var showSettings = false
 
     var body: some View {
         ZStack {
             Color(red: 0.04, green: 0.055, blue: 0.075).ignoresSafeArea()           // the web app's background, no white flash
-            CyEMWebView(url: model.serverURL, homeTick: model.homeTick, controller: web)
-                #if os(macOS)
-                .ignoresSafeArea()
-                #else
-                .ignoresSafeArea(.container, edges: .bottom)
-                #endif
-            if let err = web.loadError {
+            if tailnet.ready {
+                CyEMWebView(url: model.serverURL, homeTick: model.homeTick, controller: web, proxy: tailnet.proxy)
+                    .id(tailnet.generation)                                          // a new proxy needs a new web view
+                    #if os(macOS)
+                    .ignoresSafeArea()
+                    #else
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    #endif
+            } else {
+                TailnetGate(settings: { showSettings = true })
+            }
+            if tailnet.ready, let err = web.loadError {
                 ConnectionProblem(message: err, server: model.serverText, retry: { web.loadError = nil; model.homeTick += 1 }, settings: { showSettings = true })
             }
             if web.loading && web.progress < 1 {
@@ -62,11 +70,39 @@ struct RootView: View {
             }
             .padding(.bottom, 64)
         }
-        .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().environment(model) } }
+        .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().environment(model).environment(tailnet) } }
         .sheet(item: Binding(get: { web.shareFile }, set: { web.shareFile = $0 })) { f in ShareSheet(url: f.url) }
         #else
-        .sheet(isPresented: $showSettings) { SettingsView().environment(model).frame(width: 460).padding() }
+        .sheet(isPresented: $showSettings) { SettingsView().environment(model).environment(tailnet).frame(width: 460).padding() }
         #endif
+        .onAppear { tailnet.start() }
+    }
+}
+
+/// Shown while the built-in Tailscale node starts or waits for its first sign-in.
+struct TailnetGate: View {
+    @Environment(Tailnet.self) private var tailnet
+    @Environment(\.openURL) private var openURL
+    let settings: () -> Void
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "network.badge.shield.half.filled").font(.system(size: 44)).foregroundStyle(.secondary)
+            Text("Joining the tailnet").font(.title2.bold())
+            if let u = tailnet.authURL {
+                Text("This app has its own Tailscale connection (\(Tailnet.hostName)). Sign in once with your Tailscale account; after that it connects by itself.")
+                    .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 440)
+                Button("Sign in to Tailscale") { openURL(u) }.buttonStyle(.borderedProminent)
+            } else {
+                ProgressView()
+                Text("Tailscale: \(tailnet.state.lowercased())").foregroundStyle(.secondary)
+            }
+            if let e = tailnet.error { Text(e).font(.caption).foregroundStyle(.orange).multilineTextAlignment(.center) }
+            Button("Use this device's Tailscale app instead") { tailnet.mode = .system }.font(.caption)
+            Button("Settings…", action: settings).font(.caption)
+        }
+        .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 0.04, green: 0.055, blue: 0.075))
     }
 }
 
@@ -93,6 +129,7 @@ struct ConnectionProblem: View {
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @Environment(Tailnet.self) private var tailnet
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var error: String?
@@ -112,6 +149,21 @@ struct SettingsView: View {
                 if let error { Text(error).foregroundStyle(.red) }
             } header: { Text("CyEM server") } footer: {
                 Text("The app shows the CyEM web interface from this server. Tailnet: no log-in. Internet (Tailscale Funnel): the CyEM log-in page appears and the session lasts 30 days.")
+            }
+            Section {
+                Picker("Connection", selection: Binding(get: { tailnet.mode }, set: { tailnet.mode = $0 })) {
+                    Text("Built-in Tailscale").tag(Tailnet.Mode.builtIn)
+                    Text("This device's Tailscale app").tag(Tailnet.Mode.system)
+                }
+                if tailnet.mode == .builtIn {
+                    LabeledContent("State", value: tailnet.state)
+                    if let ip = tailnet.ip { LabeledContent("Address", value: ip) }
+                    if let t = tailnet.tailnetName { LabeledContent("Tailnet", value: t) }
+                    if let e = tailnet.error { Text(e).foregroundStyle(.orange) }
+                    if tailnet.state == "Running" { Button("Sign this app out of Tailscale", role: .destructive) { Task { await tailnet.signOut() } } }
+                }
+            } header: { Text("Tailscale") } footer: {
+                Text(tailnet.mode == .builtIn ? "The app joins your tailnet as its own device (\(Tailnet.hostName)); the Tailscale app is not needed." : "The app uses whatever network this device has: the Tailscale app on the tailnet, or the internet log-in.")
             }
             Section("About") {
                 LabeledContent("App", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")

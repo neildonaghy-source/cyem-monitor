@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import Network
 #if os(macOS)
 import AppKit
 #else
@@ -32,12 +33,14 @@ struct CyEMWebView: Representable {
     let url: URL
     let homeTick: Int
     let controller: WebController
+    let proxy: ProxyConfiguration?                                 // built-in Tailscale's SOCKS5 proxy, or none
 
     func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
 
     private func make(_ ctx: Context) -> WKWebView {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()                         // cookies (internet log-in) and localStorage persist
+        cfg.websiteDataStore.proxyConfigurations = proxy.map { [$0] } ?? []
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = true
         cfg.applicationNameForUserAgent = "CyEMApp/\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0")"
         #if os(iOS)

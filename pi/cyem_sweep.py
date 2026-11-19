@@ -3,7 +3,10 @@
 
 Every INTERVAL seconds, if the dongle is free (OpenWebRX+ not in use), runs one rtl_power sweep across
 F_LO..F_HI and posts the power spectrum to CyEM (/api/sdr/ingest). Spectrum occupancy only: nothing is
-demodulated or recorded. Config in /etc/cyem-sweep.env (see setup.sh)."""
+demodulated or recorded. Config in /etc/cyem-sweep.env (see setup.sh).
+
+`--once`: one sweep and post, then exit (no OpenWebRX handling). Used on trade, where the dongle is shared with the
+Ecowitt weather receiver and a root wrapper frees it for the few minutes of a pass (trade/cyem-sdr-sweep)."""
 import csv
 import io
 import json
@@ -79,6 +82,15 @@ def openwebrx_busy() -> bool:
 
 
 if __name__ == "__main__":
+    import sys
+    if "--once" in sys.argv:
+        r = sweep()
+        if not r:
+            heartbeat("sweep failed (dongle busy or missing)")
+            sys.exit(1)
+        print("posted:", post(*r), flush=True)
+        heartbeat("idle between shared sweeps")
+        sys.exit(0)
     while True:
         try:
             if not dongle_present():

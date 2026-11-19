@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19f';
+  const BUILD = '2026-11-19g';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -2458,7 +2458,7 @@
         <ul>
           <li>Ingest on this server: ${st.ingest_enabled ? '<span class="good">on</span> (a token is set)' : '<span class="bad">off</span>: SDR_INGEST_TOKEN is not set on the server'}.</li>
           <li>Last rejected sweep: ${rj ? `<span class="bad">${esc(rj.node || '?')} at ${esc(fmtZ(rj.at))}: ${esc(rj.reason)}</span>` : 'none since the server started'}.</li>
-          <li>A receiver needs its own RTL-SDR: the dongle on trade is used full-time by the Ecowitt weather receiver and cannot be shared.</li>
+          <li>The dongle on trade is shared with the Ecowitt weather receiver: once the shared sweep is installed there (<span class="mono">pi/trade/</span>) it sweeps four times a day and appears here as trade-sdr.</li>
         </ul>
         <p>To add one: a Raspberry Pi 5 with an RTL-SDR Blog V4, or a second V4 on trade or the EVO, running the sweep agent from the repo's <span class="mono">pi/</span> folder with this server's address and ingest token. It appears here within a few minutes of its first sweep.</p>
         <p><button id="sdr-again">Check again</button></p>`);
@@ -2469,7 +2469,9 @@
     const n = nodes.find((x) => x.node === SDR.node);
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
-      <span class="${age != null && age < 10 ? 'good' : 'bad'}">${age == null ? 'never seen' : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${age} min ago` : `last seen ${age} min ago`}</span>
+      ${(() => { const shared = /shared/.test(n.info?.state || ''); const ok = age != null && (age < 10 || (shared && age < 480));
+        const when = age == null ? 'never seen' : age < 90 ? `${age} min ago` : `${Math.round(age / 60)} h ago`;
+        return `<span class="${ok ? 'good' : 'bad'}">${age == null ? 'never seen' : shared ? `shared receiver: sweeps four times a day, last ${when}` : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${when}` : `last seen ${when}`}</span>`; })()}
       ${n.url ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';

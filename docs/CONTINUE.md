@@ -3,17 +3,23 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (19 Nov 2026, 06:30 UTC)
+## Where things are (19 Nov 2026, 11:30 UTC)
 
 - Running on the EVO-X2 (`docs/DEPLOY-EVO.md`), https://nucbox-evo-x2.tail013324.ts.net/ (tailnet, no log-in; internet
-  through Funnel with a log-in). `main` is deployed (release 2026-11-19c). Phases 1 to 3 done; phase 4 part 1 (met)
+  through Funnel with a log-in). Release 2026-11-19e (PR #36) is deployed; `main` has since gained PR #38 (release
+  2026-11-19f, map pick fix, from another session), deploy it with the next slice if not already done. Phases 1 to 3 done; phase 4 part 1 (met)
   done; phase 5 part 1 done: `app/corridor_core.py` (Dijkstra both ways, band, legs), `app/corridor_api.py`
   (`POST /api/emo/plan/corridor`: ground, sea, low-level air; ES detection, DF fix, radar track and own C2 from
   reciprocity grids; transmit or silent per cell; each leg re-checked with the exact pairwise model; each leg carries
   its own `path`) and the Corridor card in the EMO dock (`static/src/18-emo-dock.js`, also reached from a row in the
   EMO panel).
+- Phase 5 part 2 done 19 Nov (PR #36): `corridor_core.corridor_time` (time layers, holding allowed, one label per cell
+  and layer), `CorridorIn.step_min/layers/wait/wait_cost/gnss`, GNSS denial cost (opposing nav jammers against the
+  satellite level), duct flags on legs (`_duct_note`), hold legs with T+. Worked vignettes in the `corridor` field of
+  examples `bg-vignette`, `solent-maritime` (red X-band radar added) and new `uas-gnss` (6); "Worked vignette" button in
+  the Corridor card. Live check: all three plan in 9 to 16 s on the EVO (private workspace corrlive1, emptied).
 - Browser check for corridors: `tests/ui/corridor_check.py [base-url] [png]` (private workspace `corrcheck2`, emptied
-  at the end). On trade run it with `PW_CHROME=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`
+  at the end; it also loads example 6 from the panel and plans its worked vignette). On trade run it with `PW_CHROME=~/.cache/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-linux64/chrome-headless-shell`
   and `~/ha-review/venv/bin/python` (the venv's Playwright wants build 1243, which is not installed). The map uses the
   canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
 - Off-box copy of the database since 19 Nov (Neil approved): EVO cron 00:50 UTC pushes a snapshot to trade
@@ -39,7 +45,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    green), and a legs table (km, minutes, EMCON, detect, fix, radar, C2, verified, heard by). Clear button. Release
    bump (BUILD in `00-head.js`, `?v=` in `index.html`, `sw.js` ?v= and cache name), `sh static/build.sh`.
    Browser check in a private workspace (see "Live checks").
-2. **Corridor vignettes and time**: corridors through time (time layers from the timeline, waiting allowed) and
+2. [x] **Corridor vignettes and time** (done 19 Nov, PR #36): corridors through time (time layers from the timeline, waiting allowed) and
    three worked vignettes in the examples: the battlegroup on Salisbury Plain (ground), Vestfjord or the Solent
    (maritime, with the evaporation duct from met), a UAS transit with GNSS jamming (air). Tests on synthetic terrain.
 3. **Native apps** (`docs/NATIVE-PLAN.md`): W3 notifications, then W5 widgets. The apps host the web interface; never

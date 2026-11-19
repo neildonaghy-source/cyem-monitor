@@ -81,7 +81,7 @@ struct MapLine: Identifiable, Sendable {
     var colour: String?
 }
 
-struct MapPolygon: Identifiable, Sendable {
+struct JamPolygon: Identifiable, Sendable {
     var id: String
     var coords: [CLLocationCoordinate2D]
     var level: String
@@ -152,7 +152,7 @@ final class LayerStore {
     var enabled: Set<MapLayer> { didSet { save() } }
     var points: [MapLayer: [MapPoint]] = [:]
     var lines: [MapLayer: [MapLine]] = [:]
-    var polygons: [MapPolygon] = []
+    var polygons: [JamPolygon] = []
     var updated: [MapLayer: String] = [:]
     var errors: [MapLayer: String] = [:]
     private var cablesLoaded = false
@@ -186,7 +186,7 @@ final class LayerStore {
             updated[layer] = e.updated
             polygons = (e.data?.hexes ?? []).filter { $0.level != "low" }.compactMap { h in
                 guard let b = h.boundary, b.count >= 3 else { return nil }
-                return MapPolygon(id: h.h3, coords: b.map { .init(latitude: $0[0], longitude: $0[1]) }, level: h.level,
+                return JamPolygon(id: h.h3, coords: b.map { .init(latitude: $0[0], longitude: $0[1]) }, level: h.level,
                                   label: "\(h.region ?? "") \(h.level): \(Int(h.pct ?? 0))% of \(h.aircraft ?? 0) aircraft degraded")
             }
         case .air, .milair:

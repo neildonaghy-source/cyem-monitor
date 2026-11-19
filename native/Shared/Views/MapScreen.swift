@@ -15,23 +15,9 @@ struct MapScreen: View {
         let L = model.layers
         let pts = L.visiblePoints(in: region)
         Map(position: $position, selection: $picked) {
-            if L.enabled.contains(.cables) {
-                ForEach(L.lines[.cables] ?? []) { l in
-                    MapPolyline(coordinates: l.coords).stroke(Color(css: l.colour)?.opacity(0.55) ?? .blue.opacity(0.4), lineWidth: 1)
-                }
-            }
-            if L.enabled.contains(.gpsjam) {
-                ForEach(L.polygons) { p in
-                    MapPolygon(coordinates: p.coords)
-                        .foregroundStyle((p.level == "high" ? Color.red : Color.orange).opacity(0.35))
-                        .stroke((p.level == "high" ? Color.red : Color.orange).opacity(0.7), lineWidth: 0.5)
-                }
-            }
-            if L.enabled.contains(.hfmap) {
-                ForEach(L.lines[.hfmap] ?? []) { l in
-                    MapPolyline(coordinates: l.coords).stroke(Color(css: l.colour) ?? .yellow, lineWidth: 2)
-                }
-            }
+            cableLines(L)
+            jamPolygons(L)
+            mufLines(L)
             ForEach(pts) { p in
                 Annotation(p.title, coordinate: p.coordinate, anchor: .center) { PointGlyph(p: p) }
                     .annotationTitles(.hidden)
@@ -49,6 +35,30 @@ struct MapScreen: View {
         }
         .sheet(isPresented: $showLayers) { LayerPicker().environment(model).presentationDetents([.medium, .large]) }
         .navigationTitle("Map")
+    }
+
+    @MapContentBuilder private func cableLines(_ L: LayerStore) -> some MapContent {
+        let lines: [MapLine] = L.enabled.contains(.cables) ? (L.lines[.cables] ?? []) : []
+        ForEach(lines) { l in
+            let c: Color = Color(css: l.colour) ?? .blue
+            MapPolyline(coordinates: l.coords).stroke(c.opacity(0.55), lineWidth: 1)
+        }
+    }
+
+    @MapContentBuilder private func jamPolygons(_ L: LayerStore) -> some MapContent {
+        let polys: [JamPolygon] = L.enabled.contains(.gpsjam) ? L.polygons : []
+        ForEach(polys) { p in
+            let c: Color = p.level == "high" ? .red : .orange
+            MapPolygon(coordinates: p.coords).foregroundStyle(c.opacity(0.35)).stroke(c.opacity(0.7), lineWidth: 0.5)
+        }
+    }
+
+    @MapContentBuilder private func mufLines(_ L: LayerStore) -> some MapContent {
+        let lines: [MapLine] = L.enabled.contains(.hfmap) ? (L.lines[.hfmap] ?? []) : []
+        ForEach(lines) { l in
+            let c: Color = Color(css: l.colour) ?? .yellow
+            MapPolyline(coordinates: l.coords).stroke(c, lineWidth: 2)
+        }
     }
 
     @ViewBuilder private func bottomBar(_ L: LayerStore, shown: Int) -> some View {

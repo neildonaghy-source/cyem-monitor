@@ -6,8 +6,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 ## Where things are (19 Nov 2026, 11:30 UTC)
 
 - Running on the EVO-X2 (`docs/DEPLOY-EVO.md`), https://nucbox-evo-x2.tail013324.ts.net/ (tailnet, no log-in; internet
-  through Funnel with a log-in). Release 2026-11-19e (PR #36) is deployed; `main` has since gained PR #38 (release
-  2026-11-19f, map pick fix, from another session), deploy it with the next slice if not already done. Phases 1 to 3 done; phase 4 part 1 (met)
+  through Funnel with a log-in). `main` is deployed (06760b2, release 2026-11-19f: PR #36
+  corridors through time plus PR #38's map pick fix from another session). Mac mini copy
+  `cyem-monitor-20261119-main-06760b2.bundle` (older bundles kept, not deleted). Phases 1 to 3 done; phase 4 part 1 (met)
   done; phase 5 part 1 done: `app/corridor_core.py` (Dijkstra both ways, band, legs), `app/corridor_api.py`
   (`POST /api/emo/plan/corridor`: ground, sea, low-level air; ES detection, DF fix, radar track and own C2 from
   reciprocity grids; transmit or silent per cell; each leg re-checked with the exact pairwise model; each leg carries

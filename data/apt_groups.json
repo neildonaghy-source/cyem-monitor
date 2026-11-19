@@ -115,7 +115,7 @@
   "aka": "Callisto, ColdRiver, SEABORGIUM",
   "country": "RU",
   "sponsor": "Russia (FSB, publicly attributed)",
-  "mitre": null,
+  "mitre": "G1033",
   "type": "state",
   "sectors": [
    "Politicians",
@@ -226,7 +226,7 @@
   "aka": "GhostEmperor, FamousSparrow, Earth Estries",
   "country": "CN",
   "sponsor": "China (state, publicly attributed)",
-  "mitre": null,
+  "mitre": "G1045",
   "type": "state",
   "sectors": [
    "Telecoms",
@@ -424,7 +424,7 @@
   "aka": "IRGC-CEC affiliated persona",
   "country": "IR",
   "sponsor": "Iran (IRGC-CEC, publicly attributed)",
-  "mitre": null,
+  "mitre": "G1027",
   "type": "state",
   "sectors": [
    "Water",
@@ -493,7 +493,7 @@
   "id": "scatteredspider",
   "name": "Scattered Spider",
   "aka": "UNC3944, Octo Tempest, 0ktapus",
-  "country": "GB",
+  "country": "US",
   "sponsor": "Criminal, English-speaking (UK/US-based members arrested)",
   "mitre": "G1015",
   "type": "criminal",
@@ -504,9 +504,7 @@
    "Hospitality",
    "Help desks"
   ],
-  "note": "Social engineering of help desks and MFA, then ransomware deployment; linked to major UK retail incidents in 2025.",
-  "lat": 51.5,
-  "lon": -0.12
+  "note": "Social engineering of help desks and MFA, then ransomware deployment; linked to major UK retail incidents in 2025."
  },
  {
   "id": "fin7",

@@ -34,7 +34,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .coverage_api import SiteIn, _compute
+from .coverage_api import HEAVY, SiteIn, _compute
 from .db import Database, get_db, now_iso
 from .ems_core import band_masks, cell_km2, overlap, overlay_png, raster_axes, region_masks, sample, union_bounds
 
@@ -339,7 +339,7 @@ def _p2p_sync(tx, tx_h, rx, rx_h, f_hz, eirp, atm=None):
 CLUTTER_CLEAR_M = 150.0
 AIR_PATH_H_M = 1000.0      # terminals at or above this use the air-path loss cap
 _P2P: dict[tuple, float] = {}
-_HEAVY = asyncio.Semaphore(3)
+_HEAVY = HEAVY                      # shared with coverage_api: one limit for all terrain-heavy work
 # The atmosphere for this run (k-factor, rain, fog). run() sets it; planning tools outside a run use the last run's.
 ATM: contextvars.ContextVar[dict | None] = contextvars.ContextVar("cyem_atm", default=None)
 
@@ -349,10 +349,17 @@ def _atm() -> dict:
     return ATM.get() or _LAST.get("atm") or STANDARD_ATM
 
 
+def _radio_sig(e: dict) -> tuple:
+    """What a cached path or footprint depends on. The id and timestamp alone are not enough: planning candidates reuse
+    fixed ids, and a tune or undo inside the same second keeps the timestamp while power or frequency change."""
+    return (e["id"], e.get("updated_at"), e.get("eirp_dbm"), e.get("freq_mhz"), e.get("bw_khz"), e.get("h_agl"),
+            e.get("pattern"), e.get("azimuth"), e.get("beamwidth"), e.get("radius_km"))
+
+
 async def p2p_level(e: dict, tx_pos, rx: dict, rx_pos) -> float:
     """Received level (dBm) from emitter/effector e at rx, terrain path at both heights, antenna pattern applied."""
     atm = _atm()
-    key = (e["id"], e["updated_at"], round(tx_pos[0], 4), round(tx_pos[1], 4), rx["id"], rx["updated_at"],
+    key = (_radio_sig(e), round(tx_pos[0], 4), round(tx_pos[1], 4), rx["id"], rx["updated_at"], rx.get("h_agl"),
            round(rx_pos[0], 4), round(rx_pos[1], 4), atm["sig"])
     if key not in _P2P:
         if len(_P2P) > 4000:
@@ -470,7 +477,7 @@ LAYER_RGBA = {
 
 async def coverage_for(e: dict, pos, rx_h: float):
     atm = _atm()
-    key = (e["id"], e["updated_at"], round(pos[0], 4), round(pos[1], 4), rx_h, atm["sig"])
+    key = (_radio_sig(e), round(pos[0], 4), round(pos[1], 4), rx_h, atm["sig"])
     if key not in _COV:
         s = SiteIn(name=e["name"], lat=pos[0], lon=pos[1], h_agl=min(e["h_agl"], 500), freq_mhz=e["freq_mhz"],
                    bw_khz=e["bw_khz"] or 0, ptx_dbm=min(e["eirp_dbm"], 70.0), gtx_dbi=0, ltx_db=0, pattern=e["pattern"],

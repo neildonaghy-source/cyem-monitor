@@ -152,3 +152,28 @@ def test_only_this_site_and_listed_origins_may_frame_it(client):
     fa = csp.split("frame-ancestors ", 1)[1]
     assert fa == "'self' https://homeassistant.tail013324.ts.net http://192.168.68.85:8123 https://*.example.org"
     assert csp.count(";") == build_csp().count(";")                            # nothing smuggled in as a directive
+
+
+def test_sdr_nodes_says_why_no_sweeps_arrive(client, monkeypatch):
+    """The SDR panel's empty state: ingest off (no token), then a rejected sweep with its reason."""
+    from app import sdr_api
+    sdr_api._LAST_REJECT.clear()
+    monkeypatch.delenv("SDR_INGEST_TOKEN", raising=False)
+    sdr_api.ensure_sdr_schema(__import__("app.db", fromlist=["get_db"]).get_db())
+    r = client.get("/api/sdr/nodes").json()
+    assert r["nodes"] == [] and r["ingest_enabled"] is False and r["last_reject"] is None
+    hb = {"node": "cyem-sdr", "state": "sweeping"}
+    assert client.post("/api/sdr/heartbeat", json=hb).status_code == 401
+    assert "not set" in client.get("/api/sdr/nodes").json()["last_reject"]["reason"]
+    monkeypatch.setenv("SDR_INGEST_TOKEN", "s3cret")
+    assert client.post("/api/sdr/heartbeat", json=hb, headers={"authorization": "Bearer nope"}).status_code == 401
+    r = client.get("/api/sdr/nodes").json()
+    assert r["ingest_enabled"] is True and r["last_reject"]["reason"] == "wrong token" and r["last_reject"]["node"] == "cyem-sdr"
+    assert client.post("/api/sdr/heartbeat", json=hb, headers={"authorization": "Bearer s3cret"}).status_code == 200
+    assert client.get("/api/sdr/nodes").json()["nodes"][0]["node"] == "cyem-sdr"
+
+
+def test_exempt_paths_cannot_be_walked_out_of(client):
+    """/static/icons/ is open to the internet for the app manifest; '..' must not reach other files through it."""
+    r = client.get("/static/icons/%2e%2e/app.js", headers=FUNNEL, follow_redirects=False)
+    assert r.status_code in (302, 401, 404) and "function" not in r.text[:2000]

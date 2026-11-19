@@ -15,6 +15,7 @@ Assistant's own calls send neither header and are unaffected.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -41,6 +42,7 @@ SCRYPT = {"n": 2 ** 15, "r": 8, "p": 1}
 MAXMEM = 64 * 1024 * 1024
 EXEMPT_PREFIX = ("/api/sdr/ingest", "/api/sdr/heartbeat", "/login", "/static/style.css", "/manifest", "/sw.js", "/static/icons/")
 _attempts: dict[str, list[float]] = {}
+_SIGNIN = asyncio.Semaphore(2)
 _schema_for: set[str] = set()
 
 SCHEMA = """
@@ -310,7 +312,7 @@ class LoginGate(BaseHTTPMiddleware):
         if not from_internet(request):
             return await call_next(request)                 # tailnet and the box itself: no log-in
         path = request.url.path
-        if path.startswith(EXEMPT_PREFIX):
+        if path.startswith(EXEMPT_PREFIX) and ".." not in path and "//" not in path:    # /static/icons/../app.js is not exempt
             return await call_next(request)
         tok = os.environ.get("SDR_INGEST_TOKEN")
         if tok and hmac.compare_digest((request.headers.get("authorization") or "").encode(), f"Bearer {tok}".encode()):
@@ -331,12 +333,15 @@ async def login_get(request: Request):
 async def login_post(request: Request):
     ip = client_ip(request)
     now = time.time()
+    for k in [k for k, v in _attempts.items() if not v or now - v[-1] >= IP_WINDOW]:
+        _attempts.pop(k, None)                              # forget addresses whose window has passed
     _attempts[ip] = [t for t in _attempts.get(ip, []) if now - t < IP_WINDOW]
     form = await request.form()
     nxt = str(form.get("next") or "/")
     if len(_attempts[ip]) >= IP_TRIES:
         return HTMLResponse(_page('<p class="bad">Too many attempts; try again in 15 minutes.</p>', nxt), status_code=429)
-    ok, why = authenticate(str(form.get("username", "")), str(form.get("password", "")))
+    async with _SIGNIN:                                     # scrypt is ~0.1 s of CPU: off the event loop, two at a time
+        ok, why = await asyncio.to_thread(authenticate, str(form.get("username", "")), str(form.get("password", "")))
     if ok:
         _attempts.pop(ip, None)
         r = RedirectResponse(safe_next(nxt), status_code=302)

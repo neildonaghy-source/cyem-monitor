@@ -8,7 +8,9 @@ Reception and display of spectrum occupancy only. Do not listen to non-broadcast
 - Raspberry Pi 5 (4 GB), 27 W USB-C supply, case with cooler, 32 GB microSD
 - RTL-SDR Blog V4 dongle, dipole kit, 0.5 m USB extension (keep the dongle away from the Pi)
 - A Tailscale auth key: reusable, pre-approved, tagged `tag:cyem-sdr` (add tagOwners for it, as for tag:cyem-client)
-- The ingest token: on the trade box, `grep SDR_INGEST_TOKEN ~/cyem/.env` (keep it out of chats)
+- The ingest token: on the EVO, `grep SDR_INGEST_TOKEN /home/cyem/cyem/.env` in the CyEM WSL distro (keep it out of chats)
+- Or, instead of a Pi: a second RTL-SDR on trade or the EVO running `cyem_sweep.py` with the same token (the first
+  dongle on trade is kept by the Ecowitt weather receiver and cannot be shared)
 
 ## 1. Flash the card (Mac, Raspberry Pi Imager)
 Device Raspberry Pi 5, OS "Raspberry Pi OS Lite (64-bit)". Edit settings: hostname `cyem-sdr`, a username,
@@ -21,12 +23,13 @@ TS_AUTHKEY, SDR_INGEST_TOKEN, HOTSPOT_SSID (your iPhone hotspot name) and HOTSPO
 Then create the receiver admin user: `docker exec -it openwebrx openwebrx admin adduser <name>` (as root).
 
 ## 3. Tailscale policy
-Allow `tag:cyem-sdr` to reach `trade:8443` (to post sweeps), and `tag:cyem-client` plus your own devices to
-reach `tag:cyem-sdr:443` (the live receiver).
+Add `"tag:cyem-sdr": ["autogroup:admin"]` to tagOwners and a grant letting `tag:cyem-sdr` reach `cyem-evo` on
+tcp:443 (to post sweeps). Your own devices already reach everything; add `tag:cyem-app` to `tag:cyem-sdr` on tcp:443
+if the apps should open the live receiver.
 
 ## 4. Use it
-CyEM, Tools, SDR: node status, latest spectrum with peaks labelled from the UK Frequency Allocation Table,
-"Open live receiver", and "Set receiver position to this device". In the field turn on the iPhone Personal
+The SDR button (Tools on the iPhone): node status, latest spectrum with peaks labelled from the UK Frequency
+Allocation Table, "Open live receiver", and the receiver position (postcode, place, map pick or "Use this device"). In the field turn on the iPhone Personal
 Hotspot; the Pi joins it automatically and reconnects to the tailnet.
 
 ## Checks and troubleshooting

@@ -104,9 +104,15 @@ def _result(S: SiteIn, cov: Coverage, stats: dict) -> dict:
                            "receiver at the stated height everywhere. No clutter, buildings or multipath."}
 
 
+# One limit for all terrain-heavy work (coverage here, EMO footprints and paths): each job holds about 200-300 MB at
+# 100 km, and unlimited parallel jobs OOM-killed the container at 1 GB on 19 Nov 2026.
+HEAVY = asyncio.Semaphore(3)
+
+
 async def analyse_site(S: SiteIn) -> tuple[Coverage, dict]:
     try:
-        return await asyncio.to_thread(_compute, S)
+        async with HEAVY:
+            return await asyncio.to_thread(_compute, S)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"coverage failed: {type(e).__name__}: {str(e)[:200]}") from e
 

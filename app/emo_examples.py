@@ -484,7 +484,8 @@ for _n in ("Blue shore ES/DF (Portsdown)", "Blue shore ES/DF (Needles)", "Red ES
 EXAMPLES["suwalki-mdo"]["entities"] += [
     ea("Blue stand-off radar jammer", B, "radar", 54.30, 22.60, 9000, 3000, 200000, 80, sidc=FA, track=[[54.10, 22.40], [54.30, 22.60]], speed_kmh=500,
        notes="Airborne noise jammer against the red SAM radar (S-band); stand-off, so it enters the radar sidelobes"),
-    ea("Red radar jammer (ground)", R, "radar", 54.55, 23.55, 15, 3000, 200000, 75, notes="Against the blue AEW radar; sidelobe unless on a target bearing"),
+    ea("Red radar jammer (ground)", R, "radar", 54.55, 22.40, 15, 3300, 200000, 75,
+       notes="In Kaliningrad, against the blue CB radar (S-band); sidelobe unless on a target bearing"),
 ]
 EXAMPLES["littoral-a2ad"]["entities"] += [
     ea("Blue fighter EA pod", B, "radar", 67.700, 13.200, 8000, 9800, 500000, 60, sidc=FA, track=[[68.100, 14.100], [67.700, 13.200]], speed_kmh=700,
@@ -679,7 +680,7 @@ _ORBAT = {
         "Blue fires (GNSS)": "NATO fires (GNSS)", "Blue UAV nav (GNSS)": "Watchkeeper (GNSS)", "Blue fighters (GNSS)": "Typhoon pair (GNSS)",
         "Blue stand-off radar jammer": "EA-18G stand-off radar jammer",
         "Red Army HQ (west)": "Red CAA HQ, R-168 VHF (west)", "Red Bde (west)": "Red MRR (west)", "Red ES/DF (west)": "Red Borisoglebsk-2 ES/DF (west)",
-        "Red VHF barrage": "Red Borisoglebsk-2 VHF jammer", "Red GNSS jammer (west)": "Red Pole-21 GNSS jammer (west)", "Red L-band barrage": "Red Krasukha-4 L-band jammer",
+        "Red VHF barrage": "Red Borisoglebsk-2 VHF jammer", "Red GNSS jammer (west)": "Red Pole-21 GNSS jammer (west)", "Red L-band barrage": "Red L-band barrage jammer",
         "Red SAM radar": "Red Buk 9S18M1 radar", "Red airborne ES": "Red Il-22PP airborne ES", "Red Bde (south-east)": "Red MRR (south-east)",
         "Red ES/DF (south-east)": "Red Borisoglebsk-2 ES/DF (south-east)", "Red GNSS jammer (south-east)": "Red Pole-21 GNSS jammer (south-east)",
         "Red CB radar": "Red Zoopark-1 counter-battery radar", "Red UAS GCS": "Red Orlan-10 GCS", "Red UAV": "Red Orlan-10", "Red Bde HQ (south-east)": "Red MRR HQ (south-east)",
@@ -694,7 +695,7 @@ _ORBAT = {
         "Blue frigate (GNSS)": "Type 26 frigate (GNSS)", "Blue fighters (GNSS)": "Typhoon pair (GNSS)",
         "Red Div HQ": "Red CAA HQ, R-168 VHF", "Red Bde 1": "Red MRR 1", "Red Bde 2": "Red MRR 2", "Red ES/DF 1": "Red Borisoglebsk-2 ES/DF 1",
         "Red ES/DF 2": "Red Borisoglebsk-2 ES/DF 2", "Red ES/DF 3": "Red Borisoglebsk-2 ES/DF 3", "Red VHF jammer": "Red Borisoglebsk-2 VHF jammer",
-        "Red GNSS jammer": "Red Pole-21 GNSS jammer", "Red L-band barrage": "Red Krasukha-4 L-band jammer", "Red SAM radar": "Red Buk 9S18M1 radar",
+        "Red GNSS jammer": "Red Pole-21 GNSS jammer", "Red L-band barrage": "Red L-band barrage jammer", "Red SAM radar": "Red Buk 9S18M1 radar",
         "Red coastal radar": "Red Monolit-B coastal radar", "Red airborne ES": "Red Il-22PP airborne ES", "Red corvette radar": "Red Steregushchiy corvette radar",
         "Red corvette ES": "Red Steregushchiy corvette ES",
     },

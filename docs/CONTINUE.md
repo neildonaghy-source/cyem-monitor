@@ -18,9 +18,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
 - Off-box copy of the database since 19 Nov (Neil approved): EVO cron 00:50 UTC pushes a snapshot to trade
   `~/cyem-offbox` (7 kept), off-site with trade's OneDrive job; details in `docs/DEPLOY-EVO.md`.
-- Native apps: Mac and iPhone shells around the web interface (`native/`, clone on the MacBook in
-  `~/Developer/cyem-monitor`; the Mac app is in `~/Applications/CyEM.app`). iPhone "Neils iPhone" is paired with the
-  MacBook, but Xcode has no Apple account, so no iPhone install yet.
+- Native apps 0.3.0: Mac and iPhone shells around the web interface with built-in Tailscale (`native/`, clone on the
+  MacBook in `~/Developer/cyem-monitor`, TailscaleKit built into `native/Vendor/`). Mac app in `~/Applications/CyEM.app`;
+  iPhone app installed from Xcode (Neil's Apple ID added 19 Nov). Free-team iPhone builds expire after 7 days: reinstall.
 - Inside the container the app listens on 8080 (3020 is the host port).
 - Keyed feeds live since 19 Nov: AISSTREAM_KEY, OPENCELLID_KEY and CLOUDFLARE_API_TOKEN in `/home/cyem/cyem/.env` (600;
   previous copy `.env.bak-20261119-keys`). First collects: ais 182 vessels, cloudflare 2 outages and 50 hijacks, cells 147,292.
@@ -90,6 +90,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- iPhone app: add your Apple ID in Xcode on the MacBook (Xcode > Settings > Accounts) so it can make a development
-  profile; then the next run installs CyEM on the iPhone (unlocked).
-- Embedded Tailscale in the apps (as in September): wanted? It needs a tailnet auth key.
+- iPhone: trust the developer profile once (Settings > General > VPN & Device Management > Apple Development:
+  neildonaghy@me.com > Trust), then open CyEM.
+- Both apps: tap "Sign in to Tailscale" on first start (built-in Tailscale, nodes cyem-mac and cyem-iphone); optionally
+  disable key expiry for them in the Tailscale admin console.

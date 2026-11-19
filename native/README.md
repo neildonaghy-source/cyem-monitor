@@ -6,6 +6,9 @@ Plan and progress: `docs/NATIVE-PLAN.md`.
 
 ## Build
 
+Once per Mac (and to take a newer libtailscale): `sh native/scripts/build-tailscalekit.sh` (needs Go; builds TailscaleKit
+for macOS and iOS into `native/Vendor/`, which is not in git).
+
 On the MacBook (Xcode 27.2, XcodeGen 2.46, Apple Development certificate for team 747JXF57MZ):
 
 ```
@@ -35,6 +38,12 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
   choices) survive restarts. Same-host links stay in the app; other sites open in the browser.
 - Downloads (Word briefings and annexes): Mac to the Downloads folder (shown in Finder); iPhone to the share sheet.
 - If the server cannot be reached the app shows why (Tailscale off, wrong server) with Try again.
+- Built-in Tailscale (`Tailnet.swift`, default): the app runs its own Tailscale node ("cyem-mac", "cyem-iphone") with
+  TailscaleKit. First start shows "Sign in to Tailscale" (browser sign-in, no auth key in the app); node state is kept in
+  Application Support/tailscale. When the node is Running, the web view's data store uses the node's local SOCKS5 proxy
+  (`WKWebsiteDataStore.proxyConfigurations`). Settings > Tailscale switches to the device's own Tailscale app, shows
+  state and address, and signs the node out. In the Tailscale admin console the nodes appear as cyem-mac and
+  cyem-iphone; disable key expiry there if they should not need a sign-in every 180 days.
 - Safari > Develop can inspect the page (`isInspectable`).
 - `APIClient.swift` and `Models.swift` are kept for notifications and widgets (W3, W5); the interface does not use them.
 
@@ -42,5 +51,7 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
 
 - Swift 6 language mode. The interface belongs to the web app: change it there (static/src), not here.
 - Same rules as the web app: notional data only, keyword positions are placement not attribution, British English.
-- Bundle ids `com.neildonaghy.cyem` (iPhone) and `com.neildonaghy.cyem.mac` (Mac, sandboxed: network client, Downloads,
-  user-chosen files).
+- Bundle ids `com.neildonaghy.cyem` (iPhone) and `com.neildonaghy.cyem.mac` (Mac, sandboxed: network client and server
+  (the Tailscale proxy listens on 127.0.0.1), Downloads, user-chosen files).
+- iPhone: a development build; Settings > General > VPN & Device Management > trust the developer once per install
+  profile.

@@ -68,3 +68,16 @@ def test_emo_caches_see_power_and_frequency(monkeypatch):
     asyncio.run(go(e))                                           # unchanged: from the cache
     assert round(a - b, 6) == 10.0 and len(calls) == 3
     assert calls[2][0] == 60.0e6
+
+
+def test_saved_analyses_are_capped_per_workspace(monkeypatch):
+    """Any X-CyEM-WS value makes a workspace; only the newest MAX_WORKSPACES keep a saved analysis in memory."""
+    from app import emo_api
+    monkeypatch.setattr(emo_api, "MAX_WORKSPACES", 3)
+    emo_api._LAST_BY_WS.clear()
+    for i in range(5):
+        tok = emo_api.WS.set(f"ws{i}")
+        emo_api._LAST["t"] = i
+        emo_api.WS.reset(tok)
+    assert list(emo_api._LAST_BY_WS) == ["ws2", "ws3", "ws4"]
+    emo_api._LAST_BY_WS.clear()

@@ -150,7 +150,7 @@ def auto_radius(freq_mhz: float, h_agl: float) -> float:
 
 def _upsert(b: EntityIn, eid: str | None) -> dict:
     db = get_db()
-    eid = eid or uuid.uuid4().hex[:8]
+    eid = eid or uuid.uuid4().hex[:16]          # 64 bits: ids are global across workspaces (ON CONFLICT(id))
     d = b.model_dump()
     if d.get("radius_km") is None:
         d["radius_km"] = auto_radius(d["freq_mhz"], d["h_agl"])
@@ -448,12 +448,18 @@ def df_fix(target_pos, bearings: list[dict]) -> dict | None:
 _COV: dict[tuple, object] = {}
 WS: contextvars.ContextVar = contextvars.ContextVar("cyem_ws", default="default")   # per-request workspace (X-CyEM-WS)
 _LAST_BY_WS: dict[str, dict] = {}
+MAX_WORKSPACES = 40          # saved analyses held in memory (each holds the run's rasters and positions)
 
 
 class _LastProxy:
     """Mapping-like view of the saved analysis for the current workspace."""
     def _d(self) -> dict:
-        return _LAST_BY_WS.setdefault(WS.get(), {})
+        ws = WS.get()
+        if ws not in _LAST_BY_WS:
+            while len(_LAST_BY_WS) >= MAX_WORKSPACES:            # any X-CyEM-WS value makes a workspace: keep the newest
+                _LAST_BY_WS.pop(next(iter(_LAST_BY_WS)))
+            _LAST_BY_WS[ws] = {}
+        return _LAST_BY_WS[ws]
     def __getitem__(self, k): return self._d()[k]
     def __setitem__(self, k, v): self._d()[k] = v
     def __contains__(self, k): return k in self._d()
@@ -935,7 +941,8 @@ async def load_example(name: str):
         for d in ex["entities"]:
             if d.get("net"):
                 c.execute("UPDATE emo_entities SET net=? WHERE id=?", (ids[d["net"]], ids[d["name"]]))
-    _COV.clear(); _P2P.clear(); _LAST.clear()      # the previous scenario's analysis must not feed planning calls
+    _LAST.clear()      # this workspace's last analysis must not feed planning calls; path and footprint caches are keyed
+                       # on entity, radio parameters, position and atmosphere, so other workspaces keep theirs
     return {"loaded": name, "title": ex["title"], "about": ex["about"], "centre": ex["centre"], "zoom": ex["zoom"],
             "params": ex.get("params", {}), "corridor": ex.get("corridor"),
             "entities": _all()}
@@ -1025,7 +1032,7 @@ async def save_scenario(body: SaveIn):
 
 def _restore_entities(ents: list[dict]) -> None:
     """Replace this workspace's entities with a saved set, remapping ids so several workspaces can hold the same scenario."""
-    remap = {e["id"]: uuid.uuid4().hex[:8] for e in ents}
+    remap = {e["id"]: uuid.uuid4().hex[:16] for e in ents}
     with get_db().tx() as c:
         c.execute("DELETE FROM emo_entities WHERE ws=?", (WS.get(),))
         for e in ents:
@@ -1037,7 +1044,7 @@ def _restore_entities(ents: list[dict]) -> None:
             e["updated_at"] = now_iso()
             cols = list(e)
             c.execute(f"INSERT INTO emo_entities ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [e[k] for k in cols])
-    _COV.clear(); _P2P.clear(); _LAST.clear()
+    _LAST.clear()
 
 
 @router.post("/scenarios/{sid}/load")

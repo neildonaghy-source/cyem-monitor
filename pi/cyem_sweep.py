@@ -35,9 +35,15 @@ def node_url() -> str | None:
 
 def sweep():
     """One rtl_power pass; returns (f0_hz, bin_hz, [dB...]) or None if the dongle is busy."""
-    p = subprocess.run(["rtl_power", "-f", f"{F_LO}:{F_HI}:{BIN}", "-g", GAIN, "-i", "2", "-1", "-c", "20%", "-"],
-                       capture_output=True, text=True, timeout=900)
-    if p.returncode != 0 or not p.stdout.strip():
+    cmd = ["rtl_power", "-f", f"{F_LO}:{F_HI}:{BIN}", "-g", GAIN, "-i", "2", "-1", "-c", "20%", "-"]
+    for attempt in (1, 2):                          # a just-released dongle can take a few seconds to free
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        if p.returncode == 0 and p.stdout.strip():
+            break
+        tail = " | ".join(p.stderr.strip().splitlines()[-6:])
+        print(f"rtl_power failed (exit {p.returncode}, attempt {attempt}): {tail}", flush=True)
+        time.sleep(8)
+    else:
         return None
     rows = sorted((r for r in csv.reader(io.StringIO(p.stdout)) if len(r) > 6), key=lambda r: float(r[2]))
     f0, step, vals = float(rows[0][2]), float(rows[0][4]), []

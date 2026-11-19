@@ -36,7 +36,7 @@ final class Tailnet {
     /// The build's auth key, if one was bundled.
     static let authKey: String? = {
         struct Cfg: Decodable { var authKey: String? }
-        guard let u = Bundle.main.url(forResource: "tailnet", withExtension: "json"), let d = try? Data(contentsOf: u),
+        guard let u = Bundle.main.url(forResource: "tailnet", withExtension: "json", subdirectory: "Config"), let d = try? Data(contentsOf: u),
               let k = try? JSONDecoder().decode(Cfg.self, from: d).authKey, k.hasPrefix("tskey-") else { return nil }
         return k
     }()

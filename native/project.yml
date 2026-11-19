@@ -21,8 +21,8 @@ targets:
     platform: iOS
     sources:
       - Shared
-      - path: Config/tailnet.json                          # pre-approved tailnet key, not in git (README)
-        optional: true
+      - path: Config                                       # folder: tailnet.json (pre-approved key, not in git) when present
+        type: folder
         buildPhase: resources
     dependencies:
       - framework: Vendor/ios/TailscaleKit.framework        # scripts/build-tailscalekit.sh
@@ -44,8 +44,8 @@ targets:
     platform: macOS
     sources:
       - Shared
-      - path: Config/tailnet.json
-        optional: true
+      - path: Config                                       # folder: tailnet.json (pre-approved key, not in git) when present
+        type: folder
         buildPhase: resources
     dependencies:
       - framework: Vendor/macos/TailscaleKit.framework      # scripts/build-tailscalekit.sh

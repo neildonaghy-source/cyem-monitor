@@ -10,9 +10,9 @@
   const CORR_COL = { transmit: '#f3b23e', silent: '#45d38a' };
   function emoCorridorClear() { corrLayer.clearLayers(); if (EMO.corr) { EMO.corr.res = null; EMO.corr.to = null; } }
   function emoCorridorDraw() {
-    corrLayer.clearLayers(); const c = EMO.corr; if (!c) return;
+    corrLayer.clearLayers(); document.body.dataset.corrLegs = 0; const c = EMO.corr; if (!c) return;
     if (c.to) L.circleMarker(c.to, { radius: 6, color: '#fff', weight: 2, fillColor: '#3c8cff', fillOpacity: 0.9 }).bindTooltip('Corridor destination').addTo(corrLayer);
-    const r = c.res; if (!r) return;
+    const r = c.res; document.body.dataset.corrLegs = r ? r.legs.length : 0; if (!r) return;
     if (r.band) L.imageOverlay(r.band, r.bounds, { opacity: 0.8, interactive: false }).addTo(corrLayer);
     r.legs.forEach((lg, i) => L.polyline(lg.path, { color: CORR_COL[lg.emcon], weight: 5, opacity: 0.95 })
       .bindTooltip(`Leg ${i + 1}: ${lg.km} km, ${lg.minutes} min, ${lg.emcon}<br>detect ${lg.p_detect}% · fix ${lg.p_fix}% · radar ${lg.p_radar}% · C2 ${lg.p_c2}%`).addTo(corrLayer));
@@ -21,7 +21,7 @@
     const s = r.summary, v = (lg) => lg.verified ? `${lg.verified.p_detect}%${lg.verified.p_c2 != null ? ` / ${lg.verified.p_c2}%` : ''}` : '–';
     return `<p><b>${esc(r.unit)}</b> (${esc(r.domain)}) ${s.km} km in about ${s.minutes} min at ${s.speed_kmh} km/h <span class="dim">(direct ${s.direct_km} km)</span>; transmitting on ${s.transmit_pct}% of the route.
       Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost} against ${s.direct_cost} straight; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
-      <p><span style="color:${CORR_COL.transmit}">━</span> transmit <span style="color:${CORR_COL.silent}">━</span> silent <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
+      <p><span style="color:${CORR_COL.transmit}">■</span> transmit leg <span style="color:${CORR_COL.silent}">■</span> silent leg <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
       <table class="grid"><tr><th>Leg</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>C2</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
       ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_c2}%</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
       ${s.sensors.length ? '' : '<p class="dim">No opposing ES sensor covers this unit\'s band.</p>'}<p class="dim">${esc(r.notes)}</p>`;

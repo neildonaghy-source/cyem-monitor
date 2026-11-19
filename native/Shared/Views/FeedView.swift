@@ -6,8 +6,16 @@ struct FeedView: View {
 
     var body: some View {
         @Bindable var m = model
-        List(model.items, selection: $selection) { item in
-            NavigationLink(value: item) { ItemRow(item: item) }
+        List(selection: $selection) {
+            ForEach(FeedGroup.build(model.items)) { g in
+                if g.items.count == 1 {
+                    NavigationLink(value: g.items[0]) { ItemRow(item: g.items[0]) }
+                } else {
+                    DisclosureGroup {
+                        ForEach(g.items) { item in NavigationLink(value: item) { ItemRow(item: item) } }
+                    } label: { GroupRow(group: g) }
+                }
+            }
         }
         .navigationDestination(for: Item.self) { ItemDetail(item: $0) }
         .overlay {
@@ -96,5 +104,52 @@ struct ItemDetail: View {
             .padding()
         }
         .navigationTitle(item.kind)
+    }
+}
+
+/// A burst of like items (same source and kind, close in time) shown as one row, as 50 BGP hijacks in one fetch.
+struct FeedGroup: Identifiable {
+    var items: [Item]
+    var id: String { items[0].id }
+
+    static func build(_ items: [Item], minSize: Int = 4, window: TimeInterval = 3 * 3600) -> [FeedGroup] {
+        var out: [FeedGroup] = []
+        var used = Set<String>()
+        for (i, it) in items.enumerated() where !used.contains(it.id) {
+            let t0 = it.published ?? .distantPast
+            let like = items[i...].filter { !used.contains($0.id) && $0.source == it.source && $0.kind == it.kind
+                && abs(($0.published ?? .distantPast).timeIntervalSince(t0)) <= window }
+            if like.count >= minSize {
+                like.forEach { used.insert($0.id) }
+                out.append(FeedGroup(items: like))
+            } else {
+                used.insert(it.id)
+                out.append(FeedGroup(items: [it]))
+            }
+        }
+        return out
+    }
+}
+
+struct GroupRow: View {
+    let group: FeedGroup
+    var body: some View {
+        let first = group.items[0]
+        let worst = group.items.map(\.severity).max() ?? first.severity
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 2).fill(Palette.severity(worst)).frame(width: 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(group.items.count) × \(first.kind.replacingOccurrences(of: "_", with: " ")) from \(first.source)")
+                    .font(.callout.weight(.medium))
+                Text(first.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(first.domain.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(Palette.domain(first.domain))
+                    Spacer(minLength: 0)
+                    Text(first.published.map { $0.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)) } ?? "")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 }

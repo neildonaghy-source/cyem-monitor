@@ -4,6 +4,7 @@ import Foundation
 /// answers 401 until the app has signed in with POST /login, after which a session cookie (30 days) rides along.
 final class APIClient: Sendable {
     let base: URL
+    let workspace: String                       // X-CyEM-WS: "default" is the shared EMO scenario
     private let session: URLSession
 
     enum APIError: LocalizedError {
@@ -19,8 +20,9 @@ final class APIClient: Sendable {
         }
     }
 
-    init(base: URL) {
+    init(base: URL, workspace: String = "default") {
         self.base = base
+        self.workspace = workspace
         let cfg = URLSessionConfiguration.default
         cfg.httpCookieStorage = .shared
         cfg.httpShouldSetCookies = true
@@ -36,9 +38,28 @@ final class APIClient: Sendable {
         guard let url = comps.url else { throw APIError.badURL }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(workspace, forHTTPHeaderField: "X-CyEM-WS")
         let (data, resp) = try await session.data(for: req)
         try check(resp, data)
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// POST/PUT/DELETE with a JSON body (an empty object when none); decodes the answer.
+    func send<T: Decodable & Sendable>(_ method: String = "POST", _ path: String, query: [String: String?] = [:],
+                                       body: (any Encodable & Sendable)? = nil, as type: T.Type = T.self, timeout: TimeInterval = 300) async throws -> T {
+        guard var comps = URLComponents(url: base.appending(path: path), resolvingAgainstBaseURL: false) else { throw APIError.badURL }
+        let q = query.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }
+        if !q.isEmpty { comps.queryItems = q }
+        guard let url = comps.url else { throw APIError.badURL }
+        var req = URLRequest(url: url, timeoutInterval: timeout)
+        req.httpMethod = method
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(workspace, forHTTPHeaderField: "X-CyEM-WS")
+        if method != "DELETE" { req.httpBody = try body.map { try JSONEncoder().encode($0) } ?? Data("{}".utf8) }
+        let (data, resp) = try await session.data(for: req)
+        try check(resp, data)
+        return try JSONDecoder().decode(T.self, from: data.isEmpty ? Data("{}".utf8) : data)
     }
 
     func signIn(username: String, password: String) async throws {

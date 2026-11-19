@@ -28,6 +28,7 @@ struct RootView: View {
             Tab("Overview", systemImage: "gauge.with.dots.needle.33percent") { NavigationStack { OverviewView() } }
             Tab("Feed", systemImage: "list.bullet.rectangle") { NavigationStack { FeedView() } }
             Tab("Map", systemImage: "map") { NavigationStack { MapScreen() } }
+            Tab("EMO", systemImage: "dot.radiowaves.left.and.right") { NavigationStack { EMOView() } }
             #if os(iOS)
             Tab("Settings", systemImage: "gearshape") { NavigationStack { SettingsView() } }
             #endif

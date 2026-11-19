@@ -14,6 +14,18 @@ final class AppModel {
     var items: [Item] = []
     var mapItems: [Item] = []
     let layers = LayerStore()
+    let emo = EMOModel()
+    enum WSMode: String { case shared, device }
+    /// EMO workspace: the shared scenario, or one private to this device (as the web app's "This device only").
+    var wsMode: WSMode { didSet { UserDefaults.standard.set(wsMode.rawValue, forKey: "wsMode"); rebuild() } }
+    var wsKey: String { "\(serverText)|\(workspace)" }
+    var workspace: String {
+        if wsMode == .shared { return "default" }
+        if let v = UserDefaults.standard.string(forKey: "wsDevice") { return v }
+        let v = "n" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(9)).lowercased()
+        UserDefaults.standard.set(v, forKey: "wsDevice")
+        return v
+    }
     var domain: Domain = .all
     var search = ""
     var hours = 48
@@ -24,7 +36,15 @@ final class AppModel {
     init() {
         let s = UserDefaults.standard.string(forKey: "server") ?? AppModel.defaultServer
         serverText = s
-        api = APIClient(base: URL(string: s) ?? URL(string: AppModel.defaultServer)!)
+        let mode = WSMode(rawValue: UserDefaults.standard.string(forKey: "wsMode") ?? "") ?? .shared
+        wsMode = mode
+        api = APIClient(base: URL(string: s) ?? URL(string: AppModel.defaultServer)!, workspace: "default")
+        api = APIClient(base: api.base, workspace: workspace)
+    }
+
+    private func rebuild() {
+        api = APIClient(base: api.base, workspace: workspace)
+        emo.run = nil; emo.focus = nil; emo.entities = []
     }
 
     func applyServer() {
@@ -32,7 +52,7 @@ final class AppModel {
         if !s.hasSuffix("/") { s += "/" }
         guard let u = URL(string: s), u.scheme == "https" || u.scheme == "http" else { lastError = APIClient.APIError.badURL.localizedDescription; return }
         serverText = s
-        api = APIClient(base: u)
+        api = APIClient(base: u, workspace: workspace)
         Task { await refresh() }
     }
 

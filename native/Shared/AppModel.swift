@@ -12,6 +12,8 @@ final class AppModel {
     var needsSignIn = false
     var status: StatusResponse?
     var items: [Item] = []
+    var mapItems: [Item] = []
+    let layers = LayerStore()
     var domain: Domain = .all
     var search = ""
     var hours = 48
@@ -45,6 +47,7 @@ final class AppModel {
                 "hours": String(hours), "limit": "300"])
             let (s1, i1) = try await (st, it)
             status = s1; items = i1.items
+            await refreshLayers()
             needsSignIn = false; lastError = nil; lastRefresh = .now
         } catch APIClient.APIError.signInRequired {
             needsSignIn = true
@@ -53,6 +56,13 @@ final class AppModel {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// Map content: placed news items (7 days, as the web map) and the enabled layers.
+    func refreshLayers() async {
+        struct Placed: Decodable, Sendable { var points: [Item] }
+        if let p = try? await api.get("api/layers/items", query: ["hours": "168"], as: Placed.self) { mapItems = p.points }
+        await layers.refresh(api: api, items: mapItems)
     }
 
     func signIn(_ user: String, _ pw: String) async -> String? {

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19e';
+  const BUILD = '2026-11-19f';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -91,7 +91,7 @@
     PICK = { cancel: (reopen) => { end(); if (reopen && onCancel) onCancel(); } };
     bar.querySelector('button').addEventListener('click', () => PICK?.cancel(true));
     document.addEventListener('keydown', key);
-    setTimeout(() => map.on('click', hit), 0);             // not the click that started the pick
+    map.on('click', hit);                                  // the button that starts a pick is outside the map
   }
   map.setMaxBounds([[-85, -200], [85, 200]]);
   window.__cyemMap = map; // test hook for tests/ui/layer_click.py

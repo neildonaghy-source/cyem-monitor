@@ -16,7 +16,7 @@
     PICK = { cancel: (reopen) => { end(); if (reopen && onCancel) onCancel(); } };
     bar.querySelector('button').addEventListener('click', () => PICK?.cancel(true));
     document.addEventListener('keydown', key);
-    setTimeout(() => map.on('click', hit), 0);             // not the click that started the pick
+    map.on('click', hit);                                  // the button that starts a pick is outside the map
   }
   map.setMaxBounds([[-85, -200], [85, 200]]);
   window.__cyemMap = map; // test hook for tests/ui/layer_click.py

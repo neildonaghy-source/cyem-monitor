@@ -17,6 +17,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   and `~/ha-review/venv/bin/python` (the venv's Playwright wants build 1243, which is not installed). The map uses the
   canvas renderer, so checks read `document.body.dataset.corrLegs` rather than counting SVG paths.
 - Inside the container the app listens on 8080 (3020 is the host port).
+- Keyed feeds live since 19 Nov: AISSTREAM_KEY, OPENCELLID_KEY and CLOUDFLARE_API_TOKEN in `/home/cyem/cyem/.env` (600;
+  previous copy `.env.bak-20261119-keys`). First collects: ais 182 vessels, cloudflare 2 outages and 50 hijacks, cells 147,292.
 - No Home Assistant panel (removed at Neil's request). Never add one back unasked.
 - Internet log-in: one shared account, `cyem-team` (created 18 Nov at Neil's request; the password went to him in chat
   and is stored nowhere else). Change it with `docker exec -it cyem python -m app.cli user passwd cyem-team`.
@@ -83,7 +85,6 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 - Off-box copy of `data-store`: proposed nightly push from the EVO to trade with a key limited to one folder, then
   trade's OneDrive job takes it off-site. Needs his yes.
-- API keys for aisstream, OpenCelliD and Cloudflare Radar (into `/home/cyem/cyem/.env` on the EVO).
 - The native app source: Neil still has the Mac it was built on in September and will check it on 19 Nov. When the
   source is shared (private GitHub repo, or a zip without DerivedData), the work is: point the apps at
   `https://nucbox-evo-x2.tail013324.ts.net/`, rebuild and re-sign on his Mac with Xcode (about one session; signing

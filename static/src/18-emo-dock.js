@@ -5,6 +5,65 @@
     const order = EMO.side === 'red' ? ['red', 'blue'] : ['blue', 'red'];
     return `<table class="grid"><tr><th></th>${order.map((sd) => `<th style="color:${SIDE_COL[sd]}">${sd === EMO.side ? 'Own (' + sd + ')' : sd}</th>`).join('')}</tr>${SCORE_KEYS.map(([k, l]) => `<tr><td>${l}</td>${order.map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>`;
   }
+  // ---- Corridor: one unit's EM manoeuvre corridor to a picked point (POST /api/emo/plan/corridor)
+  const corrLayer = L.layerGroup().addTo(map);
+  const CORR_COL = { transmit: '#f3b23e', silent: '#45d38a' };
+  function emoCorridorClear() { corrLayer.clearLayers(); if (EMO.corr) { EMO.corr.res = null; EMO.corr.to = null; } }
+  function emoCorridorDraw() {
+    corrLayer.clearLayers(); const c = EMO.corr; if (!c) return;
+    if (c.to) L.circleMarker(c.to, { radius: 6, color: '#fff', weight: 2, fillColor: '#3c8cff', fillOpacity: 0.9 }).bindTooltip('Corridor destination').addTo(corrLayer);
+    const r = c.res; if (!r) return;
+    if (r.band) L.imageOverlay(r.band, r.bounds, { opacity: 0.8, interactive: false }).addTo(corrLayer);
+    r.legs.forEach((lg, i) => L.polyline(lg.path, { color: CORR_COL[lg.emcon], weight: 5, opacity: 0.95 })
+      .bindTooltip(`Leg ${i + 1}: ${lg.km} km, ${lg.minutes} min, ${lg.emcon}<br>detect ${lg.p_detect}% · fix ${lg.p_fix}% · radar ${lg.p_radar}% · C2 ${lg.p_c2}%`).addTo(corrLayer));
+  }
+  function emoCorridorHtml(r) {
+    const s = r.summary, v = (lg) => lg.verified ? `${lg.verified.p_detect}%${lg.verified.p_c2 != null ? ` / ${lg.verified.p_c2}%` : ''}` : '–';
+    return `<p><b>${esc(r.unit)}</b> (${esc(r.domain)}) ${s.km} km in about ${s.minutes} min at ${s.speed_kmh} km/h <span class="dim">(direct ${s.direct_km} km)</span>; transmitting on ${s.transmit_pct}% of the route.
+      Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost} against ${s.direct_cost} straight; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
+      <p><span style="color:${CORR_COL.transmit}">━</span> transmit <span style="color:${CORR_COL.silent}">━</span> silent <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
+      <table class="grid"><tr><th>Leg</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>C2</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
+      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_c2}%</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
+      ${s.sensors.length ? '' : '<p class="dim">No opposing ES sensor covers this unit\'s band.</p>'}<p class="dim">${esc(r.notes)}</p>`;
+  }
+  function emoCorridor() {
+    const units = EMO.ents.filter((e) => e.side === 'blue' || e.side === 'red');
+    if (!units.length) return emoDockCard('Corridor', '<p class="dim">No blue or red units in this scenario.</p>');
+    const foc = EMO.ents.find((e) => e.id === EMO.focus && e.side !== 'grey');
+    const c = EMO.corr = EMO.corr || { domain: 'ground', emcon: 'auto', silent: 0.6, alt: 150, speed: '' };
+    if (!units.some((e) => e.name === c.mover)) c.mover = (foc || units.find((e) => e.side === EMO.side) || units[0]).name;
+    const b = emoDockCard('Corridor', `<div class="specset">Unit <select id="corr-unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
+        <select id="corr-dom">${[['ground', 'Ground'], ['sea', 'Sea'], ['air', 'Air (low level)']].map(([k, l]) => `<option value="${k}"${c.domain === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span id="corr-altw"${c.domain === 'air' ? '' : ' hidden'}>at <input id="corr-alt" type="number" min="1" max="1000" value="${c.alt}" style="width:58px"> m AGL</span></div>
+      <div class="specset">Speed <input id="corr-speed" type="number" min="1" max="1000" placeholder="auto" value="${c.speed}" style="width:60px"> km/h
+        EMCON <select id="corr-emcon">${[['auto', 'Auto'], ['emit', 'Transmit'], ['silent', 'Silent']].map(([k, l]) => `<option value="${k}"${c.emcon === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span title="Cost per cell of moving without two-way C2: higher means the planner transmits more">silent price <input id="corr-sil" type="number" min="0" max="10" step="0.1" value="${c.silent}" style="width:52px"></span></div>
+      <div class="specset"><button id="corr-pick">Pick destination</button> <span id="corr-to" class="mono dim">${c.to ? `${c.to[0]}, ${c.to[1]}` : 'none'}</span>
+        <button id="corr-go" class="primary"${c.to ? '' : ' disabled'}>Plan</button> <button id="corr-clear">Clear</button> <span id="corr-st" class="dim"></span></div>
+      <div id="corr-out">${c.res ? emoCorridorHtml(c.res) : `<p class="dim">At T+${Math.round(EMO.t)} min, with the last run's atmosphere. Notional data; screening grade.</p>`}</div>`);
+    const read = () => { c.mover = b.querySelector('#corr-unit').value; c.domain = b.querySelector('#corr-dom').value; c.alt = +b.querySelector('#corr-alt').value || 150;
+      c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0); };
+    b.querySelector('#corr-dom').addEventListener('change', (e) => { b.querySelector('#corr-altw').hidden = e.target.value !== 'air'; });
+    b.querySelector('#corr-pick').addEventListener('click', () => {
+      read(); map.getContainer().style.cursor = 'crosshair'; b.querySelector('#corr-st').textContent = 'click the map for the destination';
+      map.once('click', (ev) => { map.getContainer().style.cursor = ''; c.to = [+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]; c.res = null; emoCorridorDraw(); if (document.getElementById('emo-dockcard')) emoCorridor(); });
+    });
+    b.querySelector('#corr-clear').addEventListener('click', () => { emoCorridorClear(); emoCorridor(); });
+    b.querySelector('#corr-go').addEventListener('click', async () => {
+      read(); const st = b.querySelector('#corr-st'), t0 = Date.now();
+      const tick = setInterval(() => { st.textContent = `planning… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+      st.innerHTML = '<span class="spinner"></span> planning…';
+      const body = { mover: c.mover, to_lat: c.to[0], to_lon: c.to[1], domain: c.domain, emcon: c.emcon, silent_cost: c.silent };
+      if (c.domain === 'air') body.alt_m = c.alt;
+      if (+c.speed > 0) body.speed_kmh = +c.speed;
+      try {
+        c.res = await postJson(`/api/emo/plan/corridor?t_min=${EMO.t}`, body); clearInterval(tick);
+        emoCorridorDraw(); if (c.res.bounds) map.fitBounds(c.res.bounds, { padding: [20, 20] });
+        if (document.getElementById('emo-dockcard')) emoCorridor();
+      } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    });
+    return b;
+  }
   function emoDockCard(title, html) {
     let c = document.getElementById('emo-dockcard'); if (!c) { c = document.createElement('div'); c.id = 'emo-dockcard'; document.body.appendChild(c); }
     c.innerHTML = `<div class="emo-card-head"><b>${title}</b><span class="btns"><button id="emo-dockclose">×</button></span></div><div id="emo-dockbody">${html}</div>`;
@@ -27,6 +86,7 @@
       b.querySelector('[data-space-go]').addEventListener('click', () => { localStorage.setItem('cyem-ws-mode', toDevice ? 'device' : 'shared'); location.reload(); });
       return;
     }
+    if (tool === 'corridor') { emoCorridor(); return; }
     if (tool === 'time') { const sc = document.getElementById('emo-scrub'); if (sc) sc.classList.toggle(matchMedia('(pointer: coarse)').matches ? 'open' : 'closed'); else emoScrubber(); return; }
     if (tool === 'side') { EMO.side = EMO.side === 'blue' ? 'red' : 'blue'; localStorage.setItem('cyem-side', EMO.side); document.getElementById('emo-dock')?.remove(); emoDock(); document.getElementById('emo-dockcard')?.remove(); return; }
     if (tool === 'layers') {
@@ -90,7 +150,7 @@
   function emoDock() {
     if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -184,7 +244,7 @@
     EMO.hidden = true; EMO.playing = false; EMO.pending = false; try { EMO.abort?.abort(); } catch (e) { /* ignore */ }
     if (staleTimer) { clearInterval(staleTimer); staleTimer = null; } clearInterval(emoTick);
     EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; EMO.res = null;
-    emoLayer.clearLayers(); planLayer.clearLayers();
+    emoLayer.clearLayers(); planLayer.clearLayers(); emoCorridorClear();
     ['emo-chip', 'emo-dock', 'emo-dockcard', 'emo-card', 'emo-askbar', 'emo-askcard', 'emo-stale', 'emo-scrub'].forEach((id) => document.getElementById(id)?.remove());
     document.body.classList.remove('emo-hascard', 'emo-nolabels');
     if ($('#modal-title').textContent.startsWith('EMO')) $('#modal').classList.remove('show');
@@ -362,6 +422,7 @@
       <div class="specset">Timeline: step <input id="emo-tlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-tlnet"><option value="">(none)</option>${EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id)).map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
         <button id="emo-tl">Run timeline</button> <span id="emo-tlstatus" class="dim"></span></div>
       <div id="emo-tlout"></div>
+      <div class="specset">Corridor: one unit's route to a point, EMCON leg by leg <button id="emo-corr">Plan a corridor</button> <span class="dim">(opens beside the map)</span></div>
       <div class="specset">Adversary COA: <select id="emo-coaside"><option value="red">Red</option><option value="blue">Blue</option></select>
         <button id="emo-coa-ml" title="Most likely: at most two modest moves">MLCOA</button> <button id="emo-coa-md" title="Most dangerous: every jammer and DF site re-sited for effect">MDCOA</button>
         <button id="emo-coa-rev">Revert</button> <span id="emo-coaout" class="dim"></span></div>
@@ -424,6 +485,7 @@
           ${emoTimelineMet(r)}<p class="dim">${esc(r.notes)}</p>`;
       } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
     });
+    $('#emo-corr').addEventListener('click', () => { $('#modal').classList.remove('show'); emoCorridor(); });
     $('#emo-coa-ml').addEventListener('click', () => coa('mlcoa'));
     $('#emo-coa-md').addEventListener('click', () => coa('mdcoa'));
     $('#emo-coa-rev').addEventListener('click', () => coa('revert'));

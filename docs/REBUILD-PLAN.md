@@ -12,7 +12,7 @@ the planning. Notional data only, as before.
 | Access | Tailnet without log-in; the internet through Tailscale Funnel with a username and password (`app/auth.py`, accounts via `python -m app.cli user`). Password only, no second factor | Decided 18 Nov |
 | Language model | Ollama on the EVO-X2 for briefs and Ask | Decided |
 | SDR | The RTL-SDR on the MS-A2 is passed to trade for the Ecowitt weather receiver; CyEM sweeps wait for a second dongle or the Pi | Open |
-| Clients | Web app first (installable since 18 Nov). Native Mac and iPhone apps: the source is on the Mac they were built on in September, which Neil still has; he is checking it on 19 Nov. Then repoint to the EVO URL and re-sign (about one session) | Source located 18 Nov |
+| Clients | Web app (installable since 18 Nov). The September native apps left no source or history; Neil chose new fully native SwiftUI apps for Mac and iPhone, installed from Xcode (docs/NATIVE-PLAN.md) | Decided 19 Nov |
 | Code copy off GitHub | `~/Backups/cyem-monitor` on the Mac mini (bundle, SHA-256, README); refresh after merges | Done 18 Nov |
 
 ## Phases
@@ -77,7 +77,7 @@ steps through it. With no met data the run falls back to the standard atmosphere
 
 ## Open questions for Neil
 
-- The native app source: answered 18 Nov (Neil has the September Mac; checking on 19 Nov).
+- The native app source: none exists (19 Nov); new native apps instead.
 - Host size and access as assumed above?
 - Which vignette first for the corridor planner? (Proposed: the battlegroup on Salisbury Plain for ground, then
   Vestfjord for maritime with ducting.)

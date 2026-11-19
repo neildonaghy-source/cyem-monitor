@@ -205,7 +205,8 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                      f"cells on routes within {round(body.margin * 100)}% of the best route's cost. Transmit or silent is chosen "
                      "per cell (silent costs two-way C2). Each leg's worst point is re-checked with the exact pairwise model "
                      "(verified values). Ground routes avoid sea and slopes over "
-                     f"{body.max_slope_pct:g}%; sea routes keep to water; air routes fly {h:g} m above ground."}
+                     f"{body.max_slope_pct:g}%; sea routes keep to water; air routes fly a set height above ground"
+                     + (f" ({h:g} m)." if body.domain == "air" else ".")}
 
 
 async def _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, pos):

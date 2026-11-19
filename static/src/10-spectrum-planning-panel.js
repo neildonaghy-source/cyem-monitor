@@ -125,12 +125,10 @@
       draft = formToDraft(readForm());
       $('#modal').classList.remove('show');
       showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => {
-        map.getContainer().style.cursor = '';
+      pickOnMap('the emitter position', (e) => {
         draft = { ...draft, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) };
         openSpectrum();
-      });
+      }, () => openSpectrum());
     });
     $('#sp-save')?.addEventListener('click', async () => {
       const f = readForm();

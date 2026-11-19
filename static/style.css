@@ -44,7 +44,8 @@ input:focus, textarea:focus { outline: none; border-color: var(--cyan); }
 #brand { font-weight: 700; letter-spacing: .12em; font-size: 13px; white-space: nowrap; }
 #brand span { color: var(--cyan); }
 #clock { font-family: var(--mono); color: var(--muted); font-size: 12px; white-space: nowrap; }
-#pills { display: flex; gap: 6px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+#pills { display: flex; gap: 6px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }   /* fade: more pills to the right */
 #pills::-webkit-scrollbar { display: none; }
 .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px; background: var(--panel-2); white-space: nowrap; cursor: pointer; font-size: 12px; }
 .pill:hover { border-color: var(--cyan); }
@@ -379,3 +380,7 @@ button.armed { background: #5a1b1b !important; border-color: #ff5c5c !important;
 #sdr-live-ov .lvbar .dim { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #sdr-live-ov .lvbar button { height: 34px; padding: 0 14px; font-size: 13px; border: 1px solid #3c8cff; }
 #sdr-live-ov iframe { flex: 1; width: 100%; border: 0; background: #000; }
+#toast { position: fixed; left: 50%; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 3000;
+  max-width: min(560px, 92vw); padding: 8px 14px; border-radius: 8px; background: rgba(10,14,19,.95); border: 1px solid #3c8cff;
+  color: #e6edf3; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+#toast.show { opacity: 1; } #toast.bad { border-color: #ff4646; }

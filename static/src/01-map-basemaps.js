@@ -1,6 +1,23 @@
   // ---------------------------------------------------------------- map + basemaps
   const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) })
     .setView([38, 18], 3);
+  // One map pick at a time, with a bar to cancel it (Esc too). Starting a pick cancels the one before, so a single click
+  // never sets two positions, and a cancelled pick does not swallow the next ordinary map click.
+  let PICK = null;
+  function pickOnMap(label, onPick, onCancel) {
+    if (PICK) PICK.cancel(false);
+    const el = map.getContainer(); el.style.cursor = 'crosshair';
+    const bar = document.createElement('div'); bar.className = 'emo-trackbar';
+    bar.innerHTML = `<span>Click the map: ${label}</span> <button>Cancel</button>`;
+    document.body.appendChild(bar);
+    const end = () => { map.off('click', hit); document.removeEventListener('keydown', key); el.style.cursor = ''; bar.remove(); PICK = null; };
+    const hit = (ev) => { end(); onPick(ev); };
+    const key = (ev) => { if (ev.key === 'Escape') PICK?.cancel(true); };
+    PICK = { cancel: (reopen) => { end(); if (reopen && onCancel) onCancel(); } };
+    bar.querySelector('button').addEventListener('click', () => PICK?.cancel(true));
+    document.addEventListener('keydown', key);
+    setTimeout(() => map.on('click', hit), 0);             // not the click that started the pick
+  }
   map.setMaxBounds([[-85, -200], [85, 200]]);
   window.__cyemMap = map; // test hook for tests/ui/layer_click.py
   if (START?.view) map.setView([START.view.lat, START.view.lon], Math.max(2, START.view.z - (innerWidth < 700 ? 1 : 0)), { animate: false });

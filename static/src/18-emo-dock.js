@@ -45,8 +45,8 @@
       c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0); };
     b.querySelector('#corr-dom').addEventListener('change', (e) => { b.querySelector('#corr-altw').hidden = e.target.value !== 'air'; });
     b.querySelector('#corr-pick').addEventListener('click', () => {
-      read(); map.getContainer().style.cursor = 'crosshair'; b.querySelector('#corr-st').textContent = 'click the map for the destination';
-      map.once('click', (ev) => { map.getContainer().style.cursor = ''; c.to = [+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]; c.res = null; emoCorridorDraw(); if (document.getElementById('emo-dockcard')) emoCorridor(); });
+      read();
+      pickOnMap('the corridor destination', (ev) => { c.to = [+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]; c.res = null; emoCorridorDraw(); if (document.getElementById('emo-dockcard')) emoCorridor(); }, () => { if (document.getElementById('emo-dockcard')) emoCorridor(); });
     });
     b.querySelector('#corr-clear').addEventListener('click', () => { emoCorridorClear(); emoCorridor(); });
     b.querySelector('#corr-go').addEventListener('click', async () => {
@@ -107,10 +107,10 @@
         const keys = [['net_availability_pct', 'Avail'], ['targetable', 'TQF'], ['denial_achieved', 'Den'], ['radar_tracks', 'Rdr']];
         const row = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${sc?.[sd]?.[k] ?? '–'}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
         box.innerHTML = r.coas.length || r.current ? `<table class="grid"><tr><th></th>${['B', 'R'].map((s) => keys.map(([, l]) => `<th>${s} ${l}</th>`).join('')).join('')}<th></th></tr>${r.current ? row('<i>now</i>', r.current, '') : ''}${r.coas.map((c) => row(esc(c.name), c.score, `<button data-dock-load="${c.id}">Load</button> <button data-dock-del="${c.id}">×</button>`)).join('')}</table>` : '<p class="dim">No COAs saved.</p>';
-        box.querySelectorAll('[data-dock-load]').forEach((x) => x.addEventListener('click', async () => { const r2 = await postJson(`/api/emo/coas/${x.dataset.dockLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); emoDraw(); await emoRun(); list(); }));
-        box.querySelectorAll('[data-dock-del]').forEach((x) => x.addEventListener('click', async () => { await fetch(`/api/emo/coas/${x.dataset.dockDel}`, { method: 'DELETE' }); list(); }));
+        box.querySelectorAll('[data-dock-load]').forEach((x) => x.addEventListener('click', async () => { try { emoAbortRun(); const r2 = await postJson(`/api/emo/coas/${x.dataset.dockLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); emoDraw(); await emoRun(); list(); } catch (e) { toast(`COA load failed: ${e.message}`); } }));
+        box.querySelectorAll('[data-dock-del]').forEach((x) => x.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${x.dataset.dockDel}`)) list(); }));
       };
-      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); });
+      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; try { await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); } catch (e) { toast(`COA save failed: ${e.message}`); } });
       list();
     } else if (tool === 'red') {
       const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside"><option value="red"${EMO.side === 'blue' ? ' selected' : ''}>Red</option><option value="blue"${EMO.side === 'red' ? ' selected' : ''}>Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
@@ -210,6 +210,8 @@
       let text = '';
       try {
         const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
         const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
         while (true) {
           const { value, done } = await rd.read(); if (done) break;
@@ -280,6 +282,7 @@
     }
     finally { clearInterval(emoTick); EMO.busy = false; EMO.abort = null; emoStaleBanner(); if (EMO.pending) emoRun(); }
   }
+  function emoAbortRun() { try { EMO.abort?.abort(); } catch (e) { /* nothing running */ } EMO.pending = false; }
   function emoStatus(t) {
     if (EMO.hidden) return;
     const el = $('#emo-status'); if (el) el.textContent = t;
@@ -455,9 +458,9 @@
           ${r.current ? rowOf('<i>current</i>', r.current, '') : ''}
           ${r.coas.map((c) => rowOf(esc(c.name), c.score, `<button data-coa-load="${c.id}">Load</button> <button data-coa-del="${c.id}">×</button>`)).join('')}</table>`;
         box.querySelectorAll('[data-coa-load]').forEach((b) => b.addEventListener('click', async () => {
-          const r2 = await postJson(`/api/emo/coas/${b.dataset.coaLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); await openEMO(); emoRun();
+          emoAbortRun(); let r2; try { r2 = await postJson(`/api/emo/coas/${b.dataset.coaLoad}/load`, {}); } catch (e) { return toast(`COA load failed: ${e.message}`); } EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); await openEMO(); emoRun();
         }));
-        box.querySelectorAll('[data-coa-del]').forEach((b) => b.addEventListener('click', async () => { await fetch(`/api/emo/coas/${b.dataset.coaDel}`, { method: 'DELETE' }); coaList(); }));
+        box.querySelectorAll('[data-coa-del]').forEach((b) => b.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${b.dataset.coaDel}`)) coaList(); }));
       } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
     };
     coaList();
@@ -502,7 +505,10 @@
       const out = $('#emo-askout'); out.innerHTML = '<span class="spinner"></span> thinking… (about a minute)';
       let text = '';
       try {
-        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) });
+        const sel = EMO.multi && EMO.sel.length ? EMO.sel : EMO.focus ? [EMO.focus] : null;   // as the dock's Ask
+        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
         const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
         while (true) {
           const { value, done } = await rd.read(); if (done) break;
@@ -519,6 +525,7 @@
       EMO.loadArmed = false;
       emoStatus('loading…');
       try {
+        emoAbortRun();
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
         EMO.ents = r.entities; EMO.about = r.about; EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
@@ -544,17 +551,16 @@
     $('#emo-sc-save').addEventListener('click', async () => { const nm = $('#emo-sc-name').value.trim(); if (!nm) return;
       try { await postJson('/api/emo/scenarios', { name: nm }); openEMO(); } catch (err) { emoStatus(err.message); } });
     body.querySelectorAll('button[data-sc-load]').forEach((b) => b.addEventListener('click', async () => {
-      await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
+      emoAbortRun(); try { await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); } catch (e) { return toast(`Scenario load failed: ${e.message}`); } EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
     body.querySelectorAll('button[data-sc-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!armConfirm(b)) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
+      if (!armConfirm(b)) return; if (await apiDel(`/api/emo/scenarios/${b.dataset.scDel}`)) openEMO(); }));
     $('#emo-del')?.addEventListener('click', async () => {
       if (!armConfirm($('#emo-del'), 'Tap again to delete')) return;
-      await fetch(`/api/emo/${encodeURIComponent(EMO.editId)}`, { method: 'DELETE' }); EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
+      if (!await apiDel(`/api/emo/${encodeURIComponent(EMO.editId)}`)) return; EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
     });
     $('#emo-pick').addEventListener('click', () => {
       EMO.draft = emoRead(); $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (ev) => { map.getContainer().style.cursor = ''; EMO.draft.lat = +ev.latlng.lat.toFixed(5); EMO.draft.lon = +ev.latlng.lng.toFixed(5); openEMO(); });
+      pickOnMap('the entity position', (ev) => { EMO.draft.lat = +ev.latlng.lat.toFixed(5); EMO.draft.lon = +ev.latlng.lng.toFixed(5); openEMO(); }, () => openEMO());
     });
     $('#emo-trk-clear').addEventListener('click', () => { EMO.draft = { ...emoRead(), track: null }; openEMO(); });
     $('#emo-trk').addEventListener('click', () => {

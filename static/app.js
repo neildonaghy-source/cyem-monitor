@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19d';
+  const BUILD = '2026-11-19e';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -50,6 +50,17 @@
   }
   const _fetch = window.fetch.bind(window);
   window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };
+  // A short message at the bottom of the screen: errors from actions that used to fail silently.
+  function toast(text, bad = true) {
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+    t.textContent = text; t.className = bad ? 'bad show' : 'show';
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 6000);
+  }
+  // DELETE that reports failure (a 403 from the cross-site guard or a 404 used to look like success).
+  async function apiDel(path) {
+    try { await api(path, { method: 'DELETE' }); return true; } catch (e) { toast(`Delete failed: ${e.message}`); return false; }
+  }
   async function api(path, opts) {
     const r = await fetch(path, opts);
     if (r.status === 401) {                  // internet session expired or signed out elsewhere: back to the log-in page
@@ -65,6 +76,23 @@
   // ---------------------------------------------------------------- map + basemaps
   const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) })
     .setView([38, 18], 3);
+  // One map pick at a time, with a bar to cancel it (Esc too). Starting a pick cancels the one before, so a single click
+  // never sets two positions, and a cancelled pick does not swallow the next ordinary map click.
+  let PICK = null;
+  function pickOnMap(label, onPick, onCancel) {
+    if (PICK) PICK.cancel(false);
+    const el = map.getContainer(); el.style.cursor = 'crosshair';
+    const bar = document.createElement('div'); bar.className = 'emo-trackbar';
+    bar.innerHTML = `<span>Click the map: ${label}</span> <button>Cancel</button>`;
+    document.body.appendChild(bar);
+    const end = () => { map.off('click', hit); document.removeEventListener('keydown', key); el.style.cursor = ''; bar.remove(); PICK = null; };
+    const hit = (ev) => { end(); onPick(ev); };
+    const key = (ev) => { if (ev.key === 'Escape') PICK?.cancel(true); };
+    PICK = { cancel: (reopen) => { end(); if (reopen && onCancel) onCancel(); } };
+    bar.querySelector('button').addEventListener('click', () => PICK?.cancel(true));
+    document.addEventListener('keydown', key);
+    setTimeout(() => map.on('click', hit), 0);             // not the click that started the pick
+  }
   map.setMaxBounds([[-85, -200], [85, 200]]);
   window.__cyemMap = map; // test hook for tests/ui/layer_click.py
   if (START?.view) map.setView([START.view.lat, START.view.lon], Math.max(2, START.view.z - (innerWidth < 700 ? 1 : 0)), { animate: false });
@@ -845,6 +873,8 @@
     let text = '';
     try {
       const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+      if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
       const reader = r.body.getReader();
       const dec = new TextDecoder();
       let buf = '';
@@ -882,7 +912,7 @@
     if (tab) {
       try { localStorage.setItem('cyem-plan-tab', tab[0]); } catch (e) { /* ignore */ }
       html = `<div class="plantabs">${PLAN_TABS.map(([k, l]) => `<button data-plan="${k}" class="${k === tab[0] ? 'active' : ''}">${l}</button>`).join('')}<span class="dim">${esc(title)}</span></div>` + html;
-      title = 'Planning';
+      title = 'Plan';
     }
     $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show');
     if (tab) $$('#modal-body .plantabs button').forEach((b) => b.addEventListener('click', () => { if (b.dataset.plan !== tab[0]) openPlanning(b.dataset.plan); }));
@@ -1032,12 +1062,10 @@
       draft = formToDraft(readForm());
       $('#modal').classList.remove('show');
       showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => {
-        map.getContainer().style.cursor = '';
+      pickOnMap('the emitter position', (e) => {
         draft = { ...draft, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) };
         openSpectrum();
-      });
+      }, () => openSpectrum());
     });
     $('#sp-save')?.addEventListener('click', async () => {
       const f = readForm();
@@ -1154,7 +1182,7 @@
     }));
     body.querySelectorAll('button[data-lk-del]').forEach((b) => b.addEventListener('click', async () => {
       if (!armConfirm(b)) return;
-      await fetch(`/api/links/${encodeURIComponent(b.dataset.lkDel)}`, { method: 'DELETE' });
+      if (!await apiDel(`/api/links/${encodeURIComponent(b.dataset.lkDel)}`)) return;
       if (linkEditId === b.dataset.lkDel) { linkEditId = null; linkDraft = null; linkRes = null; }
       openLinks(); loadLinks().catch(() => {}); loadPlanned().catch(() => {});
     }));
@@ -1166,12 +1194,10 @@
     const pick = (end) => () => {
       linkDraft = readLink();
       $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => {
-        map.getContainer().style.cursor = '';
+      pickOnMap(`end ${end.toUpperCase()} of the link`, (e) => {
         linkDraft = { ...linkDraft, [`${end}_lat`]: +e.latlng.lat.toFixed(5), [`${end}_lon`]: +e.latlng.lng.toFixed(5) };
         openLinks();
-      });
+      }, () => openLinks());
     };
     $('#lk-pick-a').addEventListener('click', pick('a'));
     $('#lk-pick-b').addEventListener('click', pick('b'));
@@ -1282,7 +1308,7 @@
     }));
     body.querySelectorAll('button[data-cv-del]').forEach((b) => b.addEventListener('click', async () => {
       if (!armConfirm(b)) return;
-      await fetch(`/api/coverage/${encodeURIComponent(b.dataset.cvDel)}`, { method: 'DELETE' });
+      if (!await apiDel(`/api/coverage/${encodeURIComponent(b.dataset.cvDel)}`)) return;
       if (covEditId === b.dataset.cvDel) { covEditId = null; covDraft = null; covRes = null; covPreview.clearLayers(); }
       openCoverage(); loadCoverage().catch(() => {}); loadPlanned().catch(() => {});
     }));
@@ -1293,8 +1319,7 @@
     $('#cv-pick').addEventListener('click', () => {
       covDraft = readCov();
       $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => { map.getContainer().style.cursor = ''; covDraft = { ...covDraft, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) }; openCoverage(); });
+      pickOnMap('the site position', (e) => { covDraft = { ...covDraft, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) }; openCoverage(); }, () => openCoverage());
     });
     $('#cv-clear').addEventListener('click', () => { covDraft = null; covEditId = null; covRes = null; covPreview.clearLayers(); openCoverage(); });
     $('#cv-analyse').addEventListener('click', async () => {
@@ -1393,6 +1418,8 @@
     let text = '', first = true, meta = null;
     try {
       const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, web: !!$('#omni-web')?.checked }), signal: omniAbort.signal });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+      if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '';
       while (true) {
@@ -1512,8 +1539,8 @@
   function openHF() {
     openModal('HF skywave now-cast', `<p class="dim">Path MUF and optimum working frequency now, from live ionosondes and NOAA D-RAP. Screening, not a forecast.</p>${hfForm()}<div id="hf-out">${hfRes ? hfResult(hfRes) : ''}</div>`);
     const pick = (end) => () => {
-      hfRead(); $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => { map.getContainer().style.cursor = ''; hfDraft[`${end}_lat`] = +e.latlng.lat.toFixed(4); hfDraft[`${end}_lon`] = +e.latlng.lng.toFixed(4); openHF(); });
+      hfRead(); $('#modal').classList.remove('show');
+      pickOnMap(`end ${end.toUpperCase()} of the HF path`, (e) => { hfDraft[`${end}_lat`] = +e.latlng.lat.toFixed(4); hfDraft[`${end}_lon`] = +e.latlng.lng.toFixed(4); openHF(); }, () => openHF());
     };
     $('#hf-pa').addEventListener('click', pick('a')); $('#hf-pb').addEventListener('click', pick('b'));
     $('#hf-go').addEventListener('click', async () => {
@@ -1846,8 +1873,8 @@
       c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0); };
     b.querySelector('#corr-dom').addEventListener('change', (e) => { b.querySelector('#corr-altw').hidden = e.target.value !== 'air'; });
     b.querySelector('#corr-pick').addEventListener('click', () => {
-      read(); map.getContainer().style.cursor = 'crosshair'; b.querySelector('#corr-st').textContent = 'click the map for the destination';
-      map.once('click', (ev) => { map.getContainer().style.cursor = ''; c.to = [+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]; c.res = null; emoCorridorDraw(); if (document.getElementById('emo-dockcard')) emoCorridor(); });
+      read();
+      pickOnMap('the corridor destination', (ev) => { c.to = [+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]; c.res = null; emoCorridorDraw(); if (document.getElementById('emo-dockcard')) emoCorridor(); }, () => { if (document.getElementById('emo-dockcard')) emoCorridor(); });
     });
     b.querySelector('#corr-clear').addEventListener('click', () => { emoCorridorClear(); emoCorridor(); });
     b.querySelector('#corr-go').addEventListener('click', async () => {
@@ -1908,10 +1935,10 @@
         const keys = [['net_availability_pct', 'Avail'], ['targetable', 'TQF'], ['denial_achieved', 'Den'], ['radar_tracks', 'Rdr']];
         const row = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${sc?.[sd]?.[k] ?? '–'}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
         box.innerHTML = r.coas.length || r.current ? `<table class="grid"><tr><th></th>${['B', 'R'].map((s) => keys.map(([, l]) => `<th>${s} ${l}</th>`).join('')).join('')}<th></th></tr>${r.current ? row('<i>now</i>', r.current, '') : ''}${r.coas.map((c) => row(esc(c.name), c.score, `<button data-dock-load="${c.id}">Load</button> <button data-dock-del="${c.id}">×</button>`)).join('')}</table>` : '<p class="dim">No COAs saved.</p>';
-        box.querySelectorAll('[data-dock-load]').forEach((x) => x.addEventListener('click', async () => { const r2 = await postJson(`/api/emo/coas/${x.dataset.dockLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); emoDraw(); await emoRun(); list(); }));
-        box.querySelectorAll('[data-dock-del]').forEach((x) => x.addEventListener('click', async () => { await fetch(`/api/emo/coas/${x.dataset.dockDel}`, { method: 'DELETE' }); list(); }));
+        box.querySelectorAll('[data-dock-load]').forEach((x) => x.addEventListener('click', async () => { try { emoAbortRun(); const r2 = await postJson(`/api/emo/coas/${x.dataset.dockLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); emoDraw(); await emoRun(); list(); } catch (e) { toast(`COA load failed: ${e.message}`); } }));
+        box.querySelectorAll('[data-dock-del]').forEach((x) => x.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${x.dataset.dockDel}`)) list(); }));
       };
-      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); });
+      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; try { await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); } catch (e) { toast(`COA save failed: ${e.message}`); } });
       list();
     } else if (tool === 'red') {
       const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside"><option value="red"${EMO.side === 'blue' ? ' selected' : ''}>Red</option><option value="blue"${EMO.side === 'red' ? ' selected' : ''}>Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
@@ -2011,6 +2038,8 @@
       let text = '';
       try {
         const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
         const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
         while (true) {
           const { value, done } = await rd.read(); if (done) break;
@@ -2081,6 +2110,7 @@
     }
     finally { clearInterval(emoTick); EMO.busy = false; EMO.abort = null; emoStaleBanner(); if (EMO.pending) emoRun(); }
   }
+  function emoAbortRun() { try { EMO.abort?.abort(); } catch (e) { /* nothing running */ } EMO.pending = false; }
   function emoStatus(t) {
     if (EMO.hidden) return;
     const el = $('#emo-status'); if (el) el.textContent = t;
@@ -2256,9 +2286,9 @@
           ${r.current ? rowOf('<i>current</i>', r.current, '') : ''}
           ${r.coas.map((c) => rowOf(esc(c.name), c.score, `<button data-coa-load="${c.id}">Load</button> <button data-coa-del="${c.id}">×</button>`)).join('')}</table>`;
         box.querySelectorAll('[data-coa-load]').forEach((b) => b.addEventListener('click', async () => {
-          const r2 = await postJson(`/api/emo/coas/${b.dataset.coaLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); await openEMO(); emoRun();
+          emoAbortRun(); let r2; try { r2 = await postJson(`/api/emo/coas/${b.dataset.coaLoad}/load`, {}); } catch (e) { return toast(`COA load failed: ${e.message}`); } EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); await openEMO(); emoRun();
         }));
-        box.querySelectorAll('[data-coa-del]').forEach((b) => b.addEventListener('click', async () => { await fetch(`/api/emo/coas/${b.dataset.coaDel}`, { method: 'DELETE' }); coaList(); }));
+        box.querySelectorAll('[data-coa-del]').forEach((b) => b.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${b.dataset.coaDel}`)) coaList(); }));
       } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
     };
     coaList();
@@ -2303,7 +2333,10 @@
       const out = $('#emo-askout'); out.innerHTML = '<span class="spinner"></span> thinking… (about a minute)';
       let text = '';
       try {
-        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }) });
+        const sel = EMO.multi && EMO.sel.length ? EMO.sel : EMO.focus ? [EMO.focus] : null;   // as the dock's Ask
+        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
+        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+        if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
         const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
         while (true) {
           const { value, done } = await rd.read(); if (done) break;
@@ -2320,6 +2353,7 @@
       EMO.loadArmed = false;
       emoStatus('loading…');
       try {
+        emoAbortRun();
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
         EMO.ents = r.entities; EMO.about = r.about; EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
@@ -2345,17 +2379,16 @@
     $('#emo-sc-save').addEventListener('click', async () => { const nm = $('#emo-sc-name').value.trim(); if (!nm) return;
       try { await postJson('/api/emo/scenarios', { name: nm }); openEMO(); } catch (err) { emoStatus(err.message); } });
     body.querySelectorAll('button[data-sc-load]').forEach((b) => b.addEventListener('click', async () => {
-      await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
+      emoAbortRun(); try { await postJson(`/api/emo/scenarios/${b.dataset.scLoad}/load`, {}); } catch (e) { return toast(`Scenario load failed: ${e.message}`); } EMO.res = null; EMO.focus = null; document.getElementById('emo-card')?.remove(); EMO.t = 0; await openEMO(); emoDraw(); emoRun(); }));
     body.querySelectorAll('button[data-sc-del]').forEach((b) => b.addEventListener('click', async () => {
-      if (!armConfirm(b)) return; await fetch(`/api/emo/scenarios/${b.dataset.scDel}`, { method: 'DELETE' }); openEMO(); }));
+      if (!armConfirm(b)) return; if (await apiDel(`/api/emo/scenarios/${b.dataset.scDel}`)) openEMO(); }));
     $('#emo-del')?.addEventListener('click', async () => {
       if (!armConfirm($('#emo-del'), 'Tap again to delete')) return;
-      await fetch(`/api/emo/${encodeURIComponent(EMO.editId)}`, { method: 'DELETE' }); EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
+      if (!await apiDel(`/api/emo/${encodeURIComponent(EMO.editId)}`)) return; EMO.editId = null; EMO.draft = null; await openEMO(); emoRun();
     });
     $('#emo-pick').addEventListener('click', () => {
       EMO.draft = emoRead(); $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (ev) => { map.getContainer().style.cursor = ''; EMO.draft.lat = +ev.latlng.lat.toFixed(5); EMO.draft.lon = +ev.latlng.lng.toFixed(5); openEMO(); });
+      pickOnMap('the entity position', (ev) => { EMO.draft.lat = +ev.latlng.lat.toFixed(5); EMO.draft.lon = +ev.latlng.lng.toFixed(5); openEMO(); }, () => openEMO());
     });
     $('#emo-trk-clear').addEventListener('click', () => { EMO.draft = { ...emoRead(), track: null }; openEMO(); });
     $('#emo-trk').addEventListener('click', () => {
@@ -2443,14 +2476,13 @@
     $('#sdr-set').addEventListener('click', setQ);
     $('#sdr-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setQ(); } });
     $('#sdr-pick').addEventListener('click', () => {
-      $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
-      map.once('click', async (e) => {
-        map.getContainer().style.cursor = '';
+      $('#modal').classList.remove('show');
+      pickOnMap('the receiver position', async (e) => {
         const lat = +e.latlng.lat.toFixed(5), lon = +e.latlng.lng.toFixed(5);
         try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat, lon }); SDR.posMsg = `Position set from the map: ${lat}, ${lon}`; }
         catch (err) { SDR.posMsg = err.message; }
         openSDR();
-      });
+      }, () => openSDR());
     });
     $('#sdr-pos').addEventListener('click', () => {
       if (!navigator.geolocation) return toastSDR('No location on this device');
@@ -2503,7 +2535,7 @@
     if (b.dataset.view === 'map') setTimeout(() => map.invalidateSize(), 250);
   }));
   // Phone layout hides the top-bar buttons; the Tools sheet exposes the same actions.
-  const MOB_TOOLS = [['btn-plan', 'Planning', 'Spectrum, links, coverage, HF'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-sdr', 'SDR', 'Live receiver and spectrum sweeps'], ['btn-health', 'Health', 'Collectors and data status']];
+  const MOB_TOOLS = [['btn-plan', 'Plan', 'Spectrum, links, coverage, HF'], ['btn-emo', 'EMO', 'Red / blue ES, EA and EP'], ['btn-sdr', 'SDR', 'Live receiver and spectrum sweeps'], ['btn-health', 'Health', 'Collectors and data status']];
   $('#mob-tools').addEventListener('click', () => {
     const emoOn = !!document.getElementById('emo-chip');
     const item = ([id, t, d]) => `<button data-go="${id}"><b>${t}</b><span class="dim">${d}</span></button>`;

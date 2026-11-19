@@ -59,6 +59,8 @@
     let text = '', first = true, meta = null;
     try {
       const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, web: !!$('#omni-web')?.checked }), signal: omniAbort.signal });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+      if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '';
       while (true) {

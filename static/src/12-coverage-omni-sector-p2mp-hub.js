@@ -60,7 +60,7 @@
     }));
     body.querySelectorAll('button[data-cv-del]').forEach((b) => b.addEventListener('click', async () => {
       if (!armConfirm(b)) return;
-      await fetch(`/api/coverage/${encodeURIComponent(b.dataset.cvDel)}`, { method: 'DELETE' });
+      if (!await apiDel(`/api/coverage/${encodeURIComponent(b.dataset.cvDel)}`)) return;
       if (covEditId === b.dataset.cvDel) { covEditId = null; covDraft = null; covRes = null; covPreview.clearLayers(); }
       openCoverage(); loadCoverage().catch(() => {}); loadPlanned().catch(() => {});
     }));
@@ -71,8 +71,7 @@
     $('#cv-pick').addEventListener('click', () => {
       covDraft = readCov();
       $('#modal').classList.remove('show'); showSide(false); if (mobile()) showRail(false);
-      map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => { map.getContainer().style.cursor = ''; covDraft = { ...covDraft, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) }; openCoverage(); });
+      pickOnMap('the site position', (e) => { covDraft = { ...covDraft, lat: +e.latlng.lat.toFixed(5), lon: +e.latlng.lng.toFixed(5) }; openCoverage(); }, () => openCoverage());
     });
     $('#cv-clear').addEventListener('click', () => { covDraft = null; covEditId = null; covRes = null; covPreview.clearLayers(); openCoverage(); });
     $('#cv-analyse').addEventListener('click', async () => {

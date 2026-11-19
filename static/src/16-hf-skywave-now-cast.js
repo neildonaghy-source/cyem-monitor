@@ -30,8 +30,8 @@
   function openHF() {
     openModal('HF skywave now-cast', `<p class="dim">Path MUF and optimum working frequency now, from live ionosondes and NOAA D-RAP. Screening, not a forecast.</p>${hfForm()}<div id="hf-out">${hfRes ? hfResult(hfRes) : ''}</div>`);
     const pick = (end) => () => {
-      hfRead(); $('#modal').classList.remove('show'); map.getContainer().style.cursor = 'crosshair';
-      map.once('click', (e) => { map.getContainer().style.cursor = ''; hfDraft[`${end}_lat`] = +e.latlng.lat.toFixed(4); hfDraft[`${end}_lon`] = +e.latlng.lng.toFixed(4); openHF(); });
+      hfRead(); $('#modal').classList.remove('show');
+      pickOnMap(`end ${end.toUpperCase()} of the HF path`, (e) => { hfDraft[`${end}_lat`] = +e.latlng.lat.toFixed(4); hfDraft[`${end}_lon`] = +e.latlng.lng.toFixed(4); openHF(); }, () => openHF());
     };
     $('#hf-pa').addEventListener('click', pick('a')); $('#hf-pb').addEventListener('click', pick('b'));
     $('#hf-go').addEventListener('click', async () => {

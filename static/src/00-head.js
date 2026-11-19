@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19d';
+  const BUILD = '2026-11-19e';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -50,6 +50,17 @@
   }
   const _fetch = window.fetch.bind(window);
   window.fetch = (u, o = {}) => { if (typeof u === 'string' && u.startsWith('/api/')) o = { ...o, headers: { ...(o.headers || {}), 'X-CyEM-WS': wsId() } }; return _fetch(u, o); };
+  // A short message at the bottom of the screen: errors from actions that used to fail silently.
+  function toast(text, bad = true) {
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+    t.textContent = text; t.className = bad ? 'bad show' : 'show';
+    clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 6000);
+  }
+  // DELETE that reports failure (a 403 from the cross-site guard or a 404 used to look like success).
+  async function apiDel(path) {
+    try { await api(path, { method: 'DELETE' }); return true; } catch (e) { toast(`Delete failed: ${e.message}`); return false; }
+  }
   async function api(path, opts) {
     const r = await fetch(path, opts);
     if (r.status === 401) {                  // internet session expired or signed out elsewhere: back to the log-in page

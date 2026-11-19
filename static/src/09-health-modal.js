@@ -13,7 +13,7 @@
     if (tab) {
       try { localStorage.setItem('cyem-plan-tab', tab[0]); } catch (e) { /* ignore */ }
       html = `<div class="plantabs">${PLAN_TABS.map(([k, l]) => `<button data-plan="${k}" class="${k === tab[0] ? 'active' : ''}">${l}</button>`).join('')}<span class="dim">${esc(title)}</span></div>` + html;
-      title = 'Planning';
+      title = 'Plan';
     }
     $('#modal-title').textContent = title; $('#modal-body').innerHTML = html; $('#modal').classList.add('show');
     if (tab) $$('#modal-body .plantabs button').forEach((b) => b.addEventListener('click', () => { if (b.dataset.plan !== tab[0]) openPlanning(b.dataset.plan); }));

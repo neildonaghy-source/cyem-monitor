@@ -38,12 +38,18 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
   choices) survive restarts. Same-host links stay in the app; other sites open in the browser.
 - Downloads (Word briefings and annexes): Mac to the Downloads folder (shown in Finder); iPhone to the share sheet.
 - If the server cannot be reached the app shows why (Tailscale off, wrong server) with Try again.
-- Built-in Tailscale (`Tailnet.swift`, default): the app runs its own Tailscale node ("cyem-mac", "cyem-iphone") with
-  TailscaleKit. First start shows "Sign in to Tailscale" (browser sign-in, no auth key in the app); node state is kept in
-  Application Support/tailscale. When the node is Running, the web view's data store uses the node's local SOCKS5 proxy
-  (`WKWebsiteDataStore.proxyConfigurations`). Settings > Tailscale switches to the device's own Tailscale app, shows
-  state and address, and signs the node out. In the Tailscale admin console the nodes appear as cyem-mac and
-  cyem-iphone; disable key expiry there if they should not need a sign-in every 180 days.
+- Built-in Tailscale (`Tailnet.swift`): the app runs its own Tailscale node with TailscaleKit, so nobody needs a Tailscale
+  account or the Tailscale app. The build carries a pre-approved, tagged, reusable, ephemeral auth key in
+  `native/Config/tailnet.json` (`{"authKey": "tskey-auth-..."}`, git-ignored, bundled when present). Each install joins
+  as `cyem-app-<id>`; ephemeral nodes drop out of the admin console when the app stops. When the node is Running the web
+  view uses its local SOCKS5 proxy (`WKWebsiteDataStore.proxyConfigurations`). Without the file the app uses the
+  device's own network (the Tailscale app, or from the internet the CyEM log-in). Settings > Tailscale shows state.
+- Tailnet policy for the key (admin console > Access controls), so app nodes reach the CyEM server's HTTPS and nothing
+  else: `"tagOwners": {"tag:cyem-app": ["autogroup:admin"]}` and a grant
+  `{"src": ["tag:cyem-app"], "dst": ["<CyEM host or tag>"], "ip": ["tcp:443"]}`. If the policy still has the default
+  allow-all rule, tagged nodes reach every device; narrow it first. Anyone holding the app can reach CyEM without a
+  password (tailnet requests need no CyEM log-in), and the key can be read out of the app: treat the app like the key.
+  Auth keys last at most 90 days: make a new one and rebuild before it expires.
 - Safari > Develop can inspect the page (`isInspectable`).
 - `APIClient.swift` and `Models.swift` are kept for notifications and widgets (W3, W5); the interface does not use them.
 

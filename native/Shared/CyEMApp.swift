@@ -88,7 +88,10 @@ struct TailnetGate: View {
         VStack(spacing: 14) {
             Image(systemName: "network.badge.shield.half.filled").font(.system(size: 44)).foregroundStyle(.secondary)
             Text("Joining the tailnet").font(.title2.bold())
-            if let u = tailnet.authURL {
+            if tailnet.hasKey {
+                ProgressView()
+                Text("Connecting through the app's own Tailscale connection (\(tailnet.state.lowercased()))…").foregroundStyle(.secondary)
+            } else if let u = tailnet.authURL {
                 Text("This app has its own Tailscale connection (\(Tailnet.hostName)). Sign in once with your Tailscale account; after that it connects by itself.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 440)
                 Button("Sign in to Tailscale") { openURL(u) }.buttonStyle(.borderedProminent)
@@ -153,7 +156,7 @@ struct SettingsView: View {
             Section {
                 Picker("Connection", selection: Binding(get: { tailnet.mode }, set: { tailnet.mode = $0 })) {
                     Text("Built-in Tailscale").tag(Tailnet.Mode.builtIn)
-                    Text("This device's Tailscale app").tag(Tailnet.Mode.system)
+                    Text("This device's network").tag(Tailnet.Mode.system)
                 }
                 if tailnet.mode == .builtIn {
                     LabeledContent("State", value: tailnet.state)
@@ -163,7 +166,9 @@ struct SettingsView: View {
                     if tailnet.state == "Running" { Button("Sign this app out of Tailscale", role: .destructive) { Task { await tailnet.signOut() } } }
                 }
             } header: { Text("Tailscale") } footer: {
-                Text(tailnet.mode == .builtIn ? "The app joins your tailnet as its own device (\(Tailnet.hostName)); the Tailscale app is not needed." : "The app uses whatever network this device has: the Tailscale app on the tailnet, or the internet log-in.")
+                Text(tailnet.mode == .builtIn
+                     ? (tailnet.hasKey ? "The app joins the tailnet by itself (\(Tailnet.nodeName)), limited to the CyEM server; no Tailscale account or app needed." : "This build has no tailnet key, so built-in Tailscale needs a Tailscale sign-in.")
+                     : "The app uses this device's network: the Tailscale app on the tailnet, or from the internet the CyEM username and password.")
             }
             Section("About") {
                 LabeledContent("App", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")

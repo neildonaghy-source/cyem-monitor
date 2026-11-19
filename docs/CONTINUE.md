@@ -92,5 +92,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 - iPhone: trust the developer profile once (Settings > General > VPN & Device Management > Apple Development:
   neildonaghy@me.com > Trust), then open CyEM.
-- Both apps: tap "Sign in to Tailscale" on first start (built-in Tailscale, nodes cyem-mac and cyem-iphone); optionally
-  disable key expiry for them in the Tailscale admin console.
+- Tailnet key for the apps (so nobody signs in to Tailscale): in the Tailscale admin console add tag `tag:cyem-app`
+  (owner autogroup:admin) and a policy grant from it to the CyEM server on tcp:443 only, then generate an auth key that
+  is reusable, ephemeral, pre-approved and tagged `tag:cyem-app` (90 days). Give it to the session; it goes in
+  `native/Config/tailnet.json` on the MacBook (never in git), then rebuild and reinstall both apps.

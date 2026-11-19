@@ -3,10 +3,12 @@ import Network
 import Observation
 import TailscaleKit
 
-/// Built-in Tailscale (as the September apps had): the app joins the tailnet as its own node ("cyem-mac" or
-/// "cyem-iphone") through TailscaleKit, so it reaches the CyEM server without the Tailscale app. First use: the node asks
-/// for a Tailscale sign-in in the browser (no auth key is stored in the app). The web view then goes through the node's
-/// local SOCKS5 proxy. Node state lives in Application Support/tailscale.
+/// Built-in Tailscale (as the September apps had): the app joins the tailnet as its own node through TailscaleKit, so it
+/// reaches the CyEM server without the Tailscale app and without anyone signing in to Tailscale. The build carries a
+/// pre-approved, tagged auth key (`native/Config/tailnet.json`, not in git; see native/README.md); each install joins as
+/// an ephemeral node "cyem-app-<id>" restricted by the tailnet policy to the CyEM server. Without a key in the build the
+/// app uses the device's own network (Tailscale app, or the internet route with the CyEM log-in). The web view goes
+/// through the node's local SOCKS5 proxy. Node state lives in Application Support/tailscale.
 @MainActor @Observable
 final class Tailnet {
     enum Mode: String { case builtIn, system }
@@ -31,8 +33,26 @@ final class Tailnet {
     static let hostName = "cyem-iphone"
     #endif
 
+    /// The build's auth key, if one was bundled.
+    static let authKey: String? = {
+        struct Cfg: Decodable { var authKey: String? }
+        guard let u = Bundle.main.url(forResource: "tailnet", withExtension: "json", subdirectory: "Config"), let d = try? Data(contentsOf: u),
+              let k = try? JSONDecoder().decode(Cfg.self, from: d).authKey, k.hasPrefix("tskey-") else { return nil }
+        return k
+    }()
+    var hasKey: Bool { Tailnet.authKey != nil }
+
+    /// A stable per-install name, so several people's apps are told apart in the admin console.
+    static let nodeName: String = {
+        if let n = UserDefaults.standard.string(forKey: "tailnetNode") { return n }
+        let n = "cyem-app-" + String(UUID().uuidString.lowercased().prefix(6))
+        UserDefaults.standard.set(n, forKey: "tailnetNode")
+        return n
+    }()
+
     init() {
-        mode = Mode(rawValue: UserDefaults.standard.string(forKey: "tailnetMode") ?? "") ?? .builtIn
+        let saved = Mode(rawValue: UserDefaults.standard.string(forKey: "tailnetMode") ?? "")
+        mode = Tailnet.authKey == nil ? .system : (saved ?? .builtIn)          // no key in the build: no Tailscale sign-in
     }
 
     func start() {
@@ -42,8 +62,8 @@ final class Tailnet {
             let dir = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
                 .appending(path: "tailscale", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let cfg = Configuration(hostName: Tailnet.hostName, path: dir.path(percentEncoded: false), authKey: nil,
-                                    controlURL: kDefaultControlURL, ephemeral: false)
+            let cfg = Configuration(hostName: Tailnet.authKey == nil ? Tailnet.hostName : Tailnet.nodeName, path: dir.path(percentEncoded: false),
+                                    authKey: Tailnet.authKey, controlURL: kDefaultControlURL, ephemeral: Tailnet.authKey != nil)
             let n = try TailscaleNode(config: cfg, logger: QuietLog())
             node = n
             state = "Starting"

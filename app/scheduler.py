@@ -46,6 +46,32 @@ def retry_delay_s(interval_s: int, ok: bool, message: str | None, failures: int)
     return int(min(base * 2 ** (n - 1), max(base, interval_s)))
 
 
+BRIEF_RETRY_DELAYS_S = (600, 1200, 2400)   # a failed scheduled brief is tried again after 10, 20 and 40 minutes
+BRIEF_BUSY_POLL_S = 30                     # wait this long between looks while another brief is being generated
+
+
+async def scheduled_brief(db: Database, slot: str, *, generate=None, busy=None, sleep=asyncio.sleep,
+                          delays: tuple[int, ...] = BRIEF_RETRY_DELAYS_S) -> dict:
+    """Generate the brief for one scheduled slot, retrying a failure (Ollama down or timed out) up to len(delays)
+    times with the given back-off. The slot is already marked done, so the loop does not start a second run;
+    this is the only retry path. Never starts while another brief (manual or scheduled) is generating."""
+    generate = generate or llm.generate_brief
+    busy = busy or (lambda: llm.state.generating)
+    res: dict = {"ok": False, "error": "not run"}
+    for attempt in range(len(delays) + 1):
+        if attempt:
+            log.warning("scheduled brief %s failed (%s); retry %d of %d in %d min", slot, res.get("error"),
+                        attempt, len(delays), delays[attempt - 1] // 60)
+            await sleep(delays[attempt - 1])
+        while busy():
+            await sleep(BRIEF_BUSY_POLL_S)
+        res = await generate(db, kind="scheduled")
+        if res.get("ok"):
+            return res
+    log.warning("scheduled brief %s abandoned after %d retries: %s", slot, len(delays), res.get("error"))
+    return res
+
+
 class Scheduler:
     def __init__(self, db: Database):
         self.db = db
@@ -59,6 +85,7 @@ class Scheduler:
         self.last_purge: datetime | None = None
         self.next_due: dict[str, datetime] = {}
         self.failures: dict[str, int] = {}   # consecutive failed runs per collector
+        self._brief_task: asyncio.Task | None = None   # the scheduled brief in hand, retries included
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop(), name="cyem-scheduler")
@@ -95,13 +122,14 @@ class Scheduler:
         finally:
             self.running.discard(name)
 
-    def _spawn(self, coro) -> None:
+    def _spawn(self, coro) -> asyncio.Task:
         """Keep a reference until the task ends: asyncio holds tasks weakly, so an unreferenced one can be collected."""
         if not hasattr(self, "_tasks"):
             self._tasks: set[asyncio.Task] = set()
         t = asyncio.create_task(coro)
         self._tasks.add(t)
         t.add_done_callback(self._tasks.discard)
+        return t
 
     def trigger(self, name: str) -> bool:
         if name not in REGISTRY or name in self.running:
@@ -132,9 +160,10 @@ class Scheduler:
                 # Scheduled brief
                 local = now.astimezone(self.tz)
                 slot = llm.brief_due(self.db, local)
-                if slot and not llm.state.generating and local.minute < 20:
+                brief_busy = self._brief_task is not None and not self._brief_task.done()
+                if slot and not brief_busy and not llm.state.generating and local.minute < 20:
                     self.db.set_snapshot("brief_last_slot", slot)
-                    self._spawn(llm.generate_brief(self.db, kind="scheduled"))
+                    self._brief_task = self._spawn(scheduled_brief(self.db, slot))
                 # Nightly purge
                 if self.last_purge is None or (now - self.last_purge) > timedelta(hours=24):
                     n = self.db.purge(settings.retention_days)

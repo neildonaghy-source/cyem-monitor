@@ -51,7 +51,19 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
   password (tailnet requests need no CyEM log-in), and the key can be read out of the app: treat the app like the key.
   Auth keys last at most 90 days: make a new one and rebuild before it expires.
 - Safari > Develop can inspect the page (`isInspectable`).
-- `APIClient.swift` and `Models.swift` are kept for notifications and widgets (W3, W5); the interface does not use them.
+- Notifications (`Notifier.swift`, 0.4.0): local only, no push service. Every 5 minutes while the app runs (on the Mac
+  also with its window closed) and, on the iPhone, when iOS grants a background refresh (`BGAppRefreshTask`
+  `com.neildonaghy.cyem.refresh`, at iOS's discretion, nothing after a force-quit), the app asks
+  `GET /api/items?min_severity=4&hours=24` and `GET /api/briefs?limit=1` through the built-in Tailscale proxy (or the
+  device's network, with the web view's cookies for the internet log-in). `NotifyPlan.swift` decides what to say: the first
+  check against a server only records what is there; more than 3 new items give one summary; turning a kind off still
+  records, so nothing old replays. Tapping an item opens its source page in the browser; tapping a brief opens CyEM.
+  Settings > Notifications has the switches, last check and Check now. The first launch asks for permission.
+- Share Page (Mac: File menu, Shift-Cmd-S; iPhone: the ... menu) shares the address of the page shown. Handoff: the page
+  shown can be continued in CyEM on the other device signed in to the same Apple ID (`NSUserActivityTypes` in `Info/`).
+- `APIClient.swift` and `Models.swift` serve notifications and (W5) widgets; the interface does not use them.
+- Tests: `xcodebuild -project CyEM.xcodeproj -scheme CyEMTests -destination platform=macOS -derivedDataPath build test`
+  (NotifyPlan only: no app host, no TailscaleKit).
 
 ## Conventions
 

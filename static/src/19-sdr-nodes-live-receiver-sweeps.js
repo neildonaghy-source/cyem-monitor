@@ -34,16 +34,18 @@
     const n = nodes.find((x) => x.node === SDR.node);
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
-      ${(() => { const shared = /shared/.test(n.info?.state || ''); const ok = age != null && (age < 10 || (shared && age < 480));
+      ${(() => { const shared = /shared/.test(n.info?.state || '') || !!n.info?.live_capable; const ok = age != null && (age < 10 || (shared && age < 480));
         const when = age == null ? 'never seen' : age < 90 ? `${age} min ago` : `${Math.round(age / 60)} h ago`;
         return `<span class="${ok ? 'good' : 'bad'}">${age == null ? 'never seen' : shared ? `shared receiver: sweeps four times a day, last ${when}` : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${when}` : `last seen ${when}`}</span>`; })()}
-      ${n.url ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
+      ${n.url && !n.info?.live_capable ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div>
+      ${n.info?.live_capable ? sdrLiveBox() : ''}<div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
     openModal('SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
     // Live receiver in an in-app window: a plain link replaced the whole app page, and the Mac/iPhone apps have no Back
     $('#sdr-live')?.addEventListener('click', (ev) => openLiveRx(ev.currentTarget.dataset.url, n.node));
+    if (n.info?.live_capable) sdrLiveWire(n);
     $('#sdr-ins').addEventListener('click', async () => {
       const o = $('#sdr-insout'); o.innerHTML = '<span class="spinner"></span> reading the spectrum… (about a minute)';
       try { const r = await api(`/api/insight/sdr?node=${encodeURIComponent(SDR.node)}`); o.innerHTML = renderMd(r.text); }
@@ -87,6 +89,61 @@
         ${l.peaks.slice(0, 40).map((p) => `<tr title="${esc(p.tier_why || p.status_text || '')}"><td><span style="color:${TIER_COL[p.tier] || '#8593a6'};font-size:16px">●</span></td><td class="mono">${(p.f_hz / 1e6).toFixed(3)}</td><td class="mono">${p.snr_db}</td><td>${who(p)}<div class="dim">${esc(p.tier_why || '')}</div></td><td>${where(p)}</td></tr>`).join('')}</table>
         <p class="dim">${esc(c?.notes || 'Levels are relative dB (not calibrated). Peaks are carriers at least 10 dB above the local floor.')}</p>`;
     } catch (e) { $('#sdr-out').innerHTML = `<p class="dim">${esc(e.message)}</p>`; }
+  }
+  // ---- Listen live (Nov 2026): the node's agent pauses the weather receiver and starts OpenWebRX+, reached via /sdr/live/
+  function sdrLiveBox() {
+    return `<div id="sdr-livebox" class="sdr-livebox"><div class="specset"><b>Listen live</b>
+        <select id="sdr-live-min" aria-label="How long"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">60 min</option></select>
+        <button id="sdr-listen">Listen live</button> <button id="sdr-stop" hidden>Stop</button> <button id="sdr-full" hidden>Full screen</button></div>
+      <p id="sdr-live-status" class="dim"></p>
+      <p class="dim">Listening pauses the weather receiver on this dongle until you press Stop or the time runs out (at most two hours), and the shared sweeps skip while it is live. Audio is streamed to you only: nothing is recorded or stored.</p>
+      <div id="sdr-live-frame"></div></div>`;
+  }
+  function sdrHHMM(iso) { try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso; } }
+  function sdrLiveWire(n0) {
+    clearInterval(SDR.liveTimer);
+    const node = n0.node;
+    const render = (n) => {
+      const st = $('#sdr-live-status'); if (!st) return false;
+      const m = n.mode || {}, state = n.info?.state || '', err = n.info?.live_error;
+      const want = m.mode === 'live', live = state === 'live';
+      let txt, cls = 'dim';
+      if (want && live) { txt = `Live until ${esc(sdrHHMM(m.until))}. Tap the play button in the receiver to start audio.`; cls = 'good'; SDR.liveBack = true; }
+      else if (want) txt = `Switching… pausing the weather receiver and starting the live receiver (usually under 30 s${state === 'sweeping' ? '; a shared sweep is running and finishes first, about 3 minutes' : ''}).`;
+      else if (live) txt = 'Switching back to the weather receiver…';
+      else if (SDR.liveBack && state === 'weather') { txt = 'Weather receiver back.'; cls = 'good'; }
+      else txt = state === 'sweeping' ? 'A shared sweep is running; live listening can start when it ends.' : state === 'weather' ? 'Weather receiver running.' : `Receiver reports: ${esc(state || 'nothing yet')}.`;
+      if (err && !(want && live)) txt += ` <span class="bad">${esc(err)}</span>`;
+      st.className = cls; st.innerHTML = txt;
+      $('#sdr-listen').hidden = want; $('#sdr-live-min').hidden = want; $('#sdr-stop').hidden = !want; $('#sdr-full').hidden = !(want && live);
+      const fr = $('#sdr-live-frame');
+      if (want && live && !fr.querySelector('iframe')) {
+        fr.innerHTML = '<div class="lvbar"><b>Live receiver</b><span class="dim">nothing is recorded</span><button id="sdr-full-close">Close full screen</button></div><iframe src="/sdr/live/" allow="autoplay; fullscreen" title="Live receiver"></iframe>';
+        $('#sdr-full-close').addEventListener('click', () => fr.classList.remove('full'));
+      } else if (!(want && live) && fr.querySelector('iframe')) {
+        fr.querySelector('iframe').src = 'about:blank'; fr.innerHTML = ''; fr.classList.remove('full');
+      }
+      return true;
+    };
+    const poll = async () => {
+      if (!$('#sdr-live-status')) { clearInterval(SDR.liveTimer); return; }       // panel closed or redrawn
+      try { const st = await api('/api/sdr/nodes'); const n = st.nodes.find((x) => x.node === node); if (n) render(n); } catch (e) { /* next tick */ }
+    };
+    render(n0);
+    SDR.liveTimer = setInterval(poll, 4000);
+    $('#sdr-listen').addEventListener('click', async () => {
+      $('#sdr-listen').disabled = true;
+      try { const m = await postJson('/api/sdr/mode', { node, mode: 'live', minutes: +$('#sdr-live-min').value }); SDR.liveBack = false; render({ ...n0, mode: m }); poll(); }
+      catch (e) { $('#sdr-live-status').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+      $('#sdr-listen').disabled = false;
+    });
+    $('#sdr-stop').addEventListener('click', async () => {
+      const fr = $('#sdr-live-frame'); const f = fr.querySelector('iframe'); if (f) f.src = 'about:blank';
+      fr.innerHTML = ''; fr.classList.remove('full');
+      try { await postJson('/api/sdr/mode', { node, mode: 'auto' }); SDR.liveBack = true; poll(); }
+      catch (e) { $('#sdr-live-status').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+    });
+    $('#sdr-full').addEventListener('click', () => $('#sdr-live-frame').classList.add('full'));
   }
   function openLiveRx(url, node) {
     closeLiveRx();

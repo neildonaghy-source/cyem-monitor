@@ -61,9 +61,16 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
   Settings > Notifications has the switches, last check and Check now. The first launch asks for permission.
 - Share Page (Mac: File menu, Shift-Cmd-S; iPhone: the ... menu) shares the address of the page shown. Handoff: the page
   shown can be continued in CyEM on the other device signed in to the same Apple ID (`NSUserActivityTypes` in `Info/`).
-- `APIClient.swift` and `Models.swift` serve notifications and (W5) widgets; the interface does not use them.
+- Widgets (`Widget/CyEMWidget.swift`, 0.5.0): "CyEM status", small and medium (iPhone also Lock Screen): Kp and its
+  band, NOAA scales, GNSS interference cells, items in the last 24 hours (all, cyber, EM, high), latest brief. The
+  extension never asks the server (it cannot use the app's built-in Tailscale node): on every check the app takes
+  `GET /api/status`, writes `WidgetSnapshot` to the shared app group (Mac `747JXF57MZ.com.neildonaghy.cyem`, iPhone
+  `group.com.neildonaghy.cyem`) and asks WidgetKit to redraw. The widget shows the age of the snapshot and turns amber
+  ("Stale") after 30 minutes, i.e. when the app is not running or cannot reach the server. Settings shows "Widgets
+  updated". Add it from the desktop (Mac: right-click the desktop > Edit Widgets) or the Home Screen.
+- `APIClient.swift` and `Models.swift` serve notifications and widgets; the interface does not use them.
 - Tests: `xcodebuild -project CyEM.xcodeproj -scheme CyEMTests -destination platform=macOS -derivedDataPath build test`
-  (NotifyPlan only: no app host, no TailscaleKit).
+  (NotifyPlan and WidgetSnapshot: no app host, no TailscaleKit).
 
 ## Conventions
 

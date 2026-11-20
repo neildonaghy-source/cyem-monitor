@@ -17,5 +17,8 @@ native/*.xcodeproj/
 native/build/
 native/DerivedData/
 native/CyEM-macOS.entitlements
+native/CyEM-iOS.entitlements
+native/CyEMWidget-iOS.entitlements
+native/CyEMWidget-macOS.entitlements
 native/Vendor/
 native/Config/tailnet.json

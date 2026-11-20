@@ -3,6 +3,7 @@ import Network
 import Observation
 import UserNotifications
 import WebKit
+import WidgetKit
 #if os(iOS)
 import BackgroundTasks
 import UIKit
@@ -25,6 +26,8 @@ final class Notifier {
     private(set) var permitted: Bool?
     private(set) var lastCheck: Date?
     private(set) var lastError: String?
+    /// When the widget snapshot was last written (nil: never, or the app group is not available to this build).
+    private(set) var lastWidget: Date?
 
     /// Set by the root view: where to ask and how.
     var server: URL?
@@ -66,22 +69,33 @@ final class Notifier {
         }
     }
 
-    /// One check. Safe to call often; overlapping calls are dropped.
+    /// One check. Safe to call often; overlapping calls are dropped. Also refreshes the widget snapshot
+    /// (GET /api/status), whether or not notifications are on.
     func check() async {
-        guard (itemsOn || briefsOn), ready, let server, !checking else { return }
+        guard ready, let server, !checking else { return }
         checking = true; defer { checking = false }
         await copyWebCookies(for: server)
         let api = APIClient(base: server, proxy: proxy)
-        var items: [Item]?, brief: BriefRow?, err: String?
-        do { items = try await api.get("api/items", query: ["min_severity": "4", "hours": "24", "limit": "200"], as: ItemsResponse.self).items }
-        catch { err = error.localizedDescription }
-        do { brief = try await api.get("api/briefs", query: ["limit": "1"], as: BriefsResponse.self).briefs.first }
-        catch { err = err ?? error.localizedDescription }
-        let mem = loadMemory()
-        let plan = NotifyPlan.plan(server: server.absoluteString, items: items, latestBrief: brief, memory: mem,
-                                   itemsOn: itemsOn, briefsOn: briefsOn)
-        saveMemory(plan.memory)
-        for n in plan.notes { await post(n) }
+        var err: String?
+        do {
+            let st = try await api.get("api/status", as: StatusResponse.self)
+            if WidgetSnapshot.Store.save(.make(status: st, server: server.absoluteString, now: Date())) {
+                lastWidget = Date()
+                WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.Store.kind)
+            } else { err = "Widget snapshot not saved: the app group is not available to this build." }
+        } catch { err = error.localizedDescription }
+        if itemsOn || briefsOn {
+            var items: [Item]?, brief: BriefRow?
+            do { items = try await api.get("api/items", query: ["min_severity": "4", "hours": "24", "limit": "200"], as: ItemsResponse.self).items }
+            catch { err = err ?? error.localizedDescription }
+            do { brief = try await api.get("api/briefs", query: ["limit": "1"], as: BriefsResponse.self).briefs.first }
+            catch { err = err ?? error.localizedDescription }
+            let mem = loadMemory()
+            let plan = NotifyPlan.plan(server: server.absoluteString, items: items, latestBrief: brief, memory: mem,
+                                       itemsOn: itemsOn, briefsOn: briefsOn)
+            saveMemory(plan.memory)
+            for n in plan.notes { await post(n) }
+        }
         lastCheck = Date()
         lastError = err
     }

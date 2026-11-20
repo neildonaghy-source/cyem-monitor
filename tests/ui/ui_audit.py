@@ -30,6 +30,10 @@ async def main():
             if not mobile:
                 for bid in ["btn-rail", "btn-side", "btn-health", "btn-sdr", "btn-plan", "btn-emo"]:
                     await run(pg, errs, f"button {bid}", lambda bid=bid: pg.click("#" + bid), 2500)
+                    if bid == "btn-health":   # Health is a side sheet: the map must stay usable, Escape closes it
+                        print("   health sheet open, modal not shown:", await pg.evaluate("() => !!document.querySelector('#health-sheet.open') && !document.getElementById('modal').classList.contains('show')"))
+                        await pg.keyboard.press("Escape")
+                        print("   health sheet closed by Escape:", await pg.evaluate("() => !document.querySelector('#health-sheet.open')"))
                     await pg.evaluate("() => document.getElementById('modal').classList.remove('show')")
                 pills = await pg.evaluate("() => [...document.querySelectorAll('#pills .pill')].map(p => p.dataset.p)")
                 for pl in pills:

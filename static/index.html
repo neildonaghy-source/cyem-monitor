@@ -22,7 +22,7 @@
   <div id="brand">CyEM <span>MONITOR</span></div>
   <div id="clock">--:--Z</div>
   <div id="pills"></div>
-  <form id="omni-form" autocomplete="off"><input id="omni-q" type="search" placeholder="Search or ask… ( / )" title="Enter = search everything; Ask AI = answer from CyEM data plus labelled general knowledge; start with ? to ask"><button type="submit" id="omni-go">Search</button><button type="button" id="omni-ask" class="primary">Ask AI</button><label class="omni-web" title="Also search the web (via the self-hosted SearXNG) and cite results as unverified"><input type="checkbox" id="omni-web"> Web</label></form>
+  <form id="omni-form" autocomplete="off"><input id="omni-q" type="search" aria-label="Search or ask" placeholder="Search or ask… ( / )" title="Enter = search everything; Ask AI = answer from CyEM data plus labelled general knowledge; start with ? to ask"><button type="submit" id="omni-go">Search</button><button type="button" id="omni-ask" class="primary">Ask AI</button><label class="omni-web" title="Also search the web (via the self-hosted SearXNG) and cite results as unverified"><input type="checkbox" id="omni-web"> Web</label></form>
   <div id="topbtns">
     <button id="btn-rail" title="Toggle feed rail">Feed</button>
     <button id="btn-side" title="Toggle brief panel">Brief</button>
@@ -45,9 +45,9 @@
     <button data-dom="osint">OSINT</button>
   </div>
   <div class="tools">
-    <input id="q" type="search" placeholder="Search items (FTS)…">
+    <input id="q" type="search" aria-label="Search items" placeholder="Search items (FTS)…">
     <label><input type="checkbox" id="hi-only"> sev ≥3</label>
-    <select id="hours" title="Window">
+    <select id="hours" title="Window" aria-label="Time window">
       <option value="24">24h</option>
       <option value="48" selected>48h</option>
       <option value="168">7d</option>
@@ -76,7 +76,7 @@
   </div>
   <div id="ask">
     <form id="ask-form">
-      <input id="ask-q" type="text" placeholder="Ask the monitor… e.g. what is affecting GNSS in the Baltic?" autocomplete="off">
+      <input id="ask-q" type="text" aria-label="Ask the monitor" placeholder="Ask the monitor… e.g. what is affecting GNSS in the Baltic?" autocomplete="off">
       <button type="submit" id="ask-btn">Ask</button>
     </form>
     <div id="answer"></div>

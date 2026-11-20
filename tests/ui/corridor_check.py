@@ -8,6 +8,24 @@ SHOT = sys.argv[2] if len(sys.argv) > 2 else "corridor.png"
 WS = "corrcheck2"
 fails = []
 
+# Points inside #map where the topmost element is the map itself (a tile, the canvas renderer or a pane), at least 40 px
+# from any marker icon and not under a control, the layer panel, the pick bar or an EMO card. Nearest the map centre
+# first; returns {x, y, more: [[x, y], ...]} or null.
+MAP_POINT_JS = """() => {
+  const map = document.getElementById('map'), r = map.getBoundingClientRect();
+  const icons = [...document.querySelectorAll('.leaflet-marker-icon')].map(e => e.getBoundingClientRect()).filter(b => b.width);
+  const blocked = (el) => !el || !map.contains(el) || el.closest('.leaflet-marker-pane, .leaflet-control-container, .leaflet-tooltip-pane, .leaflet-popup-pane, #layers, #legend');
+  const gap = (x, y) => icons.reduce((m, b) => Math.min(m, Math.hypot(Math.max(b.left - x, 0, x - b.right), Math.max(b.top - y, 0, y - b.bottom))), 1e9);
+  const pts = [];
+  for (let y = r.top + 40; y < r.bottom - 40; y += 30) for (let x = r.left + 40; x < r.right - 40; x += 30) {
+    if (blocked(document.elementFromPoint(x, y))) continue;
+    const g = gap(x, y); if (g >= 40) pts.push([Math.round(x), Math.round(y), g]);
+  }
+  const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;      // near the centre: the scenario area, not a far corner
+  pts.sort((a, b) => Math.hypot(a[0] - cx, a[1] - cy) - Math.hypot(b[0] - cx, b[1] - cy));
+  return pts.length ? { x: pts[0][0], y: pts[0][1], more: pts.slice(1, 4).map(p => [p[0], p[1]]) } : null;
+}"""
+
 
 def rec(name, ok, note=""):
     print(("PASS " if ok else "FAIL ") + name + (f": {note}" if note else ""), flush=True)
@@ -29,7 +47,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=os.environ.get("PW_CHROME") or None)   # trade: the 1228 headless shell
         ctx = await b.new_context(viewport={"width": 1440, "height": 900})
-        await ctx.add_init_script(f"localStorage.setItem('cyem-ws-mode','device'); localStorage.setItem('cyem-ws','{WS}'); localStorage.setItem('cyem-coach','1');")
+        await ctx.add_init_script(f"localStorage.setItem('cyem-ws-mode','device'); localStorage.setItem('cyem-ws','{WS}'); localStorage.setItem('cyem-coach','1'); localStorage.setItem('cyem-emo-on','1');")   # a first run starts with EMO off
         pg = await ctx.new_page(); errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         await ctx.request.post(BASE + "api/emo/examples/bg-vignette", headers={"X-CyEM-WS": WS}, data={})   # before the page runs
@@ -42,10 +60,22 @@ async def main():
         await pg.select_option("#corr-unit", label="Blue BG Main HQ")
         rec("plan disabled before a destination", await pg.is_disabled("#corr-go"))
         await pg.click("#corr-pick")
-        card = await (await pg.query_selector("#emo-dockcard")).bounding_box()    # click the map clear of the card
-        x = card["x"] + card["width"] + 150 if card["x"] + card["width"] + 150 < 1400 else max(60, card["x"] - 150)
-        await pg.mouse.click(x, 330)
-        to = await wait_js(pg, "() => { const t = document.getElementById('corr-to')?.textContent; return t && t !== 'none' && t; }", 10)
+        # pickOnMap (01-map-basemaps.js) shows a "Click the map" bar and listens for a Leaflet map click. The old fixed
+        # point (card x - 150, y 330) landed on unit symbols or labels in the marker pane, which take the click
+        # themselves (Leaflet markers do not bubble to the map), so no destination was set. Wait for the bar, then click
+        # a point where the map container itself (tiles or the canvas) is topmost, clear of markers, controls and cards.
+        await pg.wait_for_selector(".emo-trackbar >> text=Click the map", timeout=10000)
+        pt = await pg.evaluate(MAP_POINT_JS)
+        rec("clear map point found for the pick", bool(pt), str(pt))
+        to = None
+        for x, y in ([pt["x"], pt["y"]],) + tuple(pt.get("more", [])) if pt else ():
+            await pg.mouse.click(x, y)
+            to = await wait_js(pg, "() => { const t = document.getElementById('corr-to')?.textContent; return t && t !== 'none' && t; }", 6)
+            if to:
+                break
+            if not await pg.query_selector(".emo-trackbar"):              # the click was taken but not as a pick: start again
+                await pg.click("#corr-pick")
+                await pg.wait_for_selector(".emo-trackbar >> text=Click the map", timeout=10000)
         rec("map click sets the destination", bool(to), to or "")
         await pg.click("#corr-go")
         out = await wait_js(pg, "() => { const t = document.getElementById('corr-out')?.textContent || ''; return /verified/i.test(t) && t; }", 300)

@@ -212,7 +212,7 @@
       <div class="emo-groups">
         <div class="grp"><span class="lbl">Act</span>${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button></div>
         ${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<div class="grp"><span class="lbl">Plan</span><button data-emo-plannet>EP siting</button><button data-emo-tune>EP measures</button><button data-emo-joint>Re-site net</button></div>' : ''}
-        ${f.kind === 'effector' ? `<div class="grp"><span class="lbl">Plan</span><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
+        ${f.kind === 'effector' ? `<div class="grp"><span class="lbl">Plan</span><select data-emo-eatgt aria-label="Net to deny">${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
         <div class="grp"><span class="lbl">Compare</span><button data-emo-multi>With others</button></div>
       </div>
       <div id="emo-planout"></div>
@@ -259,7 +259,7 @@
     const tbl = (h, rows) => rows.length ? `<h4>${h}</h4><table class="grid">${rows.join('')}</table>` : '';
     return `<div class="emo-card-head"><b>Comparing ${EMO.sel.length}</b><span class="btns"><button data-emo-done>Done</button><button data-emo-clear>Clear</button></span></div>
       <p>${chips}</p>
-      <p><select data-emo-add style="max-width:100%"><option value="">+ Add an entity…</option>
+      <p><select data-emo-add aria-label="Add an entity to the comparison" style="max-width:100%"><option value="">+ Add an entity…</option>
         ${['blue', 'red'].map((sd) => `<optgroup label="${sd === 'blue' ? 'Blue' : 'Red'}">${EMO.ents.filter((e) => e.side === sd && !sel.has(e.id)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => `<option value="${esc(e.id)}">${esc(e.name)} · ${esc(KIND_TXT[e.kind] || e.kind)}${e.category ? ' · ' + esc(e.category) : ''}</option>`).join('')}</optgroup>`).join('')}
       </select></p>
       <p class="dim">Add from the list, or tap symbols on the map${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}; × removes. All selected footprints are shown; lines only between them.</p>

@@ -3,6 +3,7 @@ with sync_playwright() as p:
     b = p.chromium.launch()
     for name, vp in (("portrait", (390, 844)), ("landscape", (844, 390))):
         c = b.new_context(viewport={"width": vp[0], "height": vp[1]}, is_mobile=True, has_touch=True, device_scale_factor=2)
+        c.add_init_script("localStorage.setItem('cyem-emo-on','1');")   # a first run starts with EMO off
         pg = c.new_page()
         pg.goto("http://127.0.0.1:3020/")
         pg.wait_for_selector("#emo-dock", timeout=60000)

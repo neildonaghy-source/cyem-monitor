@@ -10,6 +10,10 @@
   ];
   const G = (glyph, col, size = 13) => `<span class="lg" style="color:${col};font-size:${size}px">${glyph}</span>`;
   const DOT = (col, r = 8, extra = '') => `<span class="lgdot" style="background:${col};width:${r}px;height:${r}px;${extra}"></span>`;
+  // Default layer set (Nov 2026): on = fed by a live collector or live API (space weather, GNSS interference, ADS-B, AIS,
+  // satellites, launches, cyber and outage feeds, located news), plus the user's own planning layers (coverage, links,
+  // planned emitters), which are empty until something is planned. Reference layers (emitters, radar sites, cells, Ofcom
+  // licences, APT groups, cables) start off. A device's saved choices (cyem.layers) always win.
   const LAYERS = [
     { id: 'terminator', group: 'iono', label: 'Day / night + grey line', colour: '#f3b23e', on: true, load: loadTerminator, every: 1,
       legend: `${DOT('rgba(0,0,0,.6)', 10, 'border:1px solid #445')} night ${DOT('#f3b23e', 10, 'opacity:.35')} grey line` },
@@ -24,18 +28,18 @@
     { id: 'milair', group: 'em', label: 'Military aircraft (live)', colour: '#f3b23e', on: true, load: loadMilair, every: 2,
       legend: `${G('➤', '#f3b23e', 15)} ISR ${G('➤', '#ff5c5c', 15)} EW ${G('➤', '#ffd166', 15)} AEW ${G('➤', '#ff8c42', 15)} C2 ${G('➤', '#2bb9a8', 15)} MPA ${G('➤', '#3cc7ff', 11)} tanker ${G('➤', '#8593a6', 11)} other`,
       opts: [{ id: 'milair_isr', label: 'ISR / EW / AEW / MPA only', on: true }] },
-    { id: 'sats', group: 'em', label: 'Satellites (live)', colour: '#9ad7ff', on: false, load: loadSats, every: 2,
+    { id: 'sats', group: 'em', label: 'Satellites (live)', colour: '#9ad7ff', on: true, load: loadSats, every: 2,
       legend: `${DOT('#9ad7ff', 7, 'border-radius:0')} GNSS ${DOT('#ff6fb1', 7, 'border-radius:0')} military ${DOT('#2bb9a8', 7, 'border-radius:0')} SBAS · click one for its ground track`,
       opts: [{ id: 'sats_gnss', label: 'GNSS', on: true }, { id: 'sats_military', label: 'military', on: true }, { id: 'sats_sbas', label: 'SBAS', on: false }] },
-    { id: 'emitters', group: 'em', label: 'Strategic emitters (ref)', colour: '#ff6fb1', on: true, load: loadEmitters, every: 0,
+    { id: 'emitters', group: 'em', label: 'Strategic emitters (ref)', colour: '#ff6fb1', on: false, load: loadEmitters, every: 0,
       legend: `${G('▲', '#ff5c5c')} EW radar ${G('▲', '#ff8c42')} ABM ${G('△', '#ffd166')} OTH ${G('◬', '#c8d3e0')} space surv ${G('▴', '#f3b23e')} air def ${G('◆', '#ff6fb1')} SIGINT ${G('●', '#3cc7ff')} SATCOM ${G('▼', '#b48cff')} VLF ${G('▽', '#b48cff')} HF ${G('✦', '#9ad7ff')} GNSS gnd ${G('✧', '#45d38a')} ionosph ${G('◉', '#2bb9a8')} deep space ${G('✕', '#ff5c5c')} EW range ${G('○', '#5d6b7d')} historic` },
     { id: 'radars', group: 'em', label: 'Radar sites (OSM)', colour: '#c8d3e0', on: false, load: loadRadars, every: 0,
       legend: `${DOT('#e0e6ee', 7)} military ${DOT('#3cc7ff', 7)} space ${DOT('#f3b23e', 6)} aviation ${DOT('#45d38a', 6)} weather ${DOT('#2bb9a8', 6)} maritime ${DOT('#6f7f93', 6)} other`,
       opts: [{ id: 'radars_mil', label: 'military / space only', on: true }] },
-    { id: 'air', group: 'em', label: 'All aircraft (ADS-B, UK)', colour: '#8fb3d9', on: false, load: loadAir, every: 2,
+    { id: 'air', group: 'em', label: 'All aircraft (ADS-B, UK)', colour: '#8fb3d9', on: true, load: loadAir, every: 2,
       legend: `${DOT('#8fb3d9', 7)} normal ${DOT('#ff6fb1', 7)} military ${DOT('#f3b23e', 8)} degraded GNSS (NIC 1–6) ${DOT('#ff5c5c', 8)} emergency squawk`,
       opts: [{ id: 'air_flags', label: 'Degraded GNSS / emergency only', on: false }] },
-    { id: 'ais', group: 'em', label: 'Ships (AIS, UK waters)', colour: '#3cc7ff', on: false, load: loadAis, every: 5,
+    { id: 'ais', group: 'em', label: 'Ships (AIS, UK waters)', colour: '#3cc7ff', on: true, load: loadAis, every: 5,
       legend: `${DOT('#ff5c5c', 7)} military ${DOT('#ff6fb1', 7)} law enf. ${DOT('#f3b23e', 7)} SAR ${DOT('#3cc7ff', 7)} cargo ${DOT('#c07b3a', 7)} tanker ${DOT('#45d38a', 7)} passenger ${DOT('#2bb9a8', 7)} fishing ${DOT('#8593a6', 7)} other`,
       opts: [{ id: 'ais_gov', label: 'Military / law enforcement / SAR only', on: false }] },
     { id: 'cells', group: 'em', label: 'Mobile cells (OpenCelliD, zoom 11+)', colour: '#45d38a', on: false, load: loadCells, every: 0,
@@ -48,7 +52,7 @@
       legend: `${G('◉', '#45d38a')} clear ${G('◉', '#f3b23e')} medium/low ${G('◉', '#ff5c5c')} high · dashed ring = check radius · open Spectrum to plan` },
     { id: 'wtr', group: 'em', label: 'Ofcom licences (zoom 8+)', colour: '#8fb3d9', on: false, load: loadWtr, every: 0,
       legend: `${DOT('#3cc7ff', 7)} business radio ${DOT('#8593a6', 7)} fixed links ${DOT('#2bb9a8', 7)} maritime/AIS ${DOT('#ff6fb1', 7)} satellite ${DOT('#f3b23e', 7)} GNSS repeater ${DOT('#c8d3e0', 7)} other · one dot per site` },
-    { id: 'launches', group: 'em', label: 'Upcoming launches', colour: '#ffffff', on: false, load: loadLaunches, every: 60, legend: `${G('▲', '#fff')} launch pad` },
+    { id: 'launches', group: 'em', label: 'Upcoming launches', colour: '#ffffff', on: true, load: loadLaunches, every: 60, legend: `${G('▲', '#fff')} launch pad` },
     { id: 'ransomware', group: 'cyber', label: 'Ransomware victims 30d', colour: '#b48cff', on: true, load: loadRansomware, every: 10, legend: `${DOT('rgba(180,140,255,.35)', 12, 'border:1px solid #b48cff')} victims per country (size = count)` },
     { id: 'c2', group: 'cyber', label: 'Botnet C2 (country)', colour: '#3cc7ff', on: true, load: loadC2, every: 10, legend: `${DOT('rgba(60,199,255,.2)', 12, 'border:1px dashed #3cc7ff')} C2 servers per country` },
     { id: 'apt', group: 'cyber', label: 'APT groups (ref)', colour: '#ff8c42', on: false, load: loadApt, every: 0, legend: `${G('◆', '#ff8c42')} state ${G('◆', '#ffd166')} criminal` },
@@ -56,9 +60,19 @@
     { id: 'cloudflare', group: 'infra', label: 'Cloudflare outages 7d', colour: '#ffd166', on: true, load: loadCloudflare, every: 10, legend: `${DOT('rgba(255,209,102,.3)', 11, 'border:1.5px solid #ffd166')} outage annotation (Cloudflare Radar)` },
     { id: 'cables', group: 'infra', label: 'Submarine cables', colour: '#2bb9a8', on: false, load: loadCables, every: 0, legend: `<span class="lgline" style="background:#2bb9a8"></span> cable system` },
     { id: 'gdelt', group: 'osint', label: 'GDELT news 24h', colour: '#45d38a', on: true, load: loadGdelt, every: 10, legend: `${DOT('#3cc7ff', 8)} cyber ${DOT('#f3b23e', 8)} GNSS/EW ${DOT('#2bb9a8', 8)} connectivity ${DOT('#ff6fb1', 8)} satellite` },
-    { id: 'items', group: 'osint', label: 'Located news 7d', colour: '#8593a6', on: false, load: loadItemsLayer, every: 10, legend: `${DOT('#3cc7ff', 6)} cyber ${DOT('#f3b23e', 6)} EM ${DOT('#2bb9a8', 6)} infra ${DOT('#b48cff', 6)} OSINT` },
+    { id: 'items', group: 'osint', label: 'Located news 7d', colour: '#8593a6', on: true, load: loadItemsLayer, every: 10, legend: `${DOT('#3cc7ff', 6)} cyber ${DOT('#f3b23e', 6)} EM ${DOT('#2bb9a8', 6)} infra ${DOT('#b48cff', 6)} OSINT` },
   ];  const groups = {};
   const saved = (() => { try { return JSON.parse(localStorage.getItem('cyem.layers') || '{}'); } catch { return {}; } })();
+  // Devices that already had layer state before the live-first defaults keep what they saw: the old default is written
+  // for each layer whose default changed and that the device never toggled. Runs once per device.
+  try {
+    if (localStorage.getItem('cyem.layersv') !== '2') {
+      if (!FIRST_RUN) { const PRE = { sats: false, emitters: true, air: false, ais: false, launches: false, items: false }; let n = 0;
+        for (const [k, v] of Object.entries(PRE)) if (!(k in saved)) { saved[k] = v; n++; }
+        if (n) localStorage.setItem('cyem.layers', JSON.stringify(saved)); }
+      localStorage.setItem('cyem.layersv', '2');
+    }
+  } catch (e) { /* private window: defaults apply */ }
   const optState = (() => { try { return JSON.parse(localStorage.getItem('cyem.layeropts') || '{}'); } catch { return {}; } })();
   const collapsed = (() => { try { return JSON.parse(localStorage.getItem('cyem.groups') || '{}'); } catch { return {}; } })();
   function saveLs(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }

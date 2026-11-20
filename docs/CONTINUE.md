@@ -77,11 +77,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 3. [x] **Native apps** (`docs/NATIVE-PLAN.md`): ~~W3 notifications~~ (done 20 Nov, 0.4.0), ~~W5 widgets~~ (done 20 Nov,
    0.5.0; iPhone install waits for Neil). The apps host the web interface; never
    rebuild web features natively (Neil, 19 Nov). Build and look at it on the MacBook (`native/README.md`).
-3a. **Audit follow-ups**: done in release 2026-11-20a (PR #51) except two checks. Left: (a) UKFAT 16.30-16.36 MHz gap:
-   parser v4 reads ITU digit groups and Health now lists any coverage gap; after the next monthly run, if the gap remains,
-   read the PDF page near 16.3 MHz on the EVO before recording it as a genuine gap. (b) Run tests/ui/run.sh,
-   corridor_check.py and ui_audit.py against the EVO (scripts fixed by reasoning, not yet run there). Also: OpenWebRX+ on
-   trade lists Airspy HF+ and SDRPlay devices that do not exist; remove them in its settings (needs an admin user).
+3a. **Audit follow-ups**: closed 20 Nov (PRs #51, #55; release 2026-11-20b). UKFAT 16.30-16.36 MHz is a gap in Ofcom's own
+   table (PDF page 22), reported as such. UI checks against the EVO on 20 Nov (from trade, ~/cyemui with the ha-review venv
+   and PW_CHROME = the 1228 chrome-headless-shell): emo_smoke 15/15, ui_audit 0 issues, corridor_check all pass,
+   plan_smoke 11/12 on a stale title check (fixed in #55). sdr_live_check (rewritten) and plan_smoke not yet re-run on
+   2026-11-20b: the MacBook link dropped. Optional: remove the Airspy HF+ and SDRPlay entries from OpenWebRX+ on trade.
 4. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
 5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,

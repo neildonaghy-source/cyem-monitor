@@ -12,13 +12,14 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 747JXF57MZ
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.3.1"
+    MARKETING_VERSION: "0.4.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 targets:
   CyEM-iOS:
     type: application
     platform: iOS
+    scheme: {}                                             # shared schemes for every target, so none is left out
     sources:
       - Shared
       - path: Config                                       # folder: tailnet.json (pre-approved key, not in git) when present
@@ -32,6 +33,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem
         PRODUCT_NAME: CyEM
+        INFOPLIST_FILE: Info/iOS.plist                       # background refresh and Handoff keys, merged
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: CyEM
@@ -42,6 +44,7 @@ targets:
   CyEM-macOS:
     type: application
     platform: macOS
+    scheme: {}
     sources:
       - Shared
       - path: Config                                       # folder: tailnet.json (pre-approved key, not in git) when present
@@ -63,7 +66,21 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem.mac
         PRODUCT_NAME: CyEM
+        INFOPLIST_FILE: Info/macOS.plist                     # Handoff key, merged
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: CyEM
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         ENABLE_HARDENED_RUNTIME: YES
+  CyEMTests:                                              # pure logic only (NotifyPlan); no app host, no TailscaleKit
+    type: bundle.unit-test
+    platform: macOS
+    scheme:
+      testTargets: [CyEMTests]
+    sources:
+      - Tests
+      - Shared/NotifyPlan.swift
+      - Shared/Models.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem.tests
+        GENERATE_INFOPLIST_FILE: YES

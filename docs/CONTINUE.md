@@ -3,7 +3,14 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (19 Nov 2026, 11:30 UTC)
+## Where things are (20 Nov 2026, 11:30 UTC)
+
+- Native apps 0.4.0 (20 Nov, W3): local notifications for high-severity items (4 and 5) and finished briefs, Share Page,
+  Handoff (`native/Shared/Notifier.swift`, `NotifyPlan.swift`, tests `native/Tests`, scheme CyEMTests). Mac app replaced
+  in `~/Applications/CyEM.app` on the MacBook (0.3.1 kept at `~/Developer/cyem-monitor/native/build/CyEM-0.3.1.app`); it
+  polls the EVO through built-in Tailscale (200s for `/api/items?min_severity=4` and `/api/briefs?limit=1` in the
+  container log). iPhone build installed 20 Nov (free team: expires 27 Nov). Delivery of a notification not yet seen:
+  macOS and iOS ask once for permission, which needs Neil (see "Waiting for Neil"). No server change.
 
 - Running on the EVO-X2 (`docs/DEPLOY-EVO.md`), https://nucbox-evo-x2.tail013324.ts.net/ (tailnet, no log-in; internet
   through Funnel with a log-in). `main` is deployed (06760b2, release 2026-11-19f: PR #36
@@ -49,7 +56,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 2. [x] **Corridor vignettes and time** (done 19 Nov, PR #36): corridors through time (time layers from the timeline, waiting allowed) and
    three worked vignettes in the examples: the battlegroup on Salisbury Plain (ground), Vestfjord or the Solent
    (maritime, with the evaporation duct from met), a UAS transit with GNSS jamming (air). Tests on synthetic terrain.
-3. **Native apps** (`docs/NATIVE-PLAN.md`): W3 notifications, then W5 widgets. The apps host the web interface; never
+3. **Native apps** (`docs/NATIVE-PLAN.md`): ~~W3 notifications~~ (done 20 Nov, 0.4.0), then W5 widgets. The apps host the web interface; never
    rebuild web features natively (Neil, 19 Nov). Build and look at it on the MacBook (`native/README.md`).
 3a. **Audit follow-ups** (audit of 19 Nov, Claude Doc "CyEM audit, 19 Nov 2026"; slices 1 to 4 merged as PRs #33 to #35,
    #37, #38): float32 EMO rasters and a smaller `_COV` (memory); purge on publish time; keep a failed scheduled brief
@@ -110,5 +117,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   about 2147 MHz after crop, hence 15% crop for 24-1766 MHz (#47). Remove with `sudo bash ~/cyem-sdr/install-trade-sweep.sh --remove`.
 
 ## Waiting for Neil
+
+- Native 0.4.0: allow notifications for CyEM when asked (Mac: the prompt on first launch, or System Settings >
+  Notifications > CyEM; iPhone: on first open). Then Settings > Notifications > Check now shows the last check; the next
+  high-severity item or brief should appear as a notification. Tell the next run if none arrive.
 
 - EMO examples on real sites (0e Corsham, 0d Thorney Island, Boscombe Down): Neil said leave them (19 Nov).

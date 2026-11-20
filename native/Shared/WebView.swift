@@ -15,12 +15,25 @@ final class WebController {
     var progress: Double = 0
     var loadError: String?
     var shareFile: SharedFile?                  // iOS: a finished download waiting for the share sheet
+    var currentURL: URL?                        // the page shown (Share, Handoff)
+    var title: String?
 
     struct SharedFile: Identifiable { let url: URL; var id: String { url.path } }
 
     func reload() { loadError = nil; view?.reload() }
     func back() { view?.goBack() }
     func forward() { view?.goForward() }
+    /// Shows a page of the server (a Handoff from the other device, a tapped notification).
+    func open(_ url: URL) { loadError = nil; view?.load(URLRequest(url: url)) }
+
+    #if os(macOS)
+    /// File > Share…: the system share picker for the page's address.
+    func sharePage() {
+        guard let u = currentURL, let v = view else { return }
+        let p = NSSharingServicePicker(items: [u])
+        p.show(relativeTo: NSRect(x: v.bounds.maxX - 40, y: v.bounds.maxY - 10, width: 1, height: 1), of: v, preferredEdge: .minY)
+    }
+    #endif
 }
 
 #if os(macOS)
@@ -97,6 +110,8 @@ struct CyEMWebView: Representable {
             observers = [
                 wv.observe(\.estimatedProgress, options: [.new]) { [weak self] v, _ in Task { @MainActor in self?.controller.progress = v.estimatedProgress } },
                 wv.observe(\.isLoading, options: [.new]) { [weak self] v, _ in Task { @MainActor in self?.controller.loading = v.isLoading } },
+                wv.observe(\.url, options: [.new]) { [weak self] v, _ in Task { @MainActor in self?.controller.currentURL = v.url } },
+                wv.observe(\.title, options: [.new]) { [weak self] v, _ in Task { @MainActor in self?.controller.title = v.title } },
             ]
         }
 

@@ -113,6 +113,18 @@ struct Item: Decodable, Sendable, Identifiable, Hashable {
     var link: URL? { url.flatMap(URL.init(string:)) }
 }
 
+struct BriefsResponse: Decodable, Sendable {
+    var briefs: [BriefRow]
+}
+
+/// One row of GET /api/briefs (the first 160 characters of the brief as `preview`).
+struct BriefRow: Decodable, Sendable, Equatable {
+    var id: Int
+    var created_at: String?
+    var kind: String?
+    var preview: String?
+}
+
 struct MeResponse: Decodable, Sendable {
     var internet: Bool
     var user: String?

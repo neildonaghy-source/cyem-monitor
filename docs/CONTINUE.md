@@ -10,7 +10,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   in `~/Applications/CyEM.app` on the MacBook (0.3.1 kept at `~/Developer/cyem-monitor/native/build/CyEM-0.3.1.app`); it
   polls the EVO through built-in Tailscale (200s for `/api/items?min_severity=4` and `/api/briefs?limit=1` in the
   container log). iPhone build installed 20 Nov (free team: expires 27 Nov). Delivery of a notification not yet seen:
-  macOS and iOS ask once for permission, which needs Neil (see "Waiting for Neil"). No server change.
+  macOS and iOS ask once for permission, which needs Neil (see "Waiting for Neil"). No server change; `main` 23141ac
+  deployed on the EVO (healthy, the installed Mac app's polls answered 200 after the restart). Recorded on trade
+  (CHANGELOG, runbook 4.2) and on the Mac mini (`cyem-monitor-20261120-main-23141ac.bundle`, clone-verified; reach it from
+  the MacBook with `ssh -o HostName=neils-mac-mini -o HostKeyAlias=neils-mac-mini.local mac-mini`, as `.local` does not
+  resolve). No EMO check was needed (no server change).
 
 - Running on the EVO-X2 (`docs/DEPLOY-EVO.md`), https://nucbox-evo-x2.tail013324.ts.net/ (tailnet, no log-in; internet
   through Funnel with a log-in). `main` is deployed (06760b2, release 2026-11-19f: PR #36

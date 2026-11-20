@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19h';
+  const BUILD = '2026-11-20a';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -17,6 +17,9 @@
     } catch (e) { return null; }
     return s;
   })();
+  // First run on this device: no layer state saved here and none from the start-up default. The app then opens on the
+  // UK with the live layers only and nothing else open (EMO stays off until the EMO button is pressed).
+  const FIRST_RUN = (() => { try { return localStorage.getItem('cyem.layers') == null; } catch (e) { return true; } })();
   let startViewHold = !!START?.view;  // keep the saved view instead of EMO's first auto-fit
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -57,6 +60,43 @@
     t.textContent = text; t.className = bad ? 'bad show' : 'show';
     clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 6000);
   }
+  // Side sheets: a non-blocking panel on the right (a bottom sheet at phone width); the map stays usable behind it.
+  // openSheet(id, title, html) creates <aside id=id class="sheet"> on first use, fills it and shows it, and returns the
+  // body element (#<id>-body). openSheet(id) with no title or html just shows an existing sheet (markup may also be
+  // static: give it class "sheet" and a .sheet-close button). closeSheet(id) hides it. Escape closes the most recently
+  // opened sheet unless the modal is up (the modal takes Escape first).
+  const SHEETS = [];
+  function openSheet(id, title, html) {
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('aside'); el.id = id; el.className = 'sheet';
+      el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'false'); el.setAttribute('aria-labelledby', `${id}-title`);
+      el.innerHTML = `<div class="sheet-head"><h2 id="${id}-title"></h2><button type="button" class="sheet-close" aria-label="Close">Close</button></div><div class="sheet-body" id="${id}-body"></div>`;
+      document.body.appendChild(el);
+    }
+    const close = el.querySelector('.sheet-close');
+    if (close && !close.dataset.wired) { close.dataset.wired = '1'; close.addEventListener('click', () => closeSheet(id)); }
+    if (title != null) { const h = el.querySelector('.sheet-head h2'); if (h) h.textContent = title; }
+    const body = el.querySelector('.sheet-body') || el;
+    if (html != null) body.innerHTML = html;
+    if (!el.classList.contains('open')) {
+      el._opener = document.activeElement; el.classList.add('open');
+      if (close) close.focus({ preventScroll: true });
+    }
+    const i = SHEETS.indexOf(id); if (i >= 0) SHEETS.splice(i, 1); SHEETS.push(id);
+    return body;
+  }
+  function closeSheet(id) {
+    const el = document.getElementById(id); if (!el || !el.classList.contains('open')) return;
+    el.classList.remove('open');
+    const i = SHEETS.indexOf(id); if (i >= 0) SHEETS.splice(i, 1);
+    if (el._opener && document.contains(el._opener)) el._opener.focus({ preventScroll: true });
+    el._opener = null;
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !SHEETS.length || PICK || document.getElementById('modal')?.classList.contains('show')) return;  // a map pick (01) takes Escape first
+    closeSheet(SHEETS[SHEETS.length - 1]);
+  });
   // DELETE that reports failure (a 403 from the cross-site guard or a 404 used to look like success).
   async function apiDel(path) {
     try { await api(path, { method: 'DELETE' }); return true; } catch (e) { toast(`Delete failed: ${e.message}`); return false; }
@@ -75,7 +115,11 @@
 
   // ---------------------------------------------------------------- map + basemaps
   const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) })
-    .setView([38, 18], 3);
+    .setView([54.5, -3.0], 6);
+  // Default view: Great Britain and Northern Ireland (zoom 6 on a laptop, 5 at phone width or on a short window).
+  // A start-up default view (below) replaces it; EMO's auto-fit may move it when a scenario is shown.
+  const UK_BOUNDS = L.latLngBounds([49.8, -8.3], [59.0, 1.9]);
+  map.setView([54.5, -3.0], Math.max(4, Math.min(innerWidth < 700 ? 5 : 6, map.getBoundsZoom(UK_BOUNDS))), { animate: false });
   // One map pick at a time, with a bar to cancel it (Esc too). Starting a pick cancels the one before, so a single click
   // never sets two positions, and a cancelled pick does not swallow the next ordinary map click.
   let PICK = null;
@@ -125,6 +169,10 @@
   ];
   const G = (glyph, col, size = 13) => `<span class="lg" style="color:${col};font-size:${size}px">${glyph}</span>`;
   const DOT = (col, r = 8, extra = '') => `<span class="lgdot" style="background:${col};width:${r}px;height:${r}px;${extra}"></span>`;
+  // Default layer set (Nov 2026): on = fed by a live collector or live API (space weather, GNSS interference, ADS-B, AIS,
+  // satellites, launches, cyber and outage feeds, located news), plus the user's own planning layers (coverage, links,
+  // planned emitters), which are empty until something is planned. Reference layers (emitters, radar sites, cells, Ofcom
+  // licences, APT groups, cables) start off. A device's saved choices (cyem.layers) always win.
   const LAYERS = [
     { id: 'terminator', group: 'iono', label: 'Day / night + grey line', colour: '#f3b23e', on: true, load: loadTerminator, every: 1,
       legend: `${DOT('rgba(0,0,0,.6)', 10, 'border:1px solid #445')} night ${DOT('#f3b23e', 10, 'opacity:.35')} grey line` },
@@ -139,18 +187,18 @@
     { id: 'milair', group: 'em', label: 'Military aircraft (live)', colour: '#f3b23e', on: true, load: loadMilair, every: 2,
       legend: `${G('➤', '#f3b23e', 15)} ISR ${G('➤', '#ff5c5c', 15)} EW ${G('➤', '#ffd166', 15)} AEW ${G('➤', '#ff8c42', 15)} C2 ${G('➤', '#2bb9a8', 15)} MPA ${G('➤', '#3cc7ff', 11)} tanker ${G('➤', '#8593a6', 11)} other`,
       opts: [{ id: 'milair_isr', label: 'ISR / EW / AEW / MPA only', on: true }] },
-    { id: 'sats', group: 'em', label: 'Satellites (live)', colour: '#9ad7ff', on: false, load: loadSats, every: 2,
+    { id: 'sats', group: 'em', label: 'Satellites (live)', colour: '#9ad7ff', on: true, load: loadSats, every: 2,
       legend: `${DOT('#9ad7ff', 7, 'border-radius:0')} GNSS ${DOT('#ff6fb1', 7, 'border-radius:0')} military ${DOT('#2bb9a8', 7, 'border-radius:0')} SBAS · click one for its ground track`,
       opts: [{ id: 'sats_gnss', label: 'GNSS', on: true }, { id: 'sats_military', label: 'military', on: true }, { id: 'sats_sbas', label: 'SBAS', on: false }] },
-    { id: 'emitters', group: 'em', label: 'Strategic emitters (ref)', colour: '#ff6fb1', on: true, load: loadEmitters, every: 0,
+    { id: 'emitters', group: 'em', label: 'Strategic emitters (ref)', colour: '#ff6fb1', on: false, load: loadEmitters, every: 0,
       legend: `${G('▲', '#ff5c5c')} EW radar ${G('▲', '#ff8c42')} ABM ${G('△', '#ffd166')} OTH ${G('◬', '#c8d3e0')} space surv ${G('▴', '#f3b23e')} air def ${G('◆', '#ff6fb1')} SIGINT ${G('●', '#3cc7ff')} SATCOM ${G('▼', '#b48cff')} VLF ${G('▽', '#b48cff')} HF ${G('✦', '#9ad7ff')} GNSS gnd ${G('✧', '#45d38a')} ionosph ${G('◉', '#2bb9a8')} deep space ${G('✕', '#ff5c5c')} EW range ${G('○', '#5d6b7d')} historic` },
     { id: 'radars', group: 'em', label: 'Radar sites (OSM)', colour: '#c8d3e0', on: false, load: loadRadars, every: 0,
       legend: `${DOT('#e0e6ee', 7)} military ${DOT('#3cc7ff', 7)} space ${DOT('#f3b23e', 6)} aviation ${DOT('#45d38a', 6)} weather ${DOT('#2bb9a8', 6)} maritime ${DOT('#6f7f93', 6)} other`,
       opts: [{ id: 'radars_mil', label: 'military / space only', on: true }] },
-    { id: 'air', group: 'em', label: 'All aircraft (ADS-B, UK)', colour: '#8fb3d9', on: false, load: loadAir, every: 2,
+    { id: 'air', group: 'em', label: 'All aircraft (ADS-B, UK)', colour: '#8fb3d9', on: true, load: loadAir, every: 2,
       legend: `${DOT('#8fb3d9', 7)} normal ${DOT('#ff6fb1', 7)} military ${DOT('#f3b23e', 8)} degraded GNSS (NIC 1–6) ${DOT('#ff5c5c', 8)} emergency squawk`,
       opts: [{ id: 'air_flags', label: 'Degraded GNSS / emergency only', on: false }] },
-    { id: 'ais', group: 'em', label: 'Ships (AIS, UK waters)', colour: '#3cc7ff', on: false, load: loadAis, every: 5,
+    { id: 'ais', group: 'em', label: 'Ships (AIS, UK waters)', colour: '#3cc7ff', on: true, load: loadAis, every: 5,
       legend: `${DOT('#ff5c5c', 7)} military ${DOT('#ff6fb1', 7)} law enf. ${DOT('#f3b23e', 7)} SAR ${DOT('#3cc7ff', 7)} cargo ${DOT('#c07b3a', 7)} tanker ${DOT('#45d38a', 7)} passenger ${DOT('#2bb9a8', 7)} fishing ${DOT('#8593a6', 7)} other`,
       opts: [{ id: 'ais_gov', label: 'Military / law enforcement / SAR only', on: false }] },
     { id: 'cells', group: 'em', label: 'Mobile cells (OpenCelliD, zoom 11+)', colour: '#45d38a', on: false, load: loadCells, every: 0,
@@ -163,7 +211,7 @@
       legend: `${G('◉', '#45d38a')} clear ${G('◉', '#f3b23e')} medium/low ${G('◉', '#ff5c5c')} high · dashed ring = check radius · open Spectrum to plan` },
     { id: 'wtr', group: 'em', label: 'Ofcom licences (zoom 8+)', colour: '#8fb3d9', on: false, load: loadWtr, every: 0,
       legend: `${DOT('#3cc7ff', 7)} business radio ${DOT('#8593a6', 7)} fixed links ${DOT('#2bb9a8', 7)} maritime/AIS ${DOT('#ff6fb1', 7)} satellite ${DOT('#f3b23e', 7)} GNSS repeater ${DOT('#c8d3e0', 7)} other · one dot per site` },
-    { id: 'launches', group: 'em', label: 'Upcoming launches', colour: '#ffffff', on: false, load: loadLaunches, every: 60, legend: `${G('▲', '#fff')} launch pad` },
+    { id: 'launches', group: 'em', label: 'Upcoming launches', colour: '#ffffff', on: true, load: loadLaunches, every: 60, legend: `${G('▲', '#fff')} launch pad` },
     { id: 'ransomware', group: 'cyber', label: 'Ransomware victims 30d', colour: '#b48cff', on: true, load: loadRansomware, every: 10, legend: `${DOT('rgba(180,140,255,.35)', 12, 'border:1px solid #b48cff')} victims per country (size = count)` },
     { id: 'c2', group: 'cyber', label: 'Botnet C2 (country)', colour: '#3cc7ff', on: true, load: loadC2, every: 10, legend: `${DOT('rgba(60,199,255,.2)', 12, 'border:1px dashed #3cc7ff')} C2 servers per country` },
     { id: 'apt', group: 'cyber', label: 'APT groups (ref)', colour: '#ff8c42', on: false, load: loadApt, every: 0, legend: `${G('◆', '#ff8c42')} state ${G('◆', '#ffd166')} criminal` },
@@ -171,9 +219,19 @@
     { id: 'cloudflare', group: 'infra', label: 'Cloudflare outages 7d', colour: '#ffd166', on: true, load: loadCloudflare, every: 10, legend: `${DOT('rgba(255,209,102,.3)', 11, 'border:1.5px solid #ffd166')} outage annotation (Cloudflare Radar)` },
     { id: 'cables', group: 'infra', label: 'Submarine cables', colour: '#2bb9a8', on: false, load: loadCables, every: 0, legend: `<span class="lgline" style="background:#2bb9a8"></span> cable system` },
     { id: 'gdelt', group: 'osint', label: 'GDELT news 24h', colour: '#45d38a', on: true, load: loadGdelt, every: 10, legend: `${DOT('#3cc7ff', 8)} cyber ${DOT('#f3b23e', 8)} GNSS/EW ${DOT('#2bb9a8', 8)} connectivity ${DOT('#ff6fb1', 8)} satellite` },
-    { id: 'items', group: 'osint', label: 'Located news 7d', colour: '#8593a6', on: false, load: loadItemsLayer, every: 10, legend: `${DOT('#3cc7ff', 6)} cyber ${DOT('#f3b23e', 6)} EM ${DOT('#2bb9a8', 6)} infra ${DOT('#b48cff', 6)} OSINT` },
+    { id: 'items', group: 'osint', label: 'Located news 7d', colour: '#8593a6', on: true, load: loadItemsLayer, every: 10, legend: `${DOT('#3cc7ff', 6)} cyber ${DOT('#f3b23e', 6)} EM ${DOT('#2bb9a8', 6)} infra ${DOT('#b48cff', 6)} OSINT` },
   ];  const groups = {};
   const saved = (() => { try { return JSON.parse(localStorage.getItem('cyem.layers') || '{}'); } catch { return {}; } })();
+  // Devices that already had layer state before the live-first defaults keep what they saw: the old default is written
+  // for each layer whose default changed and that the device never toggled. Runs once per device.
+  try {
+    if (localStorage.getItem('cyem.layersv') !== '2') {
+      if (!FIRST_RUN) { const PRE = { sats: false, emitters: true, air: false, ais: false, launches: false, items: false }; let n = 0;
+        for (const [k, v] of Object.entries(PRE)) if (!(k in saved)) { saved[k] = v; n++; }
+        if (n) localStorage.setItem('cyem.layers', JSON.stringify(saved)); }
+      localStorage.setItem('cyem.layersv', '2');
+    }
+  } catch (e) { /* private window: defaults apply */ }
   const optState = (() => { try { return JSON.parse(localStorage.getItem('cyem.layeropts') || '{}'); } catch { return {}; } })();
   const collapsed = (() => { try { return JSON.parse(localStorage.getItem('cyem.groups') || '{}'); } catch { return {}; } })();
   function saveLs(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
@@ -835,7 +893,7 @@
       $('#brief').innerHTML = renderMd(brief.content);
       const { briefs } = await api('/api/briefs?limit=30');
       const opts = briefs.map((b) => `<option value="${b.id}" ${b.id === brief.id ? 'selected' : ''}>${fmtZ(b.created_at)} · ${esc(b.kind)}</option>`).join('');
-      $('#brief-meta').innerHTML = `<span>${esc(brief.model)}</span><span>·</span><span>${brief.item_count} items</span><span>·</span><span>${Math.round(brief.duration_s)}s</span><select id="brief-hist">${opts}</select>`;
+      $('#brief-meta').innerHTML = `<span>${esc(brief.model)}</span><span>·</span><span>${brief.item_count} items</span><span>·</span><span>${Math.round(brief.duration_s)}s</span><select id="brief-hist" aria-label="Earlier briefs">${opts}</select>`;
       $('#brief-hist').addEventListener('change', (e) => loadBrief(parseInt(e.target.value)));
     } catch (e) { $('#brief-notice').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
   }
@@ -921,18 +979,20 @@
   $('#modal-close').addEventListener('click', () => $('#modal').classList.remove('show'));
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') $('#modal').classList.remove('show'); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#modal').classList.remove('show'); });
+  // Health opens in a side sheet (00-head.js openSheet), so the map stays usable while it is up.
   $('#btn-health').addEventListener('click', async () => {
+    openSheet('health-sheet', 'Collector health', '<p class="dim"><span class="spinner"></span> Loading…</p>');
     try {
       const [{ collectors, feeds }, ol, cfg] = await Promise.all([api('/api/collectors'), api('/api/ollama'), api('/api/config')]);
       const rows = collectors.map((c) => `<tr><td><b>${esc(c.name)}</b><div class="dim">${esc(c.description)}</div></td><td>${esc(c.domain)}</td><td class="mono">${Math.round(c.interval_s / 60)}m</td><td class="${c.running ? 'warn' : c.ok === 1 ? 'ok' : c.ok === 0 ? 'bad' : ''}">${c.running ? 'running' : c.ok === 1 ? 'ok' : c.ok === 0 ? 'FAIL' : c.enabled ? 'pending' : 'off'}</td><td class="mono" title="${esc(c.last_finished)}">${c.last_finished ? ago(c.last_finished) + ' ago' : '–'}</td><td class="mono">${c.count ?? ''}</td><td>${esc(c.message || '')}</td></tr>`).join('');
       const bad = feeds.filter((f) => f.fail_count > 0).map((f) => `<tr><td class="mono" style="word-break:break-all">${esc(f.url)}</td><td class="bad">${f.fail_count}</td><td>${esc(f.last_error || '')}</td></tr>`).join('');
       const olTxt = ol.reachable ? `<span class="ok">reachable</span> at ${esc(ol.url)} · model ${esc(ol.model)} ${ol.model_present ? '<span class="ok">present</span>' : '<span class="bad">NOT FOUND</span>'} · loaded: ${esc((ol.loaded || []).map((m) => m.name).join(', ') || 'none')}` : `<span class="bad">unreachable</span> ${esc(ol.error || '')}`;
       const keysTxt = Object.entries(cfg.keys || {}).map(([k, v]) => `<span class="${v ? 'ok' : 'dim'}">${esc(k)} ${v ? '✓' : '—'}</span>`).join(' · ');
-      openModal('Collector health', `<p><b>Ollama:</b> ${olTxt}</p><p><b>Optional keys:</b> ${keysTxt} <span class="dim">(set in ~/cyem/.env, then docker compose up -d)</span></p><table class="grid"><tr><th>Collector</th><th>Domain</th><th>Every</th><th>State</th><th>Last</th><th>Count</th><th>Message</th></tr>${rows}</table>
+      openSheet('health-sheet', 'Collector health', `<p><b>Ollama:</b> ${olTxt}</p><p><b>Optional keys:</b> ${keysTxt} <span class="dim">(set in ~/cyem/.env, then docker compose up -d)</span></p><table class="grid"><tr><th>Collector</th><th>Domain</th><th>Every</th><th>State</th><th>Last</th><th>Count</th><th>Message</th></tr>${rows}</table>
         <h3 class="sec">Failing feeds (${feeds.filter((f) => f.fail_count > 0).length} of ${feeds.length})</h3><table class="grid"><tr><th>Feed</th><th>Fails</th><th>Error</th></tr>${bad || '<tr><td colspan=3 class="ok">all feeds healthy</td></tr>'}</table>
         <p style="margin-top:10px"><button id="run-all">Run all collectors now</button></p>`);
       $('#run-all').addEventListener('click', async () => { await api('/api/collect/all', { method: 'POST' }); $('#run-all').textContent = 'started'; setTimeout(() => { refreshStatus(); loadLayers(); loadFeed(); }, 20000); });
-    } catch (e) { openModal('Collector health', `<p class="bad">${esc(e.message)}</p>`); }
+    } catch (e) { openSheet('health-sheet', 'Collector health', `<p class="bad">${esc(e.message)}</p>`); }
   });
 
   // ---------------------------------------------------------------- spectrum planning panel
@@ -1018,7 +1078,7 @@
     const head = st.loaded
       ? `<p class="dim">Baseline: <b>${st.loaded.toLocaleString('en-GB')}</b> Ofcom WTR assignments, source dated ${esc(src.last_modified || '?')}, loaded ${st.updated ? ago(st.updated) + ' ago' : '?'}. Licensed assignments only, not measured on-air use. Band plan is simplified; UKFAT is authoritative.</p>`
       : `<p class="warn">Ofcom baseline not loaded yet. It downloads on first run (about 52 MB); check Health for the <b>wtr</b> collector.</p>`;
-    const settingsRow = `<div class="specset">Guard <input id="sp-guard" type="number" step="any" min="0" value="${SPEC.guard_khz}"> kHz · Radius <input id="sp-rad" type="number" step="any" min="1" value="${SPEC.radius_km}"> km · Display ±<input id="sp-span" type="number" step="any" min="1" value="${SPEC.span_khz}"> kHz · Harmonics to <input id="sp-harm" type="number" min="0" max="5" step="1" value="${SPEC.harm_order ?? 3}"> · Co-site IM3 <input id="sp-cosite" type="number" step="any" min="0" value="${SPEC.cosite_km ?? 1}"> km <button id="sp-recheck">Recheck</button></div>`;
+    const settingsRow = `<div class="specset">Guard <input id="sp-guard" aria-label="Guard band kHz" type="number" step="any" min="0" value="${SPEC.guard_khz}"> kHz · Radius <input id="sp-rad" aria-label="Check radius km" type="number" step="any" min="1" value="${SPEC.radius_km}"> km · Display ±<input id="sp-span" aria-label="Display span ± kHz" type="number" step="any" min="1" value="${SPEC.span_khz}"> kHz · Harmonics to <input id="sp-harm" aria-label="Harmonic order to screen" type="number" min="0" max="5" step="1" value="${SPEC.harm_order ?? 3}"> · Co-site IM3 <input id="sp-cosite" aria-label="Co-site IM3 radius km" type="number" step="any" min="0" value="${SPEC.cosite_km ?? 1}"> km <button id="sp-recheck">Recheck</button></div>`;
     const tot = res.totals;
     const list = res.planned.length ? `<table class="grid"><tr><th>Emitter</th><th>MHz</th><th>BW kHz</th><th>Window (Z)</th><th>Conflicts</th><th></th></tr>${res.planned.map((p) => {
       const c = { high: 0, medium: 0, low: 0 }; p.conflicts.forEach((x) => { c[x.severity] += 1; });
@@ -1105,7 +1165,7 @@
     d = d || {};
     const val = (k, t) => t === 'datetime-local' ? toLocalInput(d[k]) : esc(d[k] ?? '');
     return `<div class="specform">${LINK_FIELDS.map(([k, lbl, t]) => `<label${k === 'name' ? ' class="wide"' : ''}>${esc(lbl)}<input id="lk-${k}" type="${t}" step="any" value="${val(k, t)}"></label>`).join('')}
-      <div class="wide btns"><select id="lk-preset"><option value="">Band preset…</option>${(linkPresets?.presets || []).map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
+      <div class="wide btns"><select id="lk-preset" aria-label="Band preset"><option value="">Band preset…</option>${(linkPresets?.presets || []).map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
       <button id="lk-pick-a">Pick A on map</button> <button id="lk-pick-b">Pick B on map</button>
       <button id="lk-analyse" class="primary">Analyse</button> <button id="lk-save">${linkEditId ? 'Update' : 'Save'} link</button> <button id="lk-clear">Clear</button> <span id="lk-err" class="bad"></span></div>
       <p class="dim wide">Presets are typical values only: replace with your equipment data. Rain R0.01 of about 25 mm/h is typical for southern England (ITU-R P.837 gives local values).</p></div>`;
@@ -1263,7 +1323,7 @@
   function covForm(d) {
     const val = (k, t) => t === 'datetime-local' ? toLocalInput(d[k]) : esc(d[k] ?? '');
     return `<div class="specform">${COV_FIELDS.map(([k, lbl, t]) => `<label${k === 'name' ? ' class="wide"' : ''}>${esc(lbl)}<input id="cv-${k}" type="${t}" step="any" value="${val(k, t)}"></label>`).join('')}
-      <div class="wide btns"><select id="cv-preset"><option value="">Preset…</option>${COV_PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
+      <div class="wide btns"><select id="cv-preset" aria-label="Coverage preset"><option value="">Preset…</option>${COV_PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
       <button id="cv-pick">Pick site on map</button> <button id="cv-analyse" class="primary">Compute coverage</button> <button id="cv-save">${covEditId ? 'Update' : 'Save'} site</button> <button id="cv-clear">Clear</button> <span id="cv-err" class="bad"></span></div>
       <p class="dim wide">Presets are typical values only. Interference threshold is the level of your signal at a licensee that counts as a clash in deconfliction (default −120 dBm).</p></div>`;
   }
@@ -1766,7 +1826,7 @@
       <div class="emo-groups">
         <div class="grp"><span class="lbl">Act</span>${radiates && e.fixed_level_dbm == null ? `<button data-emo-emcon data-on="${f.active ? 0 : 1}">${f.active ? 'EMCON off-air' : 'On air'}</button>` : ''}<button data-emo-editf>Edit</button></div>
         ${f.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === f.id) ? '<div class="grp"><span class="lbl">Plan</span><button data-emo-plannet>EP siting</button><button data-emo-tune>EP measures</button><button data-emo-joint>Re-site net</button></div>' : ''}
-        ${f.kind === 'effector' ? `<div class="grp"><span class="lbl">Plan</span><select data-emo-eatgt>${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
+        ${f.kind === 'effector' ? `<div class="grp"><span class="lbl">Plan</span><select data-emo-eatgt aria-label="Net to deny">${EMO.ents.filter((n) => n.kind === 'emitter' && n.side !== f.side && n.side !== 'grey' && EMO.ents.some((u) => u.net === n.id)).map((n) => `<option>${esc(n.name)}</option>`).join('')}</select><button data-emo-planea>EA siting</button></div>` : ''}
         <div class="grp"><span class="lbl">Compare</span><button data-emo-multi>With others</button></div>
       </div>
       <div id="emo-planout"></div>
@@ -1813,7 +1873,7 @@
     const tbl = (h, rows) => rows.length ? `<h4>${h}</h4><table class="grid">${rows.join('')}</table>` : '';
     return `<div class="emo-card-head"><b>Comparing ${EMO.sel.length}</b><span class="btns"><button data-emo-done>Done</button><button data-emo-clear>Clear</button></span></div>
       <p>${chips}</p>
-      <p><select data-emo-add style="max-width:100%"><option value="">+ Add an entity…</option>
+      <p><select data-emo-add aria-label="Add an entity to the comparison" style="max-width:100%"><option value="">+ Add an entity…</option>
         ${['blue', 'red'].map((sd) => `<optgroup label="${sd === 'blue' ? 'Blue' : 'Red'}">${EMO.ents.filter((e) => e.side === sd && !sel.has(e.id)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => `<option value="${esc(e.id)}">${esc(e.name)} · ${esc(KIND_TXT[e.kind] || e.kind)}${e.category ? ' · ' + esc(e.category) : ''}</option>`).join('')}</optgroup>`).join('')}
       </select></p>
       <p class="dim">Add from the list, or tap symbols on the map${matchMedia('(pointer:fine)').matches ? ' (shift-click on desktop)' : ''}; × removes. All selected footprints are shown; lines only between them.</p>
@@ -1866,13 +1926,13 @@
     const foc = EMO.ents.find((e) => e.id === EMO.focus && e.side !== 'grey');
     const c = EMO.corr = EMO.corr || { domain: 'ground', emcon: 'auto', silent: 0.6, alt: 150, speed: '', step: 10, hold: true };
     if (!units.some((e) => e.name === c.mover)) c.mover = (foc || units.find((e) => e.side === EMO.side) || units[0]).name;
-    const b = emoDockCard('Corridor', `<div class="specset">Unit <select id="corr-unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
-        <select id="corr-dom">${[['ground', 'Ground'], ['sea', 'Sea'], ['air', 'Air (low level)']].map(([k, l]) => `<option value="${k}"${c.domain === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
-        <span id="corr-altw"${c.domain === 'air' ? '' : ' hidden'}>at <input id="corr-alt" type="number" min="1" max="1000" value="${c.alt}" style="width:58px"> m AGL</span></div>
-      <div class="specset">Speed <input id="corr-speed" type="number" min="1" max="1000" placeholder="auto" value="${c.speed}" style="width:60px"> km/h
-        EMCON <select id="corr-emcon">${[['auto', 'Auto'], ['emit', 'Transmit'], ['silent', 'Silent']].map(([k, l]) => `<option value="${k}"${c.emcon === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
-        <span title="Cost per cell of moving without two-way C2: higher means the planner transmits more">silent price <input id="corr-sil" type="number" min="0" max="10" step="0.1" value="${c.silent}" style="width:52px"></span></div>
-      <div class="specset"><span title="Work the picture out every so many minutes as other units move (0: frozen at T+t)">Time layers every <input id="corr-step" type="number" min="0" max="120" value="${c.step}" style="width:52px"> min</span>
+    const b = emoDockCard('Corridor', `<div class="specset">Unit <select id="corr-unit" aria-label="Unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
+        <select id="corr-dom" aria-label="Domain">${[['ground', 'Ground'], ['sea', 'Sea'], ['air', 'Air (low level)']].map(([k, l]) => `<option value="${k}"${c.domain === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span id="corr-altw"${c.domain === 'air' ? '' : ' hidden'}>at <input id="corr-alt" aria-label="Height, m above ground" type="number" min="1" max="1000" value="${c.alt}" style="width:58px"> m AGL</span></div>
+      <div class="specset">Speed <input id="corr-speed" aria-label="Speed, km/h" type="number" min="1" max="1000" placeholder="auto" value="${c.speed}" style="width:60px"> km/h
+        EMCON <select id="corr-emcon" aria-label="EMCON">${[['auto', 'Auto'], ['emit', 'Transmit'], ['silent', 'Silent']].map(([k, l]) => `<option value="${k}"${c.emcon === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span title="Cost per cell of moving without two-way C2: higher means the planner transmits more">silent price <input id="corr-sil" aria-label="Silent price" type="number" min="0" max="10" step="0.1" value="${c.silent}" style="width:52px"></span></div>
+      <div class="specset"><span title="Work the picture out every so many minutes as other units move (0: frozen at T+t)">Time layers every <input id="corr-step" aria-label="Time layers every, minutes" type="number" min="0" max="120" value="${c.step}" style="width:52px"> min</span>
         <label title="Allow holding in place until the picture changes"><input id="corr-hold" type="checkbox"${c.hold ? ' checked' : ''}> holds</label>
         ${EMO.vignette ? '<button id="corr-vig" title="Fill in the worked corridor that comes with this example">Worked vignette</button>' : ''}</div>
       ${EMO.vignette ? `<p class="dim" id="corr-vignote">${esc(EMO.vignette.note || '')}</p>` : ''}
@@ -1937,50 +1997,92 @@
       b.querySelectorAll('[data-dock-layer]').forEach((cb) => cb.addEventListener('change', () => { EMO.on[cb.dataset.dockLayer] = cb.checked; emoDraw(); }));
     } else if (tool === 'score') {
       emoDockCard('Scoreboard', emoScoreTable(EMO.res) + (EMO.stale ? '<p class="dim">Stale: run again after moves.</p>' : ''));
-    } else if (tool === 'time') {
-      const b = emoDockCard('Time', `<p>T+<b id="emo-docktime">${EMO.t}</b> min of ${EMO.horizon || 0}</p><input id="emo-dockslider" type="range" min="0" max="${Math.max(1, Math.round(EMO.horizon || 0))}" step="5" value="${EMO.t}" style="width:100%"><p><button id="emo-dockplay">Play</button> <button id="emo-dockt0">T+0</button></p>`);
-      const set = async (v) => { EMO.t = +v; $('#emo-docktime').textContent = EMO.t; EMO.stale = true; emoDraw(); await emoRun(); };
-      b.querySelector('#emo-dockslider').addEventListener('change', (e) => set(e.target.value));
-      b.querySelector('#emo-dockt0').addEventListener('click', () => { b.querySelector('#emo-dockslider').value = 0; set(0); });
-      b.querySelector('#emo-dockplay').addEventListener('click', async () => { const sl = b.querySelector('#emo-dockslider'); for (let v = +sl.value + 10; v <= +sl.max && document.getElementById('emo-dockcard'); v += 10) { sl.value = v; await set(v); } });
     } else if (tool === 'coa') {
-      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button> <a href="/api/emo/coas/export.docx" download><button>Word annex</button></a></p><div id="emo-dockcoalist"></div>`);
-      const list = async () => {
-        const r = await api('/api/emo/coas'); const box = b.querySelector('#emo-dockcoalist');
-        const keys = [['net_availability_pct', 'Avail'], ['targetable', 'TQF'], ['denial_achieved', 'Den'], ['radar_tracks', 'Rdr']];
-        const row = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${sc?.[sd]?.[k] ?? '–'}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
-        box.innerHTML = r.coas.length || r.current ? `<table class="grid"><tr><th></th>${['B', 'R'].map((s) => keys.map(([, l]) => `<th>${s} ${l}</th>`).join('')).join('')}<th></th></tr>${r.current ? row('<i>now</i>', r.current, '') : ''}${r.coas.map((c) => row(esc(c.name), c.score, `<button data-dock-load="${c.id}">Load</button> <button data-dock-del="${c.id}">×</button>`)).join('')}</table>` : '<p class="dim">No COAs saved.</p>';
-        box.querySelectorAll('[data-dock-load]').forEach((x) => x.addEventListener('click', async () => { try { emoAbortRun(); const r2 = await postJson(`/api/emo/coas/${x.dataset.dockLoad}/load`, {}); EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); emoDraw(); await emoRun(); list(); } catch (e) { toast(`COA load failed: ${e.message}`); } }));
-        box.querySelectorAll('[data-dock-del]').forEach((x) => x.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${x.dataset.dockDel}`)) list(); }));
-      };
-      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { const name = b.querySelector('#emo-dockcoaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`; try { await postJson('/api/emo/coas', { name }); b.querySelector('#emo-dockcoaname').value = ''; list(); } catch (e) { toast(`COA save failed: ${e.message}`); } });
-      list();
+      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" aria-label="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button> <a href="/api/emo/coas/export.docx" download><button>Word annex</button></a></p><div id="emo-dockcoalist"></div>`);
+      const box = b.querySelector('#emo-dockcoalist');
+      b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { if (await emoCoaSave(b.querySelector('#emo-dockcoaname'))) emoCoaList(box); });
+      emoCoaList(box);
     } else if (tool === 'red') {
-      const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside"><option value="red"${EMO.side === 'blue' ? ' selected' : ''}>Red</option><option value="blue"${EMO.side === 'red' ? ' selected' : ''}>Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
-      b.querySelectorAll('[data-dock-coa]').forEach((x) => x.addEventListener('click', async () => {
-        const side = b.querySelector('#emo-dockside').value, o = b.querySelector('#emo-dockcoaout'), kind = x.dataset.dockCoa;
-        o.innerHTML = '<span class="spinner"></span> generating and applying…';
-        try {
-          const r = kind === 'revert' ? await postJson(`/api/emo/plan/coa/revert?side=${side}&t_min=${EMO.t}`, {}) : await postJson(`/api/emo/plan/coa?t_min=${EMO.t}`, { side, coa: kind });
-          planLayer.clearLayers();
-          (r.moves || []).forEach((m) => L.polyline([m.from, m.to], { color: SIDE_COL[side], weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer));
-          o.innerHTML = kind === 'revert' ? `reverted ${r.reverted} positions` : (r.moves.length ? `${r.coa.toUpperCase()} against ${esc(r.target)}:<br>${r.moves.map((m) => `<b>${esc(m.entity)}</b> ${esc(m.where)}<br><span class="dim">${esc(m.detail)}</span>`).join('<br>')}` : `${r.coa.toUpperCase()}: no move clearly improves ${side}'s laydown`);
-          EMO.prevScore = r.score_before || EMO.prevScore; await emoLoad(); EMO.res = null; await emoRun();
-        } catch (err) { o.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
-      }));
+      const b = emoDockCard('Adversary COA', `<p><select id="emo-dockside" aria-label="Side that responds"><option value="red"${EMO.side === 'blue' ? ' selected' : ''}>Red</option><option value="blue"${EMO.side === 'red' ? ' selected' : ''}>Blue</option></select> <button data-dock-coa="mlcoa" title="Most likely: at most two modest moves">MLCOA</button> <button data-dock-coa="mdcoa" title="Most dangerous: every jammer and DF site re-sited">MDCOA</button> <button data-dock-coa="revert">Revert</button></p><div id="emo-dockcoaout" class="dim"></div>`);
+      b.querySelectorAll('[data-dock-coa]').forEach((x) => x.addEventListener('click', () => emoAdvCoa(b.querySelector('#emo-dockside').value, x.dataset.dockCoa, b.querySelector('#emo-dockcoaout'))));
     } else if (tool === 'timeline') {
-      const nets = EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id));
-      const b = emoDockCard('Timeline', `<p>step <input id="emo-docktlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-docktlnet"><option value="">(none)</option>${nets.map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select> <button id="emo-docktl">Run</button> <span id="emo-docktlst" class="dim"></span></p><div id="emo-docktlout"></div>`);
-      b.querySelector('#emo-docktl').addEventListener('click', async () => {
-        const out = b.querySelector('#emo-docktlout'), st = b.querySelector('#emo-docktlst'); EMO.tlNet = b.querySelector('#emo-docktlnet').value || null;
-        const t0 = Date.now(); const tick = setInterval(() => { st.textContent = `stepping… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
-        try {
-          const r = await postJson('/api/emo/plan/timeline', { step_min: +b.querySelector('#emo-docktlstep').value || 10, net: EMO.tlNet });
-          clearInterval(tick); st.textContent = `${r.steps.length} steps to T+${r.horizon_min} min`;
-          out.innerHTML = emoTimelineHtml(r);
-        } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
-      });
+      const b = emoDockCard('Timeline', `<p>step <input id="emo-docktlstep" type="number" value="10" min="1" aria-label="Timeline step, minutes" style="width:56px"> min, windows for ${emoTlNetSelect('emo-docktlnet')} <button id="emo-docktl">Run</button> <span id="emo-docktlst" class="dim"></span></p><div id="emo-docktlout"></div>`);
+      b.querySelector('#emo-docktl').addEventListener('click', () => emoTimelineRun(b.querySelector('#emo-docktlstep').value, b.querySelector('#emo-docktlnet').value, b.querySelector('#emo-docktlout'), b.querySelector('#emo-docktlst')));
     }
+  }
+  // ---- Shared EMO tools: the dock cards above and the EMO panel (openEMO) both call these, so each tool has one copy.
+  const COA_COLS = { short: [['net_availability_pct', 'Avail'], ['targetable', 'TQF'], ['denial_achieved', 'Den'], ['radar_tracks', 'Rdr']],
+    full: [['net_availability_pct', 'Avail %'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['collateral', 'Collateral'], ['net_area_denied_pct', 'Area denied %']] };
+  // Saved COAs as a table in `box`. full: the panel's wider columns. onLoaded: what to redraw after a COA is loaded (default: this list).
+  async function emoCoaList(box, full = false, onLoaded = null) {
+    if (!box) return;
+    try {
+      const r = await api('/api/emo/coas'), keys = COA_COLS[full ? 'full' : 'short'];
+      const sideHd = (sd) => full ? (sd === 'blue' ? 'Blue' : 'Red') : sd[0].toUpperCase();
+      const row = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${sc?.[sd]?.[k] ?? '–'}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
+      box.innerHTML = r.coas.length ? `<table class="grid"><tr><th>COA</th>${['blue', 'red'].map((sd) => keys.map(([, l]) => `<th style="color:${SIDE_COL[sd]}">${sideHd(sd)} ${l}</th>`).join('')).join('')}<th></th></tr>${r.current ? row('<i>current</i>', r.current, '') : ''}${r.coas.map((c) => row(esc(c.name), c.score, `<button data-coa-load="${c.id}">Load</button> <button data-coa-del="${c.id}" title="Delete" aria-label="Delete ${esc(c.name)}">×</button>`)).join('')}</table>` : '<p class="dim">No COAs saved.</p>';
+      box.querySelectorAll('[data-coa-load]').forEach((x) => x.addEventListener('click', async () => {
+        emoAbortRun(); let r2;
+        try { r2 = await postJson(`/api/emo/coas/${x.dataset.coaLoad}/load`, {}); } catch (e) { return toast(`COA load failed: ${e.message}`); }
+        EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params };
+        emoClearFocus(); emoDraw();
+        if (onLoaded) { await onLoaded(); emoRun(); } else { await emoRun(); emoCoaList(box, full); }
+      }));
+      box.querySelectorAll('[data-coa-del]').forEach((x) => x.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${x.dataset.coaDel}`)) emoCoaList(box, full, onLoaded); }));
+    } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
+  }
+  // Save the current laydown as a COA named from `input` (blank: the time). True when saved.
+  async function emoCoaSave(input) {
+    const name = input.value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`;
+    try { await postJson('/api/emo/coas', { name }); input.value = ''; return true; } catch (e) { toast(`COA save failed: ${e.message}`); return false; }
+  }
+  // Adversary course of action (MLCOA / MDCOA) for `side`, or revert it; moves drawn on the map, summary into `out`.
+  async function emoAdvCoa(side, kind, out) {
+    out.innerHTML = '<span class="spinner"></span> generating and applying…';
+    try {
+      const r = kind === 'revert' ? await postJson(`/api/emo/plan/coa/revert?side=${side}&t_min=${EMO.t}`, {}) : await postJson(`/api/emo/plan/coa?t_min=${EMO.t}`, { side, coa: kind });
+      planLayer.clearLayers();
+      (r.moves || []).forEach((m) => L.polyline([m.from, m.to], { color: SIDE_COL[side], weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer));
+      out.innerHTML = kind === 'revert' ? `reverted ${r.reverted} positions` : (r.moves.length ? `${r.coa.toUpperCase()} against ${esc(r.target)}:<br>${r.moves.map((m) => `<b>${esc(m.entity)}</b> ${esc(m.where)}<br><span class="dim">${esc(m.detail)}</span>`).join('<br>')}` : `${r.coa.toUpperCase()}: no move clearly improves ${side}'s laydown`);
+      EMO.prevScore = r.score_before || EMO.prevScore; await emoLoad(); EMO.res = null; await emoRun();
+    } catch (err) { out.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+  }
+  // Net picker for the timeline's windows of advantage (nets with users, not space signals).
+  function emoTlNetSelect(id) {
+    const nets = EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id));
+    return `<select id="${id}" aria-label="Net for windows of advantage"><option value="">(none)</option>${nets.map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>`;
+  }
+  // Light per-step runs over the horizon; the chart into `out`, progress into `st`.
+  async function emoTimelineRun(stepMin, net, out, st) {
+    EMO.tlNet = net || null;
+    const t0 = Date.now(); const tick = setInterval(() => { st.textContent = `stepping… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+    try {
+      const r = await postJson('/api/emo/plan/timeline', { step_min: +stepMin || 10, net: EMO.tlNet });
+      clearInterval(tick); st.textContent = `${r.steps.length} steps to T+${r.horizon_min} min`;
+      out.innerHTML = emoTimelineHtml(r);
+    } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+  }
+  // Stream an answer from /api/emo/ask into `out` (about the selection when there is one).
+  async function emoAskStream(q, out) {
+    const sel = EMO.multi && EMO.sel.length ? EMO.sel : EMO.focus ? [EMO.focus] : null;
+    out.innerHTML = '<span class="spinner"></span> thinking… (about a minute)';
+    let text = '', failed = false;
+    try {
+      const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
+      if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
+      const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
+      while (true) {
+        const { value, done } = await rd.read(); if (done) break;
+        buf += dec.decode(value, { stream: true }); const parts = buf.split('\n\n'); buf = parts.pop();
+        for (const p of parts) {
+          const l = p.split('\n').find((x) => x.startsWith('data: ')); if (!l) continue; const d = JSON.parse(l.slice(6));
+          if (d.t) { text += d.t; out.textContent = text; }
+          if (d.error) { failed = true; out.innerHTML = `<p class="bad">${esc(d.error)}</p>`; }
+        }
+      }
+      if (text) out.innerHTML = renderMd(text); else if (!failed) out.innerHTML = '<p class="dim">(no answer)</p>';
+    } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
   }
   function emoTimelineHtml(r) {
     const names = Object.keys(r.rows).filter((n) => r.rows[n].tracked || r.rows[n].heard.some(Boolean) || r.rows[n].denied.some(Boolean)).sort((a, b) => (r.rows[a].side + a).localeCompare(r.rows[b].side + b));
@@ -1988,7 +2090,9 @@
     const cell = (row, i) => row.denied[i] ? '#dc3cdc' : row.targetable[i] ? '#ff4646' : row.heard[i] ? '#f3b23e' : '#45d38a';
     const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#0b1016;border-radius:6px;font:10px sans-serif">${r.steps.map((s, i) => i % Math.ceil(r.steps.length / 8) === 0 ? `<text x="${lab + i * cw}" y="12" fill="#8593a6">T+${s}</text>` : '').join('')}${names.map((n, k) => `<text x="4" y="${20 + k * rh + 10}" fill="${SIDE_COL[r.rows[n].side] || '#aaa'}">${esc(n.slice(0, 24))}</text>` + r.steps.map((s, i) => `<rect x="${lab + i * cw}" y="${20 + k * rh + 2}" width="${cw - 1}" height="${rh - 3}" fill="${cell(r.rows[n], i)}"><title>${esc(n)} T+${s}: ${r.rows[n].denied[i] ? 'denied' : r.rows[n].targetable[i] ? 'target-quality fix' : r.rows[n].heard[i] ? 'detected by ' + esc(r.rows[n].heard_by[i].join(', ')) : 'undetected'}</title></rect>`).join('')).join('')}</svg>`;
     const w = r.windows;
-    return `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}${w ? `<p><b>${esc(w.net)}</b>: ${esc(w.summary)}${w.advantage.length ? `<br>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}` : '<br><span class="bad">No window: siting alone gives none; use EMCON or another bearer.</span>'}</p>` : ''}`;
+    return `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}
+      ${w ? `<h4>Windows of EM advantage for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
+      ${emoTimelineMet(r)}${r.notes ? `<p class="dim">${esc(r.notes)}</p>` : ''}`;
   }
   function emoDock() {
     if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
@@ -2002,7 +2106,7 @@
     let sc = document.getElementById('emo-scrub');
     if (!sc) {
       sc = document.createElement('div'); sc.id = 'emo-scrub';
-      sc.innerHTML = '<button data-sc="play" title="Play">▶</button><input type="range" min="0" step="5"><span data-sc="lbl"></span>';
+      sc.innerHTML = '<button data-sc="play" title="Play" aria-label="Play time">▶</button><input type="range" min="0" step="5" aria-label="Scenario time, minutes"><span data-sc="lbl"></span>';
       document.body.appendChild(sc);
       const inp = sc.querySelector('input');
       inp.addEventListener('input', () => { sc.querySelector('[data-sc=lbl]').textContent = `T+${inp.value} / ${Math.round(EMO.horizon || 0)} min`; });
@@ -2042,7 +2146,7 @@
   function emoAskBar() {
     if (EMO.hidden || document.getElementById('emo-askbar') || !EMO.ents.length) return;
     const bar = document.createElement('div'); bar.id = 'emo-askbar';
-    bar.innerHTML = '<input id="emo-askmap" placeholder="Ask about this scenario or your selection…"><button id="emo-askgo">Ask</button><button id="emo-askx" title="Hide">×</button>';
+    bar.innerHTML = '<input id="emo-askmap" aria-label="Ask about this scenario" placeholder="Ask about this scenario or your selection…"><button id="emo-askgo">Ask</button><button id="emo-askx" title="Hide" aria-label="Hide the ask bar">×</button>';
     document.body.appendChild(bar);
     const go = async () => {
       const q = $('#emo-askmap').value.trim(); if (q.length < 2) return;
@@ -2050,19 +2154,7 @@
       let card = document.getElementById('emo-askcard'); if (!card) { card = document.createElement('div'); card.id = 'emo-askcard'; document.body.appendChild(card); }
       card.innerHTML = `<div class="emo-card-head"><b>EMO analyst</b><span class="dim">${sel ? `about ${sel.length} selected` : 'whole scenario'}</span><span class="btns"><button id="emo-askclose">Close</button></span></div><div id="emo-askbody"><span class="spinner"></span> thinking… (about a minute)</div>`;
       $('#emo-askclose').addEventListener('click', () => card.remove());
-      let text = '';
-      try {
-        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
-        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
-        if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
-        const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
-        while (true) {
-          const { value, done } = await rd.read(); if (done) break;
-          buf += dec.decode(value, { stream: true }); const parts = buf.split('\n\n'); buf = parts.pop();
-          for (const p of parts) { const l = p.split('\n').find((x) => x.startsWith('data: ')); if (!l) continue; const d = JSON.parse(l.slice(6)); if (d.t) { text += d.t; $('#emo-askbody').textContent = text; } }
-        }
-        $('#emo-askbody').innerHTML = renderMd(text || '(no answer)');
-      } catch (err) { $('#emo-askbody').innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
+      await emoAskStream(q, card.querySelector('#emo-askbody'));
     };
     $('#emo-askgo').addEventListener('click', go);
     $('#emo-askmap').addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
@@ -2083,7 +2175,9 @@
       await emoRun();
     } catch (e) { /* no scenario yet */ }
   }
-  EMO.hidden = localStorage.getItem('cyem-emo-on') === '0';
+  // Off when switched off on this device, and on a device's first run (the default screen is the live map; EMO is
+  // notional and its auto-fit would move the view). The EMO button turns it on and that choice is kept.
+  EMO.hidden = (() => { try { const v = localStorage.getItem('cyem-emo-on'); return v === '0' || (v == null && FIRST_RUN); } catch (e) { return false; } })();
   // EMO off: clear this device's view (the scenario stays on the box); EMO on: show it again and run
   function emoOff() {
     EMO.hidden = true; EMO.playing = false; EMO.pending = false; try { EMO.abort?.abort(); } catch (e) { /* ignore */ }
@@ -2192,9 +2286,7 @@
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     out.innerHTML = `
       ${emoMetCard(r.met)}
-      ${r.score ? `<h3 class="sec">Scoreboard</h3><table class="grid"><tr><th></th><th style="color:${SIDE_COL.blue}">Blue</th><th style="color:${SIDE_COL.red}">Red</th></tr>
-        ${[['net_availability_pct', 'Net availability %'], ['emitters_exposed', 'Emitters detected by the other side'], ['mean_exposure_db', 'Mean exposure dB'], ['fixed', 'Located by the other side'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['spoofed', 'Outstations deceived'], ['collateral', 'Collateral (civil)'], ['net_area_denied_pct', 'Own net coverage denied %'], ['radar_tracks', 'Radar tracks held'], ['radar_screened', 'Own platforms screened from radar']]
-          .map(([k, l]) => `<tr><td>${l}</td>${['blue', 'red'].map((sd) => { const v = r.score[sd][k], pv = EMO.prevScore?.[sd]?.[k]; const d = (typeof v === 'number' && typeof pv === 'number' && v !== pv) ? ` <span class="dim">(${v > pv ? '+' : ''}${Math.round((v - pv) * 10) / 10})</span>` : ''; return `<td class="mono">${v ?? '–'}${d}</td>`; }).join('')}</tr>`).join('')}</table>` : ''}
+      ${r.score ? `<h3 class="sec">Scoreboard</h3>${emoScoreTable(r)}` : ''}
       ${r.radar?.length ? `<h3 class="sec">Radar: tracks and screening</h3><table class="grid"><tr><th>Radar</th><th>Target</th><th>km</th><th>Echo margin</th><th>Result</th></tr>${r.radar.filter((x) => x.detected || x.jam).map((x) => `<tr><td style="color:${SIDE_COL[x.radar_side]}">${esc(x.radar)}</td><td style="color:${SIDE_COL[x.target_side]}">${esc(x.target)} <span class="dim">${x.rcs_m2} m²</span></td><td class="mono">${x.range_km}</td><td class="mono">${x.margin_db >= 0 ? '+' : ''}${x.margin_db} dB · ${x.p}%</td><td>${x.tracked ? '<b style="color:#45d38a">tracked</b>' : x.screened ? `<b style="color:#dc3cdc">screened</b> by ${esc(x.jam.jammer)} (${esc(x.jam.mode)}, J/S ${x.jam.js_db} dB, burn-through ${x.jam.burnthrough_km} km)` : 'no track'}</td></tr>`).join('')}</table>` : ''}
       <h3 class="sec">ES: what each side can see and fix</h3>
       ${fx.length ? `<table class="grid"><tr><th>Target</th><th>Seen by</th><th>Fix</th></tr>${fx.map((f) => row([`<span style="color:${SIDE_COL[f.target_side]}">${esc(f.target)}</span>`, esc(f.sensors.join(', ')),
@@ -2244,32 +2336,32 @@
     const list = EMO.ents.length ? `<table class="grid"><tr><th>Entity</th><th>Role</th><th>MHz</th><th></th></tr>${EMO.ents.map((e) => `<tr class="${e.id === EMO.editId ? 'sel' : ''}"><td style="color:${SIDE_COL[e.side]}">${esc(e.name)}${e.active || e.kind === 'sensor' || e.kind === 'receiver' ? '' : ' <span class="dim">(off-air)</span>'}</td><td class="dim">${esc(KIND_TXT[e.kind])}${e.category ? ' · ' + esc(e.category) : ''}</td><td class="mono">${e.freq_mhz}${e.f_hi_mhz ? '–' + e.f_hi_mhz : ''}</td><td><button data-emo-edit="${esc(e.id)}">Edit</button></td></tr>`).join('')}</table>` : '<p class="dim">No entities: load an example.</p>';
     const H = Math.max(EMO.horizon, 0);
     openModal('EMO: red / blue in the spectrum', `<p class="dim">Notional scenarios. ES: who can hear and fix whom. EA: whose nets are denied. EP: EMCON, siting, antennas. Drag units on the map at T+0.</p>
-      <div class="specset"><select id="emo-ex"><option value="">Load example…</option>${[['Home ground (AR)', /^0[de]\./], ['Operational MDO', /^0[bc]?\./], ['Vignettes', /./]].reduce((acc, [g, re]) => { const rest = EMO.examples.filter((x) => !acc.used.has(x.id) && re.test(x.title)); rest.forEach((x) => acc.used.add(x.id)); if (rest.length) acc.html += `<optgroup label="${g}">${rest.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</optgroup>`; return acc; }, { used: new Set(), html: '' }).html}</select> <button id="emo-ex-go">Load</button></div>
+      <div class="specset"><select id="emo-ex" aria-label="Example scenario"><option value="">Load example…</option>${[['Home ground (AR)', /^0[de]\./], ['Operational MDO', /^0[bc]?\./], ['Vignettes', /./]].reduce((acc, [g, re]) => { const rest = EMO.examples.filter((x) => !acc.used.has(x.id) && re.test(x.title)); rest.forEach((x) => acc.used.add(x.id)); if (rest.length) acc.html += `<optgroup label="${g}">${rest.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}</optgroup>`; return acc; }, { used: new Set(), html: '' }).html}</select> <button id="emo-ex-go">Load</button></div>
       ${EMO.about ? `<p class="dim">${esc(EMO.about)}</p>` : ''}
-      <div class="specset">Save current as <input id="emo-sc-name" placeholder="scenario name" style="width:180px"> <button id="emo-sc-save">Save</button>
+      <div class="specset">Save current as <input id="emo-sc-name" aria-label="Scenario name" placeholder="scenario name" style="width:180px"> <button id="emo-sc-save">Save</button>
         ${(EMO.scen || []).map((x) => `<span style="white-space:nowrap">${esc(x.name)} <span class="dim">(${x.entities})</span> <button data-sc-load="${esc(x.id)}">Load</button><button data-sc-del="${esc(x.id)}">×</button></span>`).join(' ')}</div>
-      <div class="specset">Time T+<b id="emo-tv">${Math.round(EMO.t)}</b> min <input id="emo-t" type="range" min="0" max="${Math.max(1, Math.ceil(H))}" step="1" value="${EMO.t}" style="flex:1;min-width:140px">
+      <div class="specset">Time T+<b id="emo-tv">${Math.round(EMO.t)}</b> min <input id="emo-t" aria-label="Scenario time, minutes" type="range" min="0" max="${Math.max(1, Math.ceil(H))}" step="1" value="${EMO.t}" style="flex:1;min-width:140px">
         <button id="emo-run" class="primary" title="Recompute the analysis at this T+ (it also re-runs on its own after any change)">Re-run</button> <button id="emo-play" title="Step T+ forward through the scenario horizon, re-running at each step: units follow their tracks, on-air windows open and close">${EMO.playing ? 'Stop' : 'Play time'}</button> <span id="emo-status" class="dim"></span></div>
       <div class="specset">${EMO_LAYERS.map(([k, l, c]) => `<label style="white-space:nowrap"><input type="checkbox" data-emo-layer="${k}"${EMO.on[k] ? ' checked' : ''}> <span style="color:${c}">■</span> ${esc(l)}</label>`).join(' ')}</div>
-      <div class="specset">Targetable if fix within <input id="emo-tgt" type="number" min="50" step="50" value="${EMO.params.df_fix_good_m}" style="width:80px"> m
+      <div class="specset">Targetable if fix within <input id="emo-tgt" aria-label="Targetable fix radius, m" type="number" min="50" step="50" value="${EMO.params.df_fix_good_m}" style="width:80px"> m
         <span class="dim">(tactical ~1000, operational ~5000)</span> · <span class="dim">Map washes are for ground receivers (2 m); airborne results are in the cards and tables.</span></div>
-      <div class="specset">Met <select id="emo-met"><option value="standard"${EMO.params.met !== 'forecast' ? ' selected' : ''}>Standard atmosphere (4/3 earth, dry)</option><option value="forecast"${EMO.params.met === 'forecast' ? ' selected' : ''}>Forecast at the scenario centre (Open-Meteo)</option></select>
-        T+0 <input id="emo-mettime" type="datetime-local" step="3600" value="${esc(EMO.params.met_time || '')}" style="width:190px" title="UTC; empty means now. Forecasts run 16 days ahead; older dates use archived forecasts."> UTC
-        <span class="dim">what-if:</span> k <input id="emo-k" type="number" step="0.1" min="0.5" max="10" placeholder="auto" value="${EMO.params.k_factor ?? ''}" style="width:58px">
-        rain <input id="emo-rain" type="number" step="1" min="0" max="200" placeholder="auto" value="${EMO.params.rain_mm_h ?? ''}" style="width:56px"> mm/h
-        visibility <input id="emo-vis" type="number" step="50" min="10" placeholder="auto" value="${EMO.params.visibility_m ?? ''}" style="width:68px"> m</div>
-      <div class="specset"><input id="emo-askq" placeholder="Ask about this scenario, e.g. which blue emitter is most at risk?" style="flex:1;min-width:200px"> <button id="emo-ask">Ask AI</button></div>
+      <div class="specset">Met <select id="emo-met" aria-label="Met"><option value="standard"${EMO.params.met !== 'forecast' ? ' selected' : ''}>Standard atmosphere (4/3 earth, dry)</option><option value="forecast"${EMO.params.met === 'forecast' ? ' selected' : ''}>Forecast at the scenario centre (Open-Meteo)</option></select>
+        T+0 <input id="emo-mettime" aria-label="Met T+0 time, UTC" type="datetime-local" step="3600" value="${esc(EMO.params.met_time || '')}" style="width:190px" title="UTC; empty means now. Forecasts run 16 days ahead; older dates use archived forecasts."> UTC
+        <span class="dim">what-if:</span> k <input id="emo-k" aria-label="What-if k-factor" type="number" step="0.1" min="0.5" max="10" placeholder="auto" value="${EMO.params.k_factor ?? ''}" style="width:58px">
+        rain <input id="emo-rain" aria-label="What-if rain, mm/h" type="number" step="1" min="0" max="200" placeholder="auto" value="${EMO.params.rain_mm_h ?? ''}" style="width:56px"> mm/h
+        visibility <input id="emo-vis" aria-label="What-if visibility, m" type="number" step="50" min="10" placeholder="auto" value="${EMO.params.visibility_m ?? ''}" style="width:68px"> m</div>
+      <div class="specset"><input id="emo-askq" aria-label="Ask about this scenario" placeholder="Ask about this scenario, e.g. which blue emitter is most at risk?" style="flex:1;min-width:200px"> <button id="emo-ask">Ask AI</button></div>
       <div id="emo-askout" class="md"></div>
-      <div class="specset">Briefing phases (minutes) <input id="emo-phases" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
+      <div class="specset">Briefing phases (minutes) <input id="emo-phases" aria-label="Briefing phases, minutes" value="0, ${Math.round((EMO.horizon || 0) / 2)}, ${Math.round(EMO.horizon || 0)}" style="width:120px">
         <a id="emo-export" class="btnlink" href="#">Export briefing (Word)</a> <span class="dim">one section per phase; takes a minute per new phase</span></div>
-      <div class="specset">Scenario space: <select id="emo-ws"><option value="default"${wsId() === 'default' ? ' selected' : ''}>Shared (all devices)</option><option value="device"${wsId() !== 'default' ? ' selected' : ''}>This device only</option></select>
-        <span class="dim">Courses of action:</span> <input id="emo-coaname" placeholder="COA name" style="width:120px"> <button id="emo-coasave">Save current as COA</button></div>
+      <div class="specset">Scenario space: <select id="emo-ws" aria-label="Scenario space"><option value="default"${wsId() === 'default' ? ' selected' : ''}>Shared (all devices)</option><option value="device"${wsId() !== 'default' ? ' selected' : ''}>This device only</option></select>
+        <span class="dim">Courses of action:</span> <input id="emo-coaname" aria-label="COA name" placeholder="COA name" style="width:120px"> <button id="emo-coasave">Save current as COA</button></div>
       <div id="emo-coalist"></div>
-      <div class="specset">Timeline: step <input id="emo-tlstep" type="number" value="10" min="1" style="width:56px"> min, windows for <select id="emo-tlnet"><option value="">(none)</option>${EMO.ents.filter((e) => e.kind === 'emitter' && e.fixed_level_dbm == null && EMO.ents.some((u) => u.net === e.id)).map((e) => `<option${e.name === EMO.tlNet ? ' selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+      <div class="specset">Timeline: step <input id="emo-tlstep" aria-label="Timeline step, minutes" type="number" value="10" min="1" style="width:56px"> min, windows for ${emoTlNetSelect('emo-tlnet')}
         <button id="emo-tl">Run timeline</button> <span id="emo-tlstatus" class="dim"></span></div>
       <div id="emo-tlout"></div>
       <div class="specset">Corridor: one unit's route to a point, EMCON leg by leg <button id="emo-corr">Plan a corridor</button> <span class="dim">(opens beside the map)</span></div>
-      <div class="specset">Adversary COA: <select id="emo-coaside"><option value="red">Red</option><option value="blue">Blue</option></select>
+      <div class="specset">Adversary COA: <select id="emo-coaside" aria-label="Side that responds"><option value="red">Red</option><option value="blue">Blue</option></select>
         <button id="emo-coa-ml" title="Most likely: at most two modest moves">MLCOA</button> <button id="emo-coa-md" title="Most dangerous: every jammer and DF site re-sited for effect">MDCOA</button>
         <button id="emo-coa-rev">Revert</button> <span id="emo-coaout" class="dim"></span></div>
       <div id="emo-results"></div>
@@ -2277,64 +2369,14 @@
       <h3 class="sec">${EMO.editId ? 'Edit entity' : 'Add entity'}</h3>${emoForm(EMO.draft)}`);
     emoResults();
     const body = $('#modal-body');
-    const coa = async (kind) => {
-      const side = $('#emo-coaside').value, o = $('#emo-coaout');
-      o.innerHTML = '<span class="spinner"></span> generating and applying…';
-      try {
-        const r = kind === 'revert' ? await postJson(`/api/emo/plan/coa/revert?side=${side}&t_min=${EMO.t}`, {}) : await postJson(`/api/emo/plan/coa?t_min=${EMO.t}`, { side, coa: kind });
-        planLayer.clearLayers();
-        (r.moves || []).forEach((m) => { L.polyline([m.from, m.to], { color: SIDE_COL[side], weight: 3, dashArray: '6 6' }).bindTooltip(`${esc(m.entity)} → ${esc(m.where)}<br>${esc(m.detail)}`).addTo(planLayer); });
-        o.innerHTML = kind === 'revert' ? `reverted ${r.reverted} positions` : (r.moves.length ? `${r.coa.toUpperCase()} against ${esc(r.target)}: ${r.moves.map((m) => `<b>${esc(m.entity)}</b> ${esc(m.where)} (${esc(m.detail)})`).join('; ')}` : `${r.coa.toUpperCase()}: no move clearly improves ${side}'s laydown`);
-        await emoLoad(); EMO.prevScore = r.score_before || EMO.prevScore; EMO.res = null; await emoRun();
-      } catch (err) { o.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
-    };
     $('#emo-ws').addEventListener('change', async (e) => { localStorage.setItem('cyem-ws-mode', e.target.value === 'device' ? 'device' : 'shared'); EMO.res = null; EMO.ents = []; emoClearFocus(); await openEMO(); });
-    const coaList = async () => {
-      const box = $('#emo-coalist'); if (!box) return;
-      try {
-        const r = await api('/api/emo/coas');
-        if (!r.coas.length) { box.innerHTML = ''; return; }
-        const keys = [['net_availability_pct', 'Avail %'], ['targetable', 'Target-quality fixes'], ['denial_achieved', 'Outstations denied'], ['collateral', 'Collateral'], ['net_area_denied_pct', 'Area denied %']];
-        const cell = (sc, sd, k) => sc?.[sd]?.[k] ?? '–';
-        const rowOf = (name, sc, ctl) => `<tr><td>${name}</td>${['blue', 'red'].map((sd) => keys.map(([k]) => `<td class="mono" style="color:${SIDE_COL[sd]}">${cell(sc, sd, k)}</td>`).join('')).join('')}<td>${ctl}</td></tr>`;
-        box.innerHTML = `<table class="grid"><tr><th>COA</th>${['Blue', 'Red'].map((sd) => keys.map(([, l]) => `<th style="color:${SIDE_COL[sd.toLowerCase()]}">${sd} ${l}</th>`).join('')).join('')}<th></th></tr>
-          ${r.current ? rowOf('<i>current</i>', r.current, '') : ''}
-          ${r.coas.map((c) => rowOf(esc(c.name), c.score, `<button data-coa-load="${c.id}">Load</button> <button data-coa-del="${c.id}">×</button>`)).join('')}</table>`;
-        box.querySelectorAll('[data-coa-load]').forEach((b) => b.addEventListener('click', async () => {
-          emoAbortRun(); let r2; try { r2 = await postJson(`/api/emo/coas/${b.dataset.coaLoad}/load`, {}); } catch (e) { return toast(`COA load failed: ${e.message}`); } EMO.ents = r2.entities; EMO.res = null; if (r2.t_min != null) EMO.t = r2.t_min; if (r2.params) EMO.params = { ...EMO.params, ...r2.params }; emoClearFocus(); await openEMO(); emoRun();
-        }));
-        box.querySelectorAll('[data-coa-del]').forEach((b) => b.addEventListener('click', async () => { if (await apiDel(`/api/emo/coas/${b.dataset.coaDel}`)) coaList(); }));
-      } catch (e) { box.innerHTML = `<p class="bad">${esc(e.message)}</p>`; }
-    };
-    coaList();
-    $('#emo-coasave').addEventListener('click', async () => {
-      const name = $('#emo-coaname').value.trim() || `COA ${new Date().toISOString().slice(11, 16)}Z`;
-      try { await postJson('/api/emo/coas', { name }); $('#emo-coaname').value = ''; coaList(); } catch (e) { emoStatus(e.message); }
-    });
-    $('#emo-tl').addEventListener('click', async () => {
-      const out = $('#emo-tlout'), st = $('#emo-tlstatus'); EMO.tlNet = $('#emo-tlnet').value || null;
-      const t0 = Date.now(); const tick = setInterval(() => { st.textContent = `stepping… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
-      try {
-        const r = await postJson('/api/emo/plan/timeline', { step_min: +$('#emo-tlstep').value || 10, net: EMO.tlNet });
-        clearInterval(tick); st.textContent = `${r.steps.length} steps to T+${r.horizon_min} min`;
-        const names = Object.keys(r.rows).filter((n) => r.rows[n].tracked || r.rows[n].heard.some(Boolean) || r.rows[n].denied.some(Boolean))
-          .sort((a, b) => (r.rows[a].side + a).localeCompare(r.rows[b].side + b));
-        const W = 680, lab = 150, cw = Math.max(6, Math.floor((W - lab - 10) / r.steps.length)), rh = 14, H = 20 + names.length * rh;
-        const cell = (row, i) => row.denied[i] ? '#dc3cdc' : row.targetable[i] ? '#ff4646' : row.heard[i] ? '#f3b23e' : '#45d38a';
-        const svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#0b1016;border-radius:6px;font:10px sans-serif">
-          ${r.steps.map((s, i) => i % Math.ceil(r.steps.length / 8) === 0 ? `<text x="${lab + i * cw}" y="12" fill="#8593a6">T+${s}</text>` : '').join('')}
-          ${names.map((n, k) => `<text x="4" y="${20 + k * rh + 10}" fill="${SIDE_COL[r.rows[n].side] || '#aaa'}">${esc(n.slice(0, 24))}</text>` +
-            r.steps.map((s, i) => `<rect x="${lab + i * cw}" y="${20 + k * rh + 2}" width="${cw - 1}" height="${rh - 3}" fill="${cell(r.rows[n], i)}"><title>${esc(n)} T+${s}: ${r.rows[n].denied[i] ? 'denied' : r.rows[n].targetable[i] ? 'target-quality fix' : r.rows[n].heard[i] ? 'detected by ' + esc(r.rows[n].heard_by[i].join(', ')) : 'undetected'}</title></rect>`).join('')).join('')}</svg>`;
-        const w = r.windows;
-        out.innerHTML = `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}
-          ${w ? `<h4>Windows of EM advantage for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
-          ${emoTimelineMet(r)}<p class="dim">${esc(r.notes)}</p>`;
-      } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
-    });
+    emoCoaList($('#emo-coalist'), true, () => openEMO());
+    $('#emo-coasave').addEventListener('click', async () => { if (await emoCoaSave($('#emo-coaname'))) emoCoaList($('#emo-coalist'), true, () => openEMO()); });
+    $('#emo-tl').addEventListener('click', () => emoTimelineRun($('#emo-tlstep').value, $('#emo-tlnet').value, $('#emo-tlout'), $('#emo-tlstatus')));
     $('#emo-corr').addEventListener('click', () => { $('#modal').classList.remove('show'); emoCorridor(); });
-    $('#emo-coa-ml').addEventListener('click', () => coa('mlcoa'));
-    $('#emo-coa-md').addEventListener('click', () => coa('mdcoa'));
-    $('#emo-coa-rev').addEventListener('click', () => coa('revert'));
+    $('#emo-coa-ml').addEventListener('click', () => emoAdvCoa($('#emo-coaside').value, 'mlcoa', $('#emo-coaout')));
+    $('#emo-coa-md').addEventListener('click', () => emoAdvCoa($('#emo-coaside').value, 'mdcoa', $('#emo-coaout')));
+    $('#emo-coa-rev').addEventListener('click', () => emoAdvCoa($('#emo-coaside').value, 'revert', $('#emo-coaout')));
     $('#emo-tgt').addEventListener('change', (e) => { EMO.params.df_fix_good_m = Math.max(50, +e.target.value || 1000); emoRun(); });
     ['#emo-met', '#emo-mettime', '#emo-k', '#emo-rain', '#emo-vis'].forEach((id) => $(id).addEventListener('change', () => { emoMetParams(); emoRun(); }));
     $('#emo-export').addEventListener('click', (e) => {
@@ -2343,25 +2385,7 @@
       emoStatus('Building briefing… (download starts when ready)');
       window.location.href = `/api/emo/export.docx?phases=${encodeURIComponent(ph)}&df_fix_good_m=${EMO.params.df_fix_good_m}`;
     });
-    $('#emo-ask').addEventListener('click', async () => {
-      const q = $('#emo-askq').value.trim(); if (q.length < 2) return;
-      const out = $('#emo-askout'); out.innerHTML = '<span class="spinner"></span> thinking… (about a minute)';
-      let text = '';
-      try {
-        const sel = EMO.multi && EMO.sel.length ? EMO.sel : EMO.focus ? [EMO.focus] : null;   // as the dock's Ask
-        const r = await fetch('/api/emo/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, selected: sel, viewpoint: EMO.side }) });
-        if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
-        if (!r.ok) throw new Error(`Ask failed: HTTP ${r.status}`);
-        const rd = r.body.getReader(), dec = new TextDecoder(); let buf = '';
-        while (true) {
-          const { value, done } = await rd.read(); if (done) break;
-          buf += dec.decode(value, { stream: true }); const parts = buf.split('\n\n'); buf = parts.pop();
-          for (const p of parts) { const l = p.split('\n').find((x) => x.startsWith('data: ')); if (!l) continue; const d = JSON.parse(l.slice(6));
-            if (d.t) { text += d.t; out.textContent = text; } if (d.error) out.innerHTML = `<p class="bad">${esc(d.error)}</p>`; }
-        }
-        if (text) out.innerHTML = renderMd(text);
-      } catch (err) { out.innerHTML = `<p class="bad">${esc(err.message)}</p>`; }
-    });
+    $('#emo-ask').addEventListener('click', () => { const q = $('#emo-askq').value.trim(); if (q.length >= 2) emoAskStream(q, $('#emo-askout')); });
     $('#emo-ex-go').addEventListener('click', async () => {
       const id = $('#emo-ex').value; if (!id) return;
       if (wsId() === 'default' && EMO.ents.length && !EMO.loadArmed) { EMO.loadArmed = true; $('#emo-ex-go').textContent = 'Replace the shared scenario? Tap again'; setTimeout(() => { EMO.loadArmed = false; const b = $('#emo-ex-go'); if (b) b.textContent = 'Load'; }, 6000); return; }
@@ -2469,16 +2493,18 @@
     const n = nodes.find((x) => x.node === SDR.node);
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
     let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
-      ${(() => { const shared = /shared/.test(n.info?.state || ''); const ok = age != null && (age < 10 || (shared && age < 480));
+      ${(() => { const shared = /shared/.test(n.info?.state || '') || !!n.info?.live_capable; const ok = age != null && (age < 10 || (shared && age < 480));
         const when = age == null ? 'never seen' : age < 90 ? `${age} min ago` : `${Math.round(age / 60)} h ago`;
         return `<span class="${ok ? 'good' : 'bad'}">${age == null ? 'never seen' : shared ? `shared receiver: sweeps four times a day, last ${when}` : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${when}` : `last seen ${when}`}</span>`; })()}
-      ${n.url ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div><div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
+      ${n.url && !n.info?.live_capable ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div>
+      ${n.info?.live_capable ? sdrLiveBox() : ''}<div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
     openModal('SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
     // Live receiver in an in-app window: a plain link replaced the whole app page, and the Mac/iPhone apps have no Back
     $('#sdr-live')?.addEventListener('click', (ev) => openLiveRx(ev.currentTarget.dataset.url, n.node));
+    if (n.info?.live_capable) sdrLiveWire(n);
     $('#sdr-ins').addEventListener('click', async () => {
       const o = $('#sdr-insout'); o.innerHTML = '<span class="spinner"></span> reading the spectrum… (about a minute)';
       try { const r = await api(`/api/insight/sdr?node=${encodeURIComponent(SDR.node)}`); o.innerHTML = renderMd(r.text); }
@@ -2522,6 +2548,61 @@
         ${l.peaks.slice(0, 40).map((p) => `<tr title="${esc(p.tier_why || p.status_text || '')}"><td><span style="color:${TIER_COL[p.tier] || '#8593a6'};font-size:16px">●</span></td><td class="mono">${(p.f_hz / 1e6).toFixed(3)}</td><td class="mono">${p.snr_db}</td><td>${who(p)}<div class="dim">${esc(p.tier_why || '')}</div></td><td>${where(p)}</td></tr>`).join('')}</table>
         <p class="dim">${esc(c?.notes || 'Levels are relative dB (not calibrated). Peaks are carriers at least 10 dB above the local floor.')}</p>`;
     } catch (e) { $('#sdr-out').innerHTML = `<p class="dim">${esc(e.message)}</p>`; }
+  }
+  // ---- Listen live (Nov 2026): the node's agent pauses the weather receiver and starts OpenWebRX+, reached via /sdr/live/
+  function sdrLiveBox() {
+    return `<div id="sdr-livebox" class="sdr-livebox"><div class="specset"><b>Listen live</b>
+        <select id="sdr-live-min" aria-label="How long"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="60">60 min</option></select>
+        <button id="sdr-listen">Listen live</button> <button id="sdr-stop" hidden>Stop</button> <button id="sdr-full" hidden>Full screen</button></div>
+      <p id="sdr-live-status" class="dim"></p>
+      <p class="dim">Listening pauses the weather receiver on this dongle until you press Stop or the time runs out (at most two hours), and the shared sweeps skip while it is live. Audio is streamed to you only: nothing is recorded or stored.</p>
+      <div id="sdr-live-frame"></div></div>`;
+  }
+  function sdrHHMM(iso) { try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso; } }
+  function sdrLiveWire(n0) {
+    clearInterval(SDR.liveTimer);
+    const node = n0.node;
+    const render = (n) => {
+      const st = $('#sdr-live-status'); if (!st) return false;
+      const m = n.mode || {}, state = n.info?.state || '', err = n.info?.live_error;
+      const want = m.mode === 'live', live = state === 'live';
+      let txt, cls = 'dim';
+      if (want && live) { txt = `Live until ${esc(sdrHHMM(m.until))}. Tap the play button in the receiver to start audio.`; cls = 'good'; SDR.liveBack = true; }
+      else if (want) txt = `Switching… pausing the weather receiver and starting the live receiver (usually under 30 s${state === 'sweeping' ? '; a shared sweep is running and finishes first, about 3 minutes' : ''}).`;
+      else if (live) txt = 'Switching back to the weather receiver…';
+      else if (SDR.liveBack && state === 'weather') { txt = 'Weather receiver back.'; cls = 'good'; }
+      else txt = state === 'sweeping' ? 'A shared sweep is running; live listening can start when it ends.' : state === 'weather' ? 'Weather receiver running.' : `Receiver reports: ${esc(state || 'nothing yet')}.`;
+      if (err && !(want && live)) txt += ` <span class="bad">${esc(err)}</span>`;
+      st.className = cls; st.innerHTML = txt;
+      $('#sdr-listen').hidden = want; $('#sdr-live-min').hidden = want; $('#sdr-stop').hidden = !want; $('#sdr-full').hidden = !(want && live);
+      const fr = $('#sdr-live-frame');
+      if (want && live && !fr.querySelector('iframe')) {
+        fr.innerHTML = '<div class="lvbar"><b>Live receiver</b><span class="dim">nothing is recorded</span><button id="sdr-full-close">Close full screen</button></div><iframe src="/sdr/live/" allow="autoplay; fullscreen" title="Live receiver"></iframe>';
+        $('#sdr-full-close').addEventListener('click', () => fr.classList.remove('full'));
+      } else if (!(want && live) && fr.querySelector('iframe')) {
+        fr.querySelector('iframe').src = 'about:blank'; fr.innerHTML = ''; fr.classList.remove('full');
+      }
+      return true;
+    };
+    const poll = async () => {
+      if (!$('#sdr-live-status')) { clearInterval(SDR.liveTimer); return; }       // panel closed or redrawn
+      try { const st = await api('/api/sdr/nodes'); const n = st.nodes.find((x) => x.node === node); if (n) render(n); } catch (e) { /* next tick */ }
+    };
+    render(n0);
+    SDR.liveTimer = setInterval(poll, 4000);
+    $('#sdr-listen').addEventListener('click', async () => {
+      $('#sdr-listen').disabled = true;
+      try { const m = await postJson('/api/sdr/mode', { node, mode: 'live', minutes: +$('#sdr-live-min').value }); SDR.liveBack = false; render({ ...n0, mode: m }); poll(); }
+      catch (e) { $('#sdr-live-status').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+      $('#sdr-listen').disabled = false;
+    });
+    $('#sdr-stop').addEventListener('click', async () => {
+      const fr = $('#sdr-live-frame'); const f = fr.querySelector('iframe'); if (f) f.src = 'about:blank';
+      fr.innerHTML = ''; fr.classList.remove('full');
+      try { await postJson('/api/sdr/mode', { node, mode: 'auto' }); SDR.liveBack = true; poll(); }
+      catch (e) { $('#sdr-live-status').innerHTML = `<span class="bad">${esc(e.message)}</span>`; }
+    });
+    $('#sdr-full').addEventListener('click', () => $('#sdr-live-frame').classList.add('full'));
   }
   function openLiveRx(url, node) {
     closeLiveRx();
@@ -2567,7 +2648,7 @@
       else if (b.dataset.go === 'emo-panel') { openEMO(); }
       else if (b.dataset.go === 'emo-off') { $('#modal').classList.remove('show'); emoOff(); }
       else if (b.hasAttribute('data-layers')) { $('#modal').classList.remove('show'); const lc = $('#layers'); lc.classList.remove('collapsed'); const tg = $('#layers-toggle'); if (tg) tg.textContent = 'hide'; try { localStorage.setItem('cyem-layers', 'show'); } catch (e) { /* ignore */ } }
-      else $('#' + b.dataset.go).click();
+      else { $('#modal').classList.remove('show'); $('#' + b.dataset.go).click(); }   // Health opens a sheet, which the modal would cover
     }));
   });
   if (mobile()) { showRail(false, false); showSide(false, false); } else { showRail(panels.rail, false); showSide(panels.side, false); }

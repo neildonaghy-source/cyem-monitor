@@ -1,5 +1,10 @@
 """SDR nodes (e.g. Raspberry Pi + RTL-SDR on the tailnet): sweep ingest, peaks labelled against UKFAT, node position.
-Reception and display of spectrum occupancy only; no demodulated content is stored."""
+Reception and display of spectrum occupancy only; no demodulated content is stored.
+
+Live mode (Nov 2026): a user asks for live listening on a node (POST /api/sdr/mode, normal auth); the node's agent polls
+GET /api/sdr/mode with the ingest token, frees the dongle, starts OpenWebRX+ and reports state "live" by heartbeat.
+The receiver is then reached only through CyEM (app/sdr_live.py). The request lapses on its own after `minutes`
+(default 30, at most 120). Audio is streamed, never stored."""
 from __future__ import annotations
 
 import json
@@ -8,8 +13,11 @@ import hmac
 import os
 import re
 import struct
+import time
+from datetime import datetime, timezone
+from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .db import Database, get_db, now_iso
@@ -21,6 +29,7 @@ CREATE TABLE IF NOT EXISTS sdr_nodes (node TEXT PRIMARY KEY, url TEXT, lat REAL,
 CREATE TABLE IF NOT EXISTS sdr_sweeps (id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT NOT NULL, ts TEXT NOT NULL,
   f0_hz REAL NOT NULL, bin_hz REAL NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, peaks TEXT, lat REAL, lon REAL);
 CREATE INDEX IF NOT EXISTS sdr_sweeps_node_ts ON sdr_sweeps(node, ts);
+CREATE TABLE IF NOT EXISTS sdr_mode (node TEXT PRIMARY KEY, mode TEXT NOT NULL, until REAL, set_at TEXT, set_by TEXT);
 """
 KEEP = 300
 
@@ -89,10 +98,11 @@ async def ingest(s: SweepIn, authorization: str | None = Header(default=None)):
         p["label"] = _label(p["f_hz"])
     blob = struct.pack(f"<{len(s.db)}h", *[max(-32768, min(32767, int(round(v * 10)))) for v in s.db])
     now = now_iso()
+    info = {**(json.loads(node["info"] or "{}") if node else {}), **(s.info or {})}   # keeps state and live_capable
     with db.tx() as c:
         c.execute("INSERT INTO sdr_nodes (node, url, last_seen, info) VALUES (?,?,?,?) ON CONFLICT(node) DO UPDATE SET "
                   "url=COALESCE(excluded.url, url), last_seen=excluded.last_seen, info=excluded.info",
-                  (s.node, s.url, now, json.dumps(s.info or {})))
+                  (s.node, s.url, now, json.dumps(info)))
         c.execute("INSERT INTO sdr_sweeps (node, ts, f0_hz, bin_hz, n, data, peaks, lat, lon) VALUES (?,?,?,?,?,?,?,?,?)",
                   (s.node, now, s.f0_hz, s.bin_hz, len(s.db), blob, json.dumps(peaks),
                    node["lat"] if node else None, node["lon"] if node else None))
@@ -104,7 +114,11 @@ async def ingest(s: SweepIn, authorization: str | None = Header(default=None)):
 class HeartbeatIn(BaseModel):
     node: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
     url: str | None = Field(default=None, max_length=200)
-    state: str = Field(max_length=80)                 # e.g. "no dongle", "live receiver in use", "sweeping"
+    state: str = Field(max_length=80)                 # e.g. "no dongle", "weather", "live", "sweeping"
+    info: dict | None = None                          # only the keys in _HB_KEYS are kept
+
+
+_HB_KEYS = {"live_capable": bool, "live_until": str, "live_error": str}
 
 
 @router.post("/heartbeat")
@@ -115,6 +129,10 @@ async def heartbeat(h: HeartbeatIn, authorization: str | None = Header(default=N
     node = db.one("SELECT info FROM sdr_nodes WHERE node=?", (h.node,))
     info = json.loads(node["info"] or "{}") if node else {}
     info["state"] = h.state
+    for k, v in (h.info or {}).items():
+        t = _HB_KEYS.get(k)
+        if t and (v is None or isinstance(v, t)):
+            info[k] = v[:160] if isinstance(v, str) else v
     with db.tx() as c:
         c.execute("INSERT INTO sdr_nodes (node, url, last_seen, info) VALUES (?,?,?,?) ON CONFLICT(node) DO UPDATE SET "
                   "url=COALESCE(excluded.url, url), last_seen=excluded.last_seen, info=excluded.info",
@@ -125,10 +143,63 @@ async def heartbeat(h: HeartbeatIn, authorization: str | None = Header(default=N
 @router.get("/nodes")
 async def nodes():
     rows = get_db().query("SELECT n.*, (SELECT COUNT(*) FROM sdr_sweeps s WHERE s.node=n.node) AS sweeps FROM sdr_nodes n ORDER BY last_seen DESC")
+    db = get_db()
     for r in rows:
         r["info"] = json.loads(r["info"] or "{}")
+        r["mode"] = mode_for(db, r["node"])
     return {"nodes": rows, "ingest_enabled": bool(os.environ.get("SDR_INGEST_TOKEN")),
             "last_reject": dict(_LAST_REJECT) or None}
+
+
+# ---- live mode: requested here, carried out by the node's agent (pi/trade/cyem-sdr-mode) ----------
+LIVE_DEFAULT_MIN, LIVE_MAX_MIN = 30, 120
+_now = time.time                                       # tests move the clock
+
+
+def _iso(ts: float | None) -> str | None:
+    return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if ts else None
+
+
+def mode_for(db: Database, node: str) -> dict:
+    """The requested mode now: 'live' until it lapses, otherwise 'auto' (shared sweeps and the weather receiver)."""
+    r = db.one("SELECT mode, until, set_at, set_by FROM sdr_mode WHERE node=?", (node,))
+    now = _now()
+    if r and r["mode"] == "live" and (r["until"] or 0) > now:
+        return {"node": node, "mode": "live", "until": _iso(r["until"]), "remaining_s": int(r["until"] - now),
+                "set_at": r["set_at"], "set_by": r["set_by"]}
+    return {"node": node, "mode": "auto", "until": None, "remaining_s": 0, "set_at": r["set_at"] if r else None,
+            "set_by": r["set_by"] if r else None, "lapsed": bool(r and r["mode"] == "live")}
+
+
+class ModeIn(BaseModel):
+    node: str = Field(pattern=r"^[a-z0-9-]{1,40}$")
+    mode: Literal["live", "auto"]
+    minutes: int = Field(default=LIVE_DEFAULT_MIN, ge=1, le=LIVE_MAX_MIN)
+
+
+@router.get("/mode")
+async def get_mode(node: str, authorization: str | None = Header(default=None)):
+    """For the node's agent (ingest token only): what it should be doing now."""
+    _check(authorization, node)
+    return mode_for(get_db(), node)
+
+
+@router.post("/mode")
+async def set_mode(m: ModeIn, request: Request):
+    """A user asks for live listening, or ends it ('auto'). Normal app auth: tailnet, or a signed-in internet session."""
+    db = get_db()
+    n = db.one("SELECT info FROM sdr_nodes WHERE node=?", (m.node,))
+    if not n:
+        raise HTTPException(404, "unknown node")
+    if m.mode == "live" and not json.loads(n["info"] or "{}").get("live_capable"):
+        raise HTTPException(409, "this receiver does not offer live listening")
+    until = _now() + m.minutes * 60 if m.mode == "live" else None
+    who = getattr(request.state, "user", None) or "tailnet"
+    with db.tx() as c:
+        c.execute("INSERT INTO sdr_mode (node, mode, until, set_at, set_by) VALUES (?,?,?,?,?) ON CONFLICT(node) DO UPDATE SET "
+                  "mode=excluded.mode, until=excluded.until, set_at=excluded.set_at, set_by=excluded.set_by",
+                  (m.node, m.mode, until, now_iso(), who))
+    return mode_for(db, m.node)
 
 
 @router.get("/latest")

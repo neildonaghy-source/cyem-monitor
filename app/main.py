@@ -29,6 +29,7 @@ from .hf_api import router as hf_router
 from .emo_api import ensure_emo_schema, router as emo_router
 from .ar_api import router as ar_router
 from .sdr_api import ensure_sdr_schema, router as sdr_router
+from .sdr_live import router as sdr_live_router
 from .insights_api import router as insight_router
 from .emo_plan import router as emo_plan_router
 from .met import router as met_router
@@ -137,6 +138,7 @@ async def cyem_ws_middleware(request, call_next):
 app.add_middleware(LoginGate)
 app.include_router(ar_router)
 app.include_router(sdr_router)
+app.include_router(sdr_live_router)            # /sdr/live/: OpenWebRX+ on trade, only while live (app/sdr_live.py)
 app.include_router(insight_router)
 app.include_router(emo_plan_router)
 app.include_router(met_router)
@@ -440,7 +442,8 @@ async def collect(name: str):
 
 # Content-Security-Policy for every response. Scripts only from this origin (no inline script), so injected markup
 # in model output cannot run; base-uri 'none' stops a stray <base> tag re-pointing relative links. Map tiles and
-# symbol images may come from any https host; the live SDR receiver is an https iframe. frame-ancestors lets only
+# symbol images may come from any https host; the live SDR receiver is framed from /sdr/live/ ('self'; its proxied pages
+# carry their own, separate policy from app/sdr_live.py, which setdefault below leaves alone). frame-ancestors lets only
 # this site (plus any origins in FRAME_ANCESTORS, none by default) embed the dashboard: the tailnet needs no log-in, so
 # any other site a tailnet browser visits could otherwise frame it and steer clicks. No X-Frame-Options: it cannot list
 # several origins, and browsers that understand frame-ancestors ignore it.

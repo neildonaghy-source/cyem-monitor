@@ -29,6 +29,7 @@ import json
 import math
 import time
 import uuid
+from collections import OrderedDict
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
@@ -445,7 +446,11 @@ def df_fix(target_pos, bearings: list[dict]) -> dict | None:
 
 
 # ---- analysis ---------------------------------------------------------------------------------
-_COV: dict[tuple, object] = {}
+# Coverage grids by radio, position, receiver height and atmosphere. A least-recently-used cache: each grid is a
+# float32 polar raster (360 x up to 1001 cells, about 1.4 MB), so 40 keeps it near 60 MB. It used to clear itself
+# completely at 80 entries, which threw away the working set of a large scenario in one go.
+_COV: "OrderedDict[tuple, object]" = OrderedDict()
+COV_MAX = 40
 WS: contextvars.ContextVar = contextvars.ContextVar("cyem_ws", default="default")   # per-request workspace (X-CyEM-WS)
 _LAST_BY_WS: dict[str, dict] = {}
 MAX_WORKSPACES = 40          # saved analyses held in memory (each holds the run's rasters and positions)
@@ -484,23 +489,33 @@ LAYER_RGBA = {
 async def coverage_for(e: dict, pos, rx_h: float):
     atm = _atm()
     key = (_radio_sig(e), round(pos[0], 4), round(pos[1], 4), rx_h, atm["sig"])
-    if key not in _COV:
-        s = SiteIn(name=e["name"], lat=pos[0], lon=pos[1], h_agl=min(e["h_agl"], 500), freq_mhz=e["freq_mhz"],
-                   bw_khz=e["bw_khz"] or 0, ptx_dbm=min(e["eirp_dbm"], 70.0), gtx_dbi=0, ltx_db=0, pattern=e["pattern"],
-                   azimuth=e.get("azimuth"), beamwidth=e.get("beamwidth"), radius_km=e["radius_km"], rx_h_agl=rx_h,
-                   grx_dbi=0, sens_dbm=-110, margin_db=0, itf_dbm=-130, k=atm["k"])
-        async with _HEAVY:
-            cov, _ = await asyncio.to_thread(_compute, s)
-        extra = e["eirp_dbm"] - min(e["eirp_dbm"], 70.0)   # Coverage caps power at 70 dBm; level scales with EIRP
-        if extra:
-            cov.prx = cov.prx + np.float32(extra)
-        wx = _weather_db_by_range(cov.prx.shape[1], cov.step_m, e["freq_mhz"] * 1e6, atm)
-        if wx is not None:
-            cov.prx = cov.prx - wx[None, :]
-        if len(_COV) > 80:
-            _COV.clear()
-        _COV[key] = cov
-    return _COV[key]
+    hit = _COV.get(key)
+    if hit is not None:
+        _COV.move_to_end(key)
+        return hit
+    s = SiteIn(name=e["name"], lat=pos[0], lon=pos[1], h_agl=min(e["h_agl"], 500), freq_mhz=e["freq_mhz"],
+               bw_khz=e["bw_khz"] or 0, ptx_dbm=min(e["eirp_dbm"], 70.0), gtx_dbi=0, ltx_db=0, pattern=e["pattern"],
+               azimuth=e.get("azimuth"), beamwidth=e.get("beamwidth"), radius_km=e["radius_km"], rx_h_agl=rx_h,
+               grx_dbi=0, sens_dbm=-110, margin_db=0, itf_dbm=-130, k=atm["k"])
+    async with _HEAVY:
+        cov, _ = await asyncio.to_thread(_compute, s)
+    extra = e["eirp_dbm"] - min(e["eirp_dbm"], 70.0)   # Coverage caps power at 70 dBm; level scales with EIRP
+    if extra:
+        cov.prx = cov.prx + np.float32(extra)
+    wx = _weather_db_by_range(cov.prx.shape[1], cov.step_m, e["freq_mhz"] * 1e6, atm)
+    if wx is not None:
+        cov.prx = cov.prx - wx[None, :]
+    cov.prx = np.asarray(cov.prx, dtype=np.float32)   # keep the cached raster at float32 whatever the arithmetic did
+    _cov_put(key, cov)
+    return cov
+
+
+def _cov_put(key: tuple, cov) -> None:
+    """Store a coverage grid, dropping the least recently used ones beyond COV_MAX."""
+    _COV[key] = cov
+    _COV.move_to_end(key)
+    while len(_COV) > COV_MAX:
+        _COV.popitem(last=False)
 
 
 def _weather_db_by_range(n: int, step_m: float, f_hz: float, atm: dict) -> np.ndarray | None:

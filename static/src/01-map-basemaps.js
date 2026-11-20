@@ -1,6 +1,10 @@
   // ---------------------------------------------------------------- map + basemaps
   const map = L.map('map', { zoomControl: false, worldCopyJump: false, minZoom: 2, maxZoom: 13, attributionControl: true, preferCanvas: true, renderer: L.canvas({ padding: 0.3 }) })
-    .setView([38, 18], 3);
+    .setView([54.5, -3.0], 6);
+  // Default view: Great Britain and Northern Ireland (zoom 6 on a laptop, 5 at phone width or on a short window).
+  // A start-up default view (below) replaces it; EMO's auto-fit may move it when a scenario is shown.
+  const UK_BOUNDS = L.latLngBounds([49.8, -8.3], [59.0, 1.9]);
+  map.setView([54.5, -3.0], Math.max(4, Math.min(innerWidth < 700 ? 5 : 6, map.getBoundsZoom(UK_BOUNDS))), { animate: false });
   // One map pick at a time, with a bar to cancel it (Esc too). Starting a pick cancels the one before, so a single click
   // never sets two positions, and a cancelled pick does not swallow the next ordinary map click.
   let PICK = null;

@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-19h';
+  const BUILD = '2026-11-20a';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -17,6 +17,9 @@
     } catch (e) { return null; }
     return s;
   })();
+  // First run on this device: no layer state saved here and none from the start-up default. The app then opens on the
+  // UK with the live layers only and nothing else open (EMO stays off until the EMO button is pressed).
+  const FIRST_RUN = (() => { try { return localStorage.getItem('cyem.layers') == null; } catch (e) { return true; } })();
   let startViewHold = !!START?.view;  // keep the saved view instead of EMO's first auto-fit
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -57,6 +60,43 @@
     t.textContent = text; t.className = bad ? 'bad show' : 'show';
     clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 6000);
   }
+  // Side sheets: a non-blocking panel on the right (a bottom sheet at phone width); the map stays usable behind it.
+  // openSheet(id, title, html) creates <aside id=id class="sheet"> on first use, fills it and shows it, and returns the
+  // body element (#<id>-body). openSheet(id) with no title or html just shows an existing sheet (markup may also be
+  // static: give it class "sheet" and a .sheet-close button). closeSheet(id) hides it. Escape closes the most recently
+  // opened sheet unless the modal is up (the modal takes Escape first).
+  const SHEETS = [];
+  function openSheet(id, title, html) {
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('aside'); el.id = id; el.className = 'sheet';
+      el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'false'); el.setAttribute('aria-labelledby', `${id}-title`);
+      el.innerHTML = `<div class="sheet-head"><h2 id="${id}-title"></h2><button type="button" class="sheet-close" aria-label="Close">Close</button></div><div class="sheet-body" id="${id}-body"></div>`;
+      document.body.appendChild(el);
+    }
+    const close = el.querySelector('.sheet-close');
+    if (close && !close.dataset.wired) { close.dataset.wired = '1'; close.addEventListener('click', () => closeSheet(id)); }
+    if (title != null) { const h = el.querySelector('.sheet-head h2'); if (h) h.textContent = title; }
+    const body = el.querySelector('.sheet-body') || el;
+    if (html != null) body.innerHTML = html;
+    if (!el.classList.contains('open')) {
+      el._opener = document.activeElement; el.classList.add('open');
+      if (close) close.focus({ preventScroll: true });
+    }
+    const i = SHEETS.indexOf(id); if (i >= 0) SHEETS.splice(i, 1); SHEETS.push(id);
+    return body;
+  }
+  function closeSheet(id) {
+    const el = document.getElementById(id); if (!el || !el.classList.contains('open')) return;
+    el.classList.remove('open');
+    const i = SHEETS.indexOf(id); if (i >= 0) SHEETS.splice(i, 1);
+    if (el._opener && document.contains(el._opener)) el._opener.focus({ preventScroll: true });
+    el._opener = null;
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !SHEETS.length || PICK || document.getElementById('modal')?.classList.contains('show')) return;  // a map pick (01) takes Escape first
+    closeSheet(SHEETS[SHEETS.length - 1]);
+  });
   // DELETE that reports failure (a 403 from the cross-site guard or a 404 used to look like success).
   async function apiDel(path) {
     try { await api(path, { method: 'DELETE' }); return true; } catch (e) { toast(`Delete failed: ${e.message}`); return false; }

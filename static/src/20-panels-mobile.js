@@ -26,7 +26,7 @@
       else if (b.dataset.go === 'emo-panel') { openEMO(); }
       else if (b.dataset.go === 'emo-off') { $('#modal').classList.remove('show'); emoOff(); }
       else if (b.hasAttribute('data-layers')) { $('#modal').classList.remove('show'); const lc = $('#layers'); lc.classList.remove('collapsed'); const tg = $('#layers-toggle'); if (tg) tg.textContent = 'hide'; try { localStorage.setItem('cyem-layers', 'show'); } catch (e) { /* ignore */ } }
-      else $('#' + b.dataset.go).click();
+      else { $('#modal').classList.remove('show'); $('#' + b.dataset.go).click(); }   // Health opens a sheet, which the modal would cover
     }));
   });
   if (mobile()) { showRail(false, false); showSide(false, false); } else { showRail(panels.rail, false); showSide(panels.side, false); }

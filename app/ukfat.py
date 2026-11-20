@@ -11,13 +11,40 @@ from pathlib import Path
 from .config import settings
 
 UNIT = {"khz": 1e3, "mhz": 1e6, "ghz": 1e9}
-PARSER_VERSION = 3   # bump when parse_pdf changes: forces a re-parse even if the PDF is unchanged
+PARSER_VERSION = 4   # bump when parse_pdf changes: forces a re-parse even if the PDF is unchanged
 _BAND = re.compile(r"^\s*([\d.]+)\s*(?:khz|mhz|ghz)?\s*[–-]\s*([\d.]+)\s*(khz|mhz|ghz)\s*$", re.I)   # also "72.8 MHz – 74.8 MHz"       # Ofcom PDF has e.g. "108 MHZ"
 _BAND_NOUNIT = re.compile(r"^\s*(\d[\d.]*)\s*[–-]\s*(\d[\d.]*)\s*$")                 # e.g. "10.45 – 10.475"
 _TXTBAND = re.compile(r"^\s*(\d[\d.]*)\s*(?:khz|mhz|ghz)?\s*[–-]\s*(\d[\d.]*)\s*(khz|mhz|ghz)\b(.*)$", re.I)
 _ABBR = re.compile(r"^([A-Z][A-Z0-9()\- ]{1,20}?)\s{1,}([A-Z][a-z].{3,90})$")
 _UKFN = re.compile(r"\bUK\d+(?:\.\d+)?\b")
 _CACHE: dict = {}
+_UNIT_AT = re.compile(r"(khz|mhz|ghz)", re.I)
+_GROUPED = re.compile(r"(?<=\d)[ \u00a0\u202f](?=\d{3}(?!\d))")    # "16 360" (ITU style digit groups) -> "16360"
+GAP_TOLERANCE_HZ = 1.0     # adjacent entries closer than this count as continuous (float rounding of the labels)
+
+
+def _norm_band(text: str) -> str:
+    """Join ITU-style digit groups in the band label only (the text before the first unit), so "15 800 – 16 360 kHz"
+    is read as one band and not dropped. Footnote numbers after the unit are left alone."""
+    m = _UNIT_AT.search(text)
+    head, tail = (text[:m.end()], text[m.end():]) if m else (text, "")
+    return _GROUPED.sub("", head) + tail
+
+
+def coverage_gaps(entries: list[dict], lo_hz: float = 8.3e3, hi_hz: float = 275e9) -> list[tuple[float, float]]:
+    """Frequency ranges between lo_hz and hi_hz that no parsed entry covers. The UKFAT itself should leave none
+    in this range, so a gap points at a row the parser dropped or a boundary it misread; check the PDF page
+    before treating one as real. Never fill a gap with invented allocations."""
+    gaps, reach = [], lo_hz
+    for e in sorted(entries, key=lambda e: e["lo_hz"]):
+        if e["lo_hz"] > reach + GAP_TOLERANCE_HZ and e["lo_hz"] < hi_hz:
+            gaps.append((reach, e["lo_hz"]))
+        reach = max(reach, e["hi_hz"])
+        if reach >= hi_hz:
+            break
+    if reach < hi_hz - GAP_TOLERANCE_HZ:
+        gaps.append((reach, hi_hz))
+    return gaps
 
 
 def path_json() -> Path:
@@ -43,11 +70,11 @@ def parse_pdf(pdf_path: Path) -> dict:
                 if not tab or not tab[0]:
                     continue
                 head = [_clean(c).lower() for c in tab[0]]
-                has_band = any(_BAND.match(_clean(r[0])) for r in tab if r and r[0])
+                has_band = any(_BAND.match(_norm_band(_clean(r[0]))) for r in tab if r and r[0])
                 if head and (head[0].startswith("frequency band") or (has_band and len(tab[0]) >= 4 and not head[0].startswith("footnote"))):
                     for row in (tab[1:] if head[0].startswith("frequency band") else tab):
                         cells = [_clean(c) for c in row]
-                        band = cells[0] if cells else ""
+                        band = _norm_band(cells[0]) if cells else ""
                         svc = prse = fn = rr = ""
                         for c in cells[1:]:          # classify by content: column positions vary between sections
                             if not c:
@@ -93,7 +120,7 @@ def parse_pdf(pdf_path: Path) -> dict:
             if n < 13:
                 continue
             for line in (page.extract_text() or "").splitlines():
-                m = _TXTBAND.match(line)
+                m = _TXTBAND.match(_norm_band(line))
                 if not m:
                     continue
                 try:

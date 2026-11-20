@@ -14,7 +14,7 @@
     d = d || {};
     const val = (k, t) => t === 'datetime-local' ? toLocalInput(d[k]) : esc(d[k] ?? '');
     return `<div class="specform">${LINK_FIELDS.map(([k, lbl, t]) => `<label${k === 'name' ? ' class="wide"' : ''}>${esc(lbl)}<input id="lk-${k}" type="${t}" step="any" value="${val(k, t)}"></label>`).join('')}
-      <div class="wide btns"><select id="lk-preset"><option value="">Band preset…</option>${(linkPresets?.presets || []).map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
+      <div class="wide btns"><select id="lk-preset" aria-label="Band preset"><option value="">Band preset…</option>${(linkPresets?.presets || []).map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
       <button id="lk-pick-a">Pick A on map</button> <button id="lk-pick-b">Pick B on map</button>
       <button id="lk-analyse" class="primary">Analyse</button> <button id="lk-save">${linkEditId ? 'Update' : 'Save'} link</button> <button id="lk-clear">Clear</button> <span id="lk-err" class="bad"></span></div>
       <p class="dim wide">Presets are typical values only: replace with your equipment data. Rain R0.01 of about 25 mm/h is typical for southern England (ITU-R P.837 gives local values).</p></div>`;

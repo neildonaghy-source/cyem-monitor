@@ -95,6 +95,19 @@ def now_iso() -> str:
     return iso(utcnow())  # type: ignore[return-value]
 
 
+def _published_before(published: str | None, cutoff: datetime) -> bool:
+    """True when an item's published time is readable and earlier than `cutoff` (the purge's rule)."""
+    if not published:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(published).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt < cutoff
+
+
 class Database:
     def __init__(self, path: str | None = None):
         self.path = str(path or settings.db_path)
@@ -131,8 +144,11 @@ class Database:
             return 0
         inserted = 0
         fetched = now_iso()
+        cutoff = utcnow() - timedelta(days=settings.retention_days)
         with self.tx() as c:
             for it in items:
+                if _published_before(it.get("published_at"), cutoff):
+                    continue      # the nightly purge would delete it, and the next fetch would bring it back
                 row = (
                     it["id"], it["source"], it["domain"], it["kind"], it["title"][:500],
                     it.get("url"), (it.get("summary") or "")[:2000], it.get("published_at"), fetched,
@@ -215,10 +231,18 @@ class Database:
             f"GROUP BY {column} ORDER BY n DESC LIMIT ?", params + [limit])
 
     def purge(self, days: int) -> int:
+        """Delete items older than `days`, aged by when they were published.
+
+        Fetched time is used instead when the published time is missing, unreadable or in the future (a feed's
+        clock or time zone is wrong). Ageing on fetch time kept old reports for a further `days` after a first
+        fetch, so a new feed's back catalogue sat in the store for months."""
         cutoff = iso(utcnow() - timedelta(days=days))
+        old = ("SELECT id FROM items WHERE julianday(CASE WHEN julianday(published_at) IS NOT NULL "
+               "AND julianday(published_at) <= julianday(?) THEN published_at ELSE fetched_at END) < julianday(?)")
+        args = (now_iso(), cutoff)
         with self.tx() as c:
-            c.execute("DELETE FROM items_fts WHERE id IN (SELECT id FROM items WHERE fetched_at < ?)", (cutoff,))
-            cur = c.execute("DELETE FROM items WHERE fetched_at < ?", (cutoff,))
+            c.execute(f"DELETE FROM items_fts WHERE id IN ({old})", args)
+            cur = c.execute(f"DELETE FROM items WHERE id IN ({old})", args)
             return cur.rowcount
 
     # ---- snapshots ---------------------------------------------------------

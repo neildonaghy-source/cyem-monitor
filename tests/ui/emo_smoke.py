@@ -35,7 +35,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch()
         ctx = await b.new_context(viewport={"width": 1440, "height": 900})
-        await ctx.add_init_script("localStorage.setItem('cyem-ws-mode','device'); localStorage.setItem('cyem-ws','uitest1');")
+        await ctx.add_init_script("localStorage.setItem('cyem-ws-mode','device'); localStorage.setItem('cyem-ws','uitest1'); localStorage.setItem('cyem-emo-on','1');")   # a first run starts with EMO off
         pg = await ctx.new_page(); errs = []
         pg.on("pageerror", lambda e: errs.append(str(e)))
         await pg.goto(BASE, wait_until="networkidle"); await pg.wait_for_timeout(800)

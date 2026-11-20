@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged with the generated Info.plist (GENERATE_INFOPLIST_FILE): background refresh for notifications, Handoff. -->
+<plist version="1.0">
+<dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array><string>com.neildonaghy.cyem.refresh</string></array>
+	<key>UIBackgroundModes</key>
+	<array><string>fetch</string></array>
+	<key>NSUserActivityTypes</key>
+	<array><string>com.neildonaghy.cyem.page</string></array>
+</dict>
+</plist>

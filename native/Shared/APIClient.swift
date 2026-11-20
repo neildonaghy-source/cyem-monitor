@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 /// Talks to one CyEM server. On the tailnet no log-in is needed; through Tailscale Funnel (the internet) the server
 /// answers 401 until the app has signed in with POST /login, after which a session cookie (30 days) rides along.
@@ -20,7 +21,8 @@ final class APIClient: Sendable {
         }
     }
 
-    init(base: URL, workspace: String = "default") {
+    /// `proxy`: the built-in Tailscale node's SOCKS5 proxy (Tailnet.proxy), or nil for the device's own network.
+    init(base: URL, workspace: String = "default", proxy: ProxyConfiguration? = nil) {
         self.base = base
         self.workspace = workspace
         let cfg = URLSessionConfiguration.default
@@ -28,6 +30,7 @@ final class APIClient: Sendable {
         cfg.httpShouldSetCookies = true
         cfg.timeoutIntervalForRequest = 30
         cfg.waitsForConnectivity = false
+        if let proxy { cfg.proxyConfigurations = [proxy] }
         session = URLSession(configuration: cfg)
     }
 

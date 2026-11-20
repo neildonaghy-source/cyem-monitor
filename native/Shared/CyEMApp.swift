@@ -5,6 +5,7 @@ struct CyEMApp: App {
     @State private var model = AppModel()
     @State private var web = WebController()
     @State private var tailnet = Tailnet()
+    @State private var notifier = Notifier()
 
     var body: some Scene {
         WindowGroup {
@@ -12,9 +13,13 @@ struct CyEMApp: App {
                 .environment(model)
                 .environment(web)
                 .environment(tailnet)
+                .environment(notifier)
                 .preferredColorScheme(.dark)
         }
         .defaultSize(width: 1440, height: 900)
+        #if os(iOS)
+        .backgroundTask(.appRefresh(Notifier.refreshTask)) { await notifier.backgroundCheck() }
+        #endif
         .commands {
             CommandGroup(after: .toolbar) {
                 Button("Reload") { web.reload() }.keyboardShortcut("r", modifiers: .command)
@@ -22,10 +27,15 @@ struct CyEMApp: App {
                 Button("Forward") { web.forward() }.keyboardShortcut("]", modifiers: .command)
                 Button("Home") { model.homeTick += 1 }.keyboardShortcut("h", modifiers: [.command, .shift])
             }
+            #if os(macOS)
+            CommandGroup(after: .saveItem) {
+                Button("Share Page…") { web.sharePage() }.keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+            #endif
         }
         #if os(macOS)
         Settings {
-            SettingsView().environment(model).environment(tailnet).frame(width: 460).padding()
+            SettingsView().environment(model).environment(tailnet).environment(notifier).frame(width: 460).padding()
         }
         #endif
     }
@@ -35,6 +45,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(WebController.self) private var web
     @Environment(Tailnet.self) private var tailnet
+    @Environment(Notifier.self) private var notifier
     @State private var showSettings = false
 
     var body: some View {
@@ -63,6 +74,7 @@ struct RootView: View {
             Menu {
                 Button { web.reload() } label: { Label("Reload", systemImage: "arrow.clockwise") }
                 Button { model.homeTick += 1 } label: { Label("Home", systemImage: "house") }
+                if let u = web.currentURL { ShareLink(item: u) { Label("Share page", systemImage: "square.and.arrow.up") } }
                 Button { showSettings = true } label: { Label("Server", systemImage: "gearshape") }
             } label: {
                 Image(systemName: "ellipsis.circle.fill").font(.title2).symbolRenderingMode(.hierarchical)
@@ -70,12 +82,37 @@ struct RootView: View {
             }
             .padding(.bottom, 64)
         }
-        .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().environment(model).environment(tailnet) } }
+        .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().environment(model).environment(tailnet).environment(notifier) } }
         .sheet(item: Binding(get: { web.shareFile }, set: { web.shareFile = $0 })) { f in ShareSheet(url: f.url) }
         #else
-        .sheet(isPresented: $showSettings) { SettingsView().environment(model).environment(tailnet).frame(width: 460).padding() }
+        .sheet(isPresented: $showSettings) { SettingsView().environment(model).environment(tailnet).environment(notifier).frame(width: 460).padding() }
         #endif
-        .onAppear { tailnet.start() }
+        // Handoff: the page shown here can be picked up in CyEM on the other device (same Apple ID).
+        .userActivity(RootView.handoffType, isActive: web.currentURL != nil) { a in
+            a.title = web.title ?? "CyEM"
+            a.webpageURL = web.currentURL
+            a.isEligibleForHandoff = true
+        }
+        .onContinueUserActivity(RootView.handoffType) { a in
+            if let u = a.webpageURL, u.host == model.serverURL.host { web.open(u) }
+        }
+        .onAppear {
+            tailnet.start()
+            notifier.openInApp = { [weak web] u in web?.open(u) }
+            syncNotifier()
+            notifier.start()
+        }
+        .onChange(of: tailnet.generation) { syncNotifier() }
+        .onChange(of: tailnet.mode) { syncNotifier() }
+        .onChange(of: model.serverText) { syncNotifier() }
+    }
+
+    static let handoffType = "com.neildonaghy.cyem.page"
+
+    private func syncNotifier() {
+        notifier.server = model.serverURL
+        notifier.proxy = tailnet.proxy
+        notifier.ready = tailnet.ready
     }
 }
 
@@ -133,6 +170,7 @@ struct ConnectionProblem: View {
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(Tailnet.self) private var tailnet
+    @Environment(Notifier.self) private var notifier
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var error: String?
@@ -169,6 +207,20 @@ struct SettingsView: View {
                 Text(tailnet.mode == .builtIn
                      ? (tailnet.hasKey ? "The app joins the tailnet by itself (\(Tailnet.nodeName)), limited to the CyEM server; no Tailscale account or app needed." : "This build has no tailnet key, so built-in Tailscale needs a Tailscale sign-in.")
                      : "The app uses this device's network: the Tailscale app on the tailnet, or from the internet the CyEM username and password.")
+            }
+            Section {
+                Toggle("High-severity items (4 and 5)", isOn: Binding(get: { notifier.itemsOn }, set: { notifier.itemsOn = $0 }))
+                Toggle("Finished briefs", isOn: Binding(get: { notifier.briefsOn }, set: { notifier.briefsOn = $0 }))
+                if notifier.permitted == false { Text("Notifications are turned off for CyEM in System Settings.").foregroundStyle(.orange) }
+                if let t = notifier.lastCheck { LabeledContent("Last check", value: t.formatted(date: .omitted, time: .shortened)) }
+                if let e = notifier.lastError { Text(e).font(.caption).foregroundStyle(.orange) }
+                Button("Check now") { Task { await notifier.check() } }
+            } header: { Text("Notifications") } footer: {
+                #if os(macOS)
+                Text("The app asks the server every 5 minutes while it runs, also with its window closed. Severity is a keyword heuristic.")
+                #else
+                Text("The app asks the server every 5 minutes while it is open; in the background only when iOS allows (often hours apart). Severity is a keyword heuristic.")
+                #endif
             }
             Section("About") {
                 LabeledContent("App", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")

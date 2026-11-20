@@ -12,7 +12,7 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 747JXF57MZ
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.4.0"
+    MARKETING_VERSION: "0.5.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon             # Shared/Assets.xcassets (built by Icon/build_icons.py)
@@ -30,6 +30,11 @@ targets:
       - framework: Vendor/ios/TailscaleKit.framework        # scripts/build-tailscalekit.sh
         embed: true
         codeSign: true
+      - target: CyEMWidget-iOS                             # widgets (W5), embedded in PlugIns
+    entitlements:
+      path: CyEM-iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.neildonaghy.cyem]   # widget snapshot (WidgetSnapshot.Store)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem
@@ -55,9 +60,11 @@ targets:
       - framework: Vendor/macos/TailscaleKit.framework      # scripts/build-tailscalekit.sh
         embed: true
         codeSign: true
+      - target: CyEMWidget-macOS                           # widgets (W5)
     entitlements:
       path: CyEM-macOS.entitlements
       properties:
+        com.apple.security.application-groups: [747JXF57MZ.com.neildonaghy.cyem]   # team-prefixed: no registration on macOS
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         com.apple.security.network.server: true            # built-in Tailscale's local proxy listens on 127.0.0.1
@@ -72,7 +79,48 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: CyEM
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
         ENABLE_HARDENED_RUNTIME: YES
-  CyEMTests:                                              # pure logic only (NotifyPlan); no app host, no TailscaleKit
+  CyEMWidget-iOS:                                         # WidgetKit extension: reads the app's snapshot, no networking
+    type: app-extension
+    platform: iOS
+    sources: [Widget, Shared/WidgetSnapshot.swift, Shared/Models.swift]
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: CyEMWidget-iOS.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.neildonaghy.cyem]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem.widget
+        PRODUCT_NAME: CyEMWidget
+        INFOPLIST_FILE: Info/Widget.plist
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CyEM
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+  CyEMWidget-macOS:
+    type: app-extension
+    platform: macOS
+    sources: [Widget, Shared/WidgetSnapshot.swift, Shared/Models.swift]
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: CyEMWidget-macOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true               # widget extensions must be sandboxed
+        com.apple.security.application-groups: [747JXF57MZ.com.neildonaghy.cyem]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem.mac.widget
+        PRODUCT_NAME: CyEMWidget
+        INFOPLIST_FILE: Info/Widget.plist
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: CyEM
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+  CyEMTests:                                              # pure logic only (NotifyPlan, WidgetSnapshot); no app host, no TailscaleKit
     type: bundle.unit-test
     platform: macOS
     scheme:
@@ -80,6 +128,7 @@ targets:
     sources:
       - Tests
       - Shared/NotifyPlan.swift
+      - Shared/WidgetSnapshot.swift
       - Shared/Models.swift
     settings:
       base:

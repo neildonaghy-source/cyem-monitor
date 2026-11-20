@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-20a';
+  const BUILD = '2026-11-20b';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -80,6 +80,7 @@
     const body = el.querySelector('.sheet-body') || el;
     if (html != null) body.innerHTML = html;
     if (!el.classList.contains('open')) {
+      SHEETS.filter((o) => o !== id).forEach((o) => closeSheet(o));               // one sheet at a time (same place on screen)
       el._opener = document.activeElement; el.classList.add('open');
       if (close) close.focus({ preventScroll: true });
     }

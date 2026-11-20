@@ -1,10 +1,11 @@
 #!/bin/bash
 # One CyEM spectrum sweep on trade's RTL-SDR, which the Ecowitt weather receiver normally holds.
 # Stops ecowitt-receiver, runs one rtl_power pass (24-1766 MHz, about 2 minutes), posts it to CyEM, and always
-# restarts ecowitt-receiver, even on failure. Run by cyem-sdr-sweep.timer a few times a day (Neil, 19 Nov 2026).
+# restarts ecowitt-receiver, even on failure. Exits 0 quietly while live listening (cyem-sdr-mode) holds the lock.
+# Run by cyem-sdr-sweep.timer a few times a day (Neil, 19 Nov 2026).
 set -uo pipefail
 exec 9>/run/cyem-sdr-sweep.lock
-flock -n 9 || { echo "a sweep is already running"; exit 0; }
+flock -n 9 || exit 0                                # a sweep or live listening holds the dongle: skip this one
 restore() { systemctl start ecowitt-receiver.service; }
 trap restore EXIT
 systemctl stop ecowitt-receiver.service

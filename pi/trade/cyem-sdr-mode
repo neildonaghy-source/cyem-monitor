@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""CyEM live-mode agent for trade's shared RTL-SDR (run as root by cyem-sdr-mode.service).
+
+Every 10 s it asks CyEM what the dongle should be doing (GET /api/sdr/mode, ingest token) and reports what it is doing
+(POST /api/sdr/heartbeat: "weather", "sweeping", "live").
+  live: take the sweep lock (/run/cyem-sdr-sweep.lock, so the timer's sweeps skip), stop ecowitt-receiver,
+        docker start cyem-openwebrx. CyEM proxies listeners to it; nothing is recorded here or there.
+  auto, lapsed, or 120 min reached: docker stop cyem-openwebrx, start ecowitt-receiver, release the lock.
+Safety: any error while switching, and any exit of this process, puts the weather receiver back (finally, SIGTERM,
+and ExecStopPost in the unit). A request that failed or hit the cap is not retried until a new one is made.
+Config: /etc/cyem-sweep.env (SDR_INGEST_TOKEN, CYEM_URL, NODE). Stdlib only."""
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+import urllib.request
+
+LOCK = "/run/cyem-sdr-sweep.lock"
+CONTAINER = "cyem-openwebrx"
+WEATHER = "ecowitt-receiver.service"
+POLL_S = 10
+HARD_CAP_S = 120 * 60
+BEAT_LIVE_S, BEAT_IDLE_S = 60, 300
+
+
+def run_cmd(cmd: list[str]) -> int:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=90).returncode
+    except Exception as e:  # noqa: BLE001
+        print("command failed:", cmd, e, flush=True)
+        return 1
+
+
+class FileLock:
+    """flock(2) on the sweep's lock file, the same lock `flock -n 9` takes in cyem-sdr-sweep."""
+
+    def __init__(self, path: str = LOCK):
+        self.path, self.fd = path, None
+
+    def acquire(self) -> bool:
+        if self.fd is not None:
+            return True
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o644)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(fd)
+            return False
+        self.fd = fd
+        return True
+
+    def release(self) -> None:
+        if self.fd is not None:
+            try:
+                fcntl.flock(self.fd, fcntl.LOCK_UN)
+            finally:
+                os.close(self.fd)
+                self.fd = None
+
+    def held_by_other(self) -> bool:
+        """True while a sweep holds the lock (only asked when we do not hold it)."""
+        if self.fd is not None:
+            return False
+        if self.acquire():
+            self.release()
+            return False
+        return True
+
+
+class Http:
+    def __init__(self, base: str, token: str, node: str):
+        self.base, self.token, self.node = base.rstrip("/"), token, node
+
+    def _req(self, path: str, body: dict | None = None):
+        req = urllib.request.Request(self.base + path, data=json.dumps(body).encode() if body is not None else None,
+                                     method="POST" if body is not None else "GET",
+                                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.token}"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.load(r)
+
+    def mode(self) -> dict | None:
+        try:
+            return self._req(f"/api/sdr/mode?node={self.node}")
+        except Exception as e:  # noqa: BLE001
+            print("mode poll failed:", e, flush=True)
+            return None
+
+    def beat(self, state: str, info: dict) -> None:
+        try:
+            self._req("/api/sdr/heartbeat", {"node": self.node, "state": state, "info": info})
+        except Exception as e:  # noqa: BLE001
+            print("heartbeat failed:", e, flush=True)
+
+
+def _iso(ts: float | None) -> str | None:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts)) if ts else None
+
+
+class Agent:
+    """One decision per tick(). Commands, HTTP, lock and clocks are injected so tests can run it without hardware."""
+
+    def __init__(self, http, run=run_cmd, lock=None, clock=time.monotonic, wall=time.time, sleep=time.sleep):
+        self.http, self.run, self.lock = http, run, lock or FileLock()
+        self.clock, self.wall, self.sleep = clock, wall, sleep
+        self.live = False
+        self.deadline = 0.0                  # monotonic: when this live session ends
+        self.cap_at = 0.0                    # monotonic: start + 120 min
+        self.spent = None                    # set_at of a request that failed or hit the cap
+        self.error = None
+        self.state = None
+        self.last_beat = -1e9
+
+    # ---- actions
+    def start_live(self) -> bool:
+        if not self.lock.acquire():
+            return False
+        self.run(["systemctl", "stop", WEATHER])
+        self.sleep(3)                                            # let rtl_433 release the dongle
+        if self.run(["docker", "start", CONTAINER]) != 0:
+            self.error = "could not start the live receiver (docker start failed)"
+            self.restore()
+            return False
+        self.live, self.error = True, None
+        return True
+
+    def restore(self) -> None:
+        """Back to the weather receiver. Safe to call at any time and more than once."""
+        if self.live or self.lock.fd is not None:
+            self.run(["docker", "stop", CONTAINER])
+            self.run(["systemctl", "start", WEATHER])
+        self.live = False
+        self.lock.release()
+
+    def beat(self, state: str, force: bool = False) -> None:
+        now = self.clock()
+        if force or state != self.state or now - self.last_beat >= (BEAT_LIVE_S if state == "live" else BEAT_IDLE_S):
+            wall_until = self.wall() + (self.deadline - now) if self.live else None
+            self.http.beat(state, {"live_capable": True, "live_until": _iso(wall_until), "live_error": self.error})
+            self.state, self.last_beat = state, now
+
+    # ---- one poll
+    def tick(self) -> str:
+        now = self.clock()
+        m = self.http.mode()
+        if m is not None:
+            want = m.get("mode") == "live" and (m.get("remaining_s") or 0) > 0 and m.get("set_at") != self.spent
+        else:
+            want = self.live                                      # server unreachable: keep going until the local deadline
+        if self.live:
+            if m is not None and want:
+                self.deadline = min(now + m["remaining_s"], self.cap_at)       # a new request can extend, never past the cap
+            if not want or now >= self.deadline:
+                if now >= self.cap_at and m is not None:
+                    self.spent = m.get("set_at")
+                    self.error = "live ended at the 120-minute limit"
+                self.restore()
+        elif want:
+            if self.lock.held_by_other():
+                self.beat("sweeping")                             # live starts when the sweep finishes
+                return "sweeping"
+            self.cap_at = now + HARD_CAP_S
+            self.deadline = min(now + m["remaining_s"], self.cap_at)
+            if not self.start_live():
+                self.spent = m.get("set_at")
+        if self.live:
+            self.beat("live")
+            return "live"
+        st = "sweeping" if self.lock.held_by_other() else "weather"
+        self.beat(st)
+        return st
+
+
+def main() -> int:
+    agent = Agent(Http(os.environ.get("CYEM_URL", "https://nucbox-evo-x2.tail013324.ts.net"),
+                       os.environ["SDR_INGEST_TOKEN"], os.environ.get("NODE", "trade-sdr")))
+
+    def stop(*_):
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try:
+        agent.beat("weather", force=True)
+        while True:
+            try:
+                agent.tick()
+            except Exception as e:  # noqa: BLE001
+                print("error:", e, flush=True)
+                agent.error = f"agent error: {type(e).__name__}"
+                agent.restore()
+            time.sleep(POLL_S)
+    finally:
+        agent.restore()
+        agent.beat("weather", force=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

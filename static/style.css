@@ -397,3 +397,14 @@ button.armed { background: #5a1b1b !important; border-color: #ff5c5c !important;
     border-left: 0; border-top: 1px solid var(--border); border-radius: 12px 12px 0 0; box-shadow: 0 -6px 18px rgba(0,0,0,.45); }
   .sheet-head .sheet-close { padding: 8px 14px; }
 }
+
+/* ---- SDR: Listen live (Nov 2026), OpenWebRX+ through /sdr/live/ ---- */
+.sdr-livebox { border: 1px solid #243040; border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.sdr-livebox p { margin: 6px 0; }
+#sdr-live-frame iframe { display: block; width: 100%; height: min(70vh, 560px); border: 0; border-radius: 6px; background: #000; }
+#sdr-live-frame .lvbar { display: none; }
+#sdr-live-frame.full { position: fixed; inset: 0; z-index: 5000; background: #0a0e13; display: flex; flex-direction: column; }
+#sdr-live-frame.full .lvbar { display: flex; align-items: center; gap: 10px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; border-bottom: 1px solid #243040; font-size: 13px; }
+#sdr-live-frame.full .lvbar .dim { flex: 1; }
+#sdr-live-frame.full .lvbar button { height: 34px; padding: 0 14px; font-size: 13px; border: 1px solid #3c8cff; }
+#sdr-live-frame.full iframe { flex: 1; height: auto; border-radius: 0; }

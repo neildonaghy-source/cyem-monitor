@@ -26,6 +26,8 @@ final class Notifier {
     private(set) var permitted: Bool?
     private(set) var lastCheck: Date?
     private(set) var lastError: String?
+    /// When the widget snapshot was last written (nil: never, or the app group is not available to this build).
+    private(set) var lastWidget: Date?
 
     /// Set by the root view: where to ask and how.
     var server: URL?
@@ -78,8 +80,9 @@ final class Notifier {
         do {
             let st = try await api.get("api/status", as: StatusResponse.self)
             if WidgetSnapshot.Store.save(.make(status: st, server: server.absoluteString, now: Date())) {
+                lastWidget = Date()
                 WidgetCenter.shared.reloadTimelines(ofKind: WidgetSnapshot.Store.kind)
-            }
+            } else { err = "Widget snapshot not saved: the app group is not available to this build." }
         } catch { err = error.localizedDescription }
         if itemsOn || briefsOn {
             var items: [Item]?, brief: BriefRow?

@@ -213,6 +213,7 @@ struct SettingsView: View {
                 Toggle("Finished briefs", isOn: Binding(get: { notifier.briefsOn }, set: { notifier.briefsOn = $0 }))
                 if notifier.permitted == false { Text("Notifications are turned off for CyEM in System Settings.").foregroundStyle(.orange) }
                 if let t = notifier.lastCheck { LabeledContent("Last check", value: t.formatted(date: .omitted, time: .shortened)) }
+                LabeledContent("Widgets updated", value: notifier.lastWidget?.formatted(date: .omitted, time: .shortened) ?? "not yet")
                 if let e = notifier.lastError { Text(e).font(.caption).foregroundStyle(.orange) }
                 Button("Check now") { Task { await notifier.check() } }
             } header: { Text("Notifications and widgets") } footer: {

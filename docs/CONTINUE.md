@@ -13,8 +13,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   is registered (`pluginkit`) and Settings shows "Widgets updated 15:53" with no error. Not yet placed on a desktop (Neil
   adds it: right-click the desktop > Edit Widgets). iPhone: compiles unsigned; the signed build stopped with "No
   Accounts" in Xcode and the team profile lacks App Groups (see "Waiting for Neil"); the installed 0.4.0 expires 27 Nov.
-  No server change. The EVO runs `main` 84e957a (release 2026-11-20a, PR #51, deployed and recorded on trade by another
-  session: audit follow-ups, app icon, SDR live listen).
+  No server change. `main` 9a6265e (PR #52) deployed on the EVO (healthy, `/api/status` 200; it already ran 84e957a,
+  release 2026-11-20a from another session). No EMO check needed (no server change). Recorded on trade (CHANGELOG,
+  runbook 4.2) and on the Mac mini (`cyem-monitor-20261120-main-9a6265e.bundle`, `--all` from the MacBook clone, so
+  main is `refs/remotes/origin/main` in it; clone-verified; older bundles kept). The Mac mini bundle for release
+  2026-11-20a was not made (mac-mini did not resolve then); this one covers it.
 
 - Native apps 0.4.0 (20 Nov, W3): local notifications for high-severity items (4 and 5) and finished briefs, Share Page,
   Handoff (`native/Shared/Notifier.swift`, `NotifyPlan.swift`, tests `native/Tests`, scheme CyEMTests). Mac app replaced

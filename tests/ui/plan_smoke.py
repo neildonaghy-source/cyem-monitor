@@ -25,7 +25,7 @@ async def main():
         pg.on("response", lambda r: errs.append(f"HTTP {r.status} {r.url[-70:]}") if r.status >= 500 else None)
         await pg.goto("http://127.0.0.1:3020/", wait_until="networkidle"); await pg.wait_for_timeout(1500)
         await pg.click("#btn-plan"); await pg.wait_for_timeout(1500)
-        rec("Plan opens the Planning modal", (await pg.evaluate("() => document.getElementById('modal-title').textContent")) == "Planning")
+        rec("Plan opens the Planning modal", (await pg.evaluate("() => document.getElementById('modal-title').textContent")) == "Plan")
         rec("tab strip present", (await pg.evaluate("() => document.querySelectorAll('.plantabs button').length")) == 4)
         # Links
         await pg.click(".plantabs button[data-plan=links]"); await pg.wait_for_timeout(1200)

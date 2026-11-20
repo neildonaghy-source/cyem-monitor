@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-20a';
+  const BUILD = '2026-11-20b';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -80,6 +80,7 @@
     const body = el.querySelector('.sheet-body') || el;
     if (html != null) body.innerHTML = html;
     if (!el.classList.contains('open')) {
+      SHEETS.filter((o) => o !== id).forEach((o) => closeSheet(o));               // one sheet at a time (same place on screen)
       el._opener = document.activeElement; el.classList.add('open');
       if (close) close.focus({ preventScroll: true });
     }
@@ -2475,10 +2476,10 @@
   }
   async function openSDR() {
     let nodes = [], st = {};
-    try { st = await api('/api/sdr/nodes'); nodes = st.nodes; } catch (e) { return openModal('SDR', `<p class="bad">${esc(e.message)}</p>`); }
+    try { st = await api('/api/sdr/nodes'); nodes = st.nodes; } catch (e) { return openSheet('sdr-sheet', 'SDR', `<p class="bad">${esc(e.message)}</p>`); }
     if (!nodes.length) {
       const rj = st.last_reject;
-      openModal('SDR receivers', `<p><b>No receiver is sending sweeps to this server.</b></p>
+      openSheet('sdr-sheet', 'SDR receivers', `<p><b>No receiver is sending sweeps to this server.</b></p>
         <ul>
           <li>Ingest on this server: ${st.ingest_enabled ? '<span class="good">on</span> (a token is set)' : '<span class="bad">off</span>: SDR_INGEST_TOKEN is not set on the server'}.</li>
           <li>Last rejected sweep: ${rj ? `<span class="bad">${esc(rj.node || '?')} at ${esc(fmtZ(rj.at))}: ${esc(rj.reason)}</span>` : 'none since the server started'}.</li>
@@ -2492,15 +2493,15 @@
     SDR.node = SDR.node && nodes.some((n) => n.node === SDR.node) ? SDR.node : nodes[0].node;
     const n = nodes.find((x) => x.node === SDR.node);
     const age = n.last_seen ? Math.round((Date.now() - Date.parse(n.last_seen)) / 60000) : null;
-    let body = `<div class="specset"><select id="sdr-node">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
+    let body = `<div class="specset"><select id="sdr-node" aria-label="Receiver">${nodes.map((x) => `<option${x.node === SDR.node ? ' selected' : ''}>${esc(x.node)}</option>`).join('')}</select>
       ${(() => { const shared = /shared/.test(n.info?.state || '') || !!n.info?.live_capable; const ok = age != null && (age < 10 || (shared && age < 480));
         const when = age == null ? 'never seen' : age < 90 ? `${age} min ago` : `${Math.round(age / 60)} h ago`;
         return `<span class="${ok ? 'good' : 'bad'}">${age == null ? 'never seen' : shared ? `shared receiver: sweeps four times a day, last ${when}` : age < 10 ? `online${n.info?.state && n.info.state !== 'sweeping' ? ' (' + esc(n.info.state) + ')' : ''}, last sweep ${when}` : `last seen ${when}`}</span>`; })()}
       ${n.url && !n.info?.live_capable ? `<button id="sdr-live" data-url="${esc(n.url)}">Open live receiver</button>` : ''} <button id="sdr-ins">Insight (AI)</button></div>
-      ${n.info?.live_capable ? sdrLiveBox() : ''}<div class="specset sdr-posset"><input id="sdr-q" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
+      ${n.info?.live_capable ? sdrLiveBox() : ''}<div class="specset sdr-posset"><input id="sdr-q" aria-label="Receiver position" placeholder="Postcode, place or lat, lon" autocomplete="off" style="flex:1 1 220px"> <button id="sdr-set">Set position</button> <button id="sdr-pick">Pick on map</button> <button id="sdr-pos">Use this device</button></div><div id="sdr-insout" class="md"></div>
       <p class="dim">Position: ${n.lat != null ? `${n.lat.toFixed(4)}, ${n.lon.toFixed(4)} (${fmtZ(n.pos_at)})` : 'not set'} · ${n.sweeps} sweeps stored. Spectrum occupancy only; nothing is demodulated or recorded.</p>
       ${SDR.posMsg ? `<p class="good">${esc(SDR.posMsg)}</p>` : ''}<div id="sdr-out"><span class="spinner"></span></div>`; SDR.posMsg = '';
-    openModal('SDR receivers', body);
+    openSheet('sdr-sheet', 'SDR receivers', body);
     $('#sdr-node').addEventListener('change', (e) => { SDR.node = e.target.value; openSDR(); });
     // Live receiver in an in-app window: a plain link replaced the whole app page, and the Mac/iPhone apps have no Back
     $('#sdr-live')?.addEventListener('click', (ev) => openLiveRx(ev.currentTarget.dataset.url, n.node));
@@ -2519,7 +2520,7 @@
     $('#sdr-set').addEventListener('click', setQ);
     $('#sdr-q').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); setQ(); } });
     $('#sdr-pick').addEventListener('click', () => {
-      $('#modal').classList.remove('show');
+      closeSheet('sdr-sheet');
       pickOnMap('the receiver position', async (e) => {
         const lat = +e.latlng.lat.toFixed(5), lon = +e.latlng.lng.toFixed(5);
         try { await postJson(`/api/sdr/nodes/${encodeURIComponent(SDR.node)}/position`, { lat, lon }); SDR.posMsg = `Position set from the map: ${lat}, ${lon}`; }

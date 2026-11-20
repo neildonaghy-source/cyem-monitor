@@ -77,11 +77,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 3. [x] **Native apps** (`docs/NATIVE-PLAN.md`): ~~W3 notifications~~ (done 20 Nov, 0.4.0), ~~W5 widgets~~ (done 20 Nov,
    0.5.0; iPhone install waits for Neil). The apps host the web interface; never
    rebuild web features natively (Neil, 19 Nov). Build and look at it on the MacBook (`native/README.md`).
-3a. **Audit follow-ups** (audit of 19 Nov, Claude Doc "CyEM audit, 19 Nov 2026"; slices 1 to 4 merged as PRs #33 to #35,
-   #37, #38): float32 EMO rasters and a smaller `_COV` (memory); purge on publish time; keep a failed scheduled brief
-   retryable without hammering Ollama; one copy of the EMO tools (the panel calls the dock's functions); non-blocking side sheets for
-   SDR and Health; form labels; the UKFAT gap at 16.30-16.36 MHz; tests for purge and EMO undo. (Done 19 Nov: workspace caps, no
-   cross-workspace cache clearing, 64-bit entity ids, dim-text contrast, UKFAT coverage check.)
+3a. **Audit follow-ups**: done in release 2026-11-20a (PR #51) except two checks. Left: (a) UKFAT 16.30-16.36 MHz gap:
+   parser v4 reads ITU digit groups and Health now lists any coverage gap; after the next monthly run, if the gap remains,
+   read the PDF page near 16.3 MHz on the EVO before recording it as a genuine gap. (b) Run tests/ui/run.sh,
+   corridor_check.py and ui_audit.py against the EVO (scripts fixed by reasoning, not yet run there). Also: OpenWebRX+ on
+   trade lists Airspy HF+ and SDRPlay devices that do not exist; remove them in its settings (needs an admin user).
 4. **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
 5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
@@ -128,6 +128,13 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 - New SSH keys, scheduled jobs or other persistence on any box; deleting anything of his; Home Assistant changes;
   API keys; anything that spends money. If the next slice needs one of these, do the preparatory work, write the
   question at the top of this file under "Waiting for Neil", and stop.
+
+## Done 20 Nov: SDR live listen
+
+- Installed on trade by Neil (20 Nov): cyem-sdr-mode.service and container cyem-openwebrx (slechev/openwebrxplus:1.2.130,
+  100.124.48.91:8073, created stopped). Checked 16:09 UTC: Listen live (15 min) switched trade in about 20 s, /sdr/live/ page,
+  JS, status and WebSocket (waterfall/audio frames) all through CyEM; Stop brought ecowitt-receiver back and stopped the
+  container. Nothing is recorded.
 
 ## Done 19 Nov: SDR
 

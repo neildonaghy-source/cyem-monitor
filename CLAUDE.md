@@ -90,3 +90,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 
 - ~/Documents/Codex/CyEM on the Mac now holds spectrum policy papers only; the September app source, deploy bundles and
   scratch files there are gone.
+- SDR live listen (20 Nov 2026): `sdr_live.py` proxies `/sdr/live/` (HTTP + WS, GET only, settings/login paths refused, own CSP)
+  to OpenWebRX+ on trade only while `/api/sdr/mode` asks for live and the node reports it. Trade agent `pi/trade/cyem-sdr-mode`
+  (root, polls every 10 s) shares the sweep flock, pauses ecowitt-receiver, cap 120 min, always restores. Never record audio or IQ.
+- Default screen: first run opens on the UK with live layers only; reference layers and notional EMO off (`cyem.layersv` migration).
+- Icon source and build script: `native/Icon/` (`build_icons.py` regenerates the Xcode AppIcon set and `static/icons/`).

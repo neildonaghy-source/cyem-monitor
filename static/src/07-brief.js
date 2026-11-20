@@ -31,7 +31,7 @@
       $('#brief').innerHTML = renderMd(brief.content);
       const { briefs } = await api('/api/briefs?limit=30');
       const opts = briefs.map((b) => `<option value="${b.id}" ${b.id === brief.id ? 'selected' : ''}>${fmtZ(b.created_at)} · ${esc(b.kind)}</option>`).join('');
-      $('#brief-meta').innerHTML = `<span>${esc(brief.model)}</span><span>·</span><span>${brief.item_count} items</span><span>·</span><span>${Math.round(brief.duration_s)}s</span><select id="brief-hist">${opts}</select>`;
+      $('#brief-meta').innerHTML = `<span>${esc(brief.model)}</span><span>·</span><span>${brief.item_count} items</span><span>·</span><span>${Math.round(brief.duration_s)}s</span><select id="brief-hist" aria-label="Earlier briefs">${opts}</select>`;
       $('#brief-hist').addEventListener('change', (e) => loadBrief(parseInt(e.target.value)));
     } catch (e) { $('#brief-notice').innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
   }

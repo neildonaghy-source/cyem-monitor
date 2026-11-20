@@ -15,7 +15,7 @@
   function covForm(d) {
     const val = (k, t) => t === 'datetime-local' ? toLocalInput(d[k]) : esc(d[k] ?? '');
     return `<div class="specform">${COV_FIELDS.map(([k, lbl, t]) => `<label${k === 'name' ? ' class="wide"' : ''}>${esc(lbl)}<input id="cv-${k}" type="${t}" step="any" value="${val(k, t)}"></label>`).join('')}
-      <div class="wide btns"><select id="cv-preset"><option value="">Preset…</option>${COV_PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
+      <div class="wide btns"><select id="cv-preset" aria-label="Coverage preset"><option value="">Preset…</option>${COV_PRESETS.map((p) => `<option value="${p.id}">${esc(p.label)}</option>`).join('')}</select>
       <button id="cv-pick">Pick site on map</button> <button id="cv-analyse" class="primary">Compute coverage</button> <button id="cv-save">${covEditId ? 'Update' : 'Save'} site</button> <button id="cv-clear">Clear</button> <span id="cv-err" class="bad"></span></div>
       <p class="dim wide">Presets are typical values only. Interference threshold is the level of your signal at a licensee that counts as a clash in deconfliction (default −120 dBm).</p></div>`;
   }

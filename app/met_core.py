@@ -160,3 +160,107 @@ def cloud_base_m(t_c: float | None, dew_c: float | None) -> float | None:
 
 def _r(x, nd):
     return None if x is None else round(x, nd)
+
+
+# ---- sea state, sea clutter and platform limits (phase 4 part 2) -------------------------------------------------
+DOUGLAS_M = (0.0, 0.1, 0.5, 1.25, 2.5, 4.0, 6.0, 9.0, 14.0)   # upper wave heights (m) of Douglas sea states 0 to 8
+
+
+def sea_state(wave_m: float | None) -> int | None:
+    """Douglas sea state (0 to 9) from significant wave height."""
+    if wave_m is None:
+        return None
+    return sum(1 for t in DOUGLAS_M if wave_m > t)
+
+
+def sea_clutter_db(state: int | None, f_mhz: float, h_m: float) -> float:
+    """Screening loss of radar detection margin (dB) against a small target on or just above the sea, from sea clutter.
+
+    Not a clutter model: a heuristic that grows 2.5 dB per sea state above 1, a little more at X band than at S band
+    and less at L band, and fades out for targets above 50 m (none above 300 m). Capped at 20 dB."""
+    if state is None or state <= 1 or h_m > 300 or f_mhz < 300:
+        return 0.0
+    band = max(0.5, min(1.5, 1 + 0.25 * math.log2(f_mhz / 3000.0)))
+    height = 1.0 if h_m <= 50 else max(0.0, 1 - (h_m - 50) / 250.0)
+    return round(min(20.0, 2.5 * (state - 1) * band * height), 1)
+
+
+# Generic, notional limits for screening (not any service's figures): small UAS or helicopter at low level, small craft,
+# and vehicles. Values: (marginal, no-go).
+LIMITS = {
+    "air": {"wind_ms": (10.0, 15.0), "gust_ms": (15.0, 20.0), "rain_mm_h": (4.0, 10.0), "visibility_m": (1500.0, None)},
+    "sea": {"wind_ms": (11.0, 17.0), "sea_state": (4, 5), "visibility_m": (1000.0, None)},
+    "ground": {"rain_mm_h": (8.0, None), "snow_cm_h": (1.0, None), "visibility_m": (200.0, None)},
+}
+LIMIT_COST = {"go": 0.0, "marginal": 0.3, "no-go": 3.0, "unknown": 0.0}
+SEA_SPEED = {3: 0.9, 4: 0.75, 5: 0.5}                          # small craft speed factor by sea state (6 and over: 0.3)
+
+
+def headwind_ms(wind_ms: float | None, wind_from_deg: float | None, track_deg: float) -> float:
+    """Wind component against the direction of travel (m/s; negative is a tailwind)."""
+    if wind_ms is None or wind_from_deg is None:
+        return 0.0
+    return wind_ms * math.cos(math.radians(wind_from_deg - track_deg))
+
+
+def platform_limits(domain: str, st: dict, alt_m: float | None = None, track_deg: float = 0.0, speed_kmh: float = 0.0) -> dict:
+    """Go, marginal or no-go for a platform in a met state, with a speed factor, a per-cell cost and the reasons.
+
+    Air: wind, gusts, rain, visibility, cloud base against the flying height, icing (freezing level at or near the
+    flying height in cloud, rain or fog); ground speed from the headwind along the track. Sea: wind, sea state
+    (speed falls with it), visibility. Ground: heavy rain, snow, fog slow the move but never stop it."""
+    if st.get("source") != "open-meteo":
+        return {"status": "unknown", "speed_factor": 1.0, "cost": 0.0, "sea_state": None,
+                "reasons": ["no forecast chosen: platform limits not assessed"]}
+    lim, reasons, worst = LIMITS[domain], [], "go"
+    rank = {"go": 0, "marginal": 1, "no-go": 2}
+
+    def flag(level, why):
+        nonlocal worst
+        reasons.append(f"{level}: {why}")
+        if rank[level] > rank[worst]:
+            worst = level
+
+    def check(name, value, label, unit, below=False):
+        if value is None or name not in lim:
+            return
+        mg, ng = lim[name]
+        bad = (lambda t: t is not None and value < t) if below else (lambda t: t is not None and value >= t)
+        if bad(ng):
+            flag("no-go", f"{label} {value:g} {unit}")
+        elif bad(mg):
+            flag("marginal", f"{label} {value:g} {unit}")
+
+    ss = sea_state((st.get("sea") or {}).get("wave_m"))
+    check("wind_ms", st.get("wind_ms"), "wind", "m/s")
+    check("gust_ms", st.get("gust_ms"), "gusts", "m/s")
+    check("rain_mm_h", st.get("rain_mm_h"), "rain", "mm/h")
+    check("snow_cm_h", st.get("snow_cm_h"), "snow", "cm/h")
+    check("visibility_m", st.get("visibility_m"), "visibility", "m", below=True)
+    if domain == "sea":
+        check("sea_state", ss, "sea state", "(Douglas)")
+    factor = 1.0
+    if domain == "air":
+        h = alt_m or 150.0
+        cb, low = st.get("cloud_base_m"), st.get("cloud_low_pct") or 0
+        if cb is not None and low >= 50 and cb < h + 100:
+            flag("marginal", f"low cloud base about {cb:g} m ({low:g}% low cloud) against {h:g} m flying height")
+        fz = st.get("freezing_level_m")
+        moist = low >= 50 or (st.get("rain_mm_h") or 0) > 0 or (st.get("visibility_m") or 1e9) < 1000 or (st.get("rh_pct") or 0) >= 90
+        if fz is not None and moist and fz <= h + 300:
+            flag("no-go" if fz <= h else "marginal", f"icing risk: freezing level {fz:g} m with visible moisture")
+        if speed_kmh > 0:
+            hw = headwind_ms(st.get("wind_ms"), st.get("wind_dir"), track_deg)
+            factor = max(0.3, min(1.3, (speed_kmh / 3.6 - hw) / (speed_kmh / 3.6)))
+            if hw > 0.25 * speed_kmh / 3.6:
+                reasons.append(f"headwind about {hw:.0f} m/s along the track: ground speed {factor * 100:.0f}% of air speed")
+    elif domain == "sea":
+        factor = SEA_SPEED.get(ss, 1.0 if (ss or 0) < 3 else 0.3)
+    else:
+        if (st.get("snow_cm_h") or 0) >= 3:
+            factor = 0.5
+        elif (st.get("snow_cm_h") or 0) >= 1 or (st.get("rain_mm_h") or 0) >= 8:
+            factor = 0.7
+        if (st.get("visibility_m") or 1e9) < 200:
+            factor = min(factor, 0.8)
+    return {"status": worst, "speed_factor": round(factor, 2), "cost": LIMIT_COST[worst], "sea_state": ss, "reasons": reasons}

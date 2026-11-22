@@ -10,6 +10,9 @@ margin of it, and legs are returned, and each leg's worst point is checked with 
 With step_min set, the picture is worked out every step_min minutes (other units move on their tracks, emitters keep
 their on-air schedules) and the search runs through space and time, holding in place allowed. GNSS denial by opposing
 jammers is a cost too (heaviest for air). Screening grade, the run's atmosphere; ducts flagged, not modelled.
+With the forecast chosen (phase 4 part 2), each layer also takes the met and space weather for its own time: platform
+limits (wind, gusts, sea state, cloud base, icing, visibility) price the layer and set the speed, sea clutter lowers the
+radar term over sea cells, and storms lower the J/S at which the unit's GNSS fails.
 """
 from __future__ import annotations
 
@@ -19,12 +22,14 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from . import met_core
 from .corridor_core import corridor_time, legs, phi, straight_cost
 
 router = APIRouter(prefix="/api/emo/plan", tags=["emo-plan"])
 SPEED = {"ground": 20.0, "sea": 25.0, "air": 150.0}
 W_DET, W_FIX, W_RADAR, W_C2 = 1.0, 2.0, 2.0, 1.0
 W_GNSS, W_GNSS_AIR = 0.5, 1.5                                  # loss of GNSS: worse for an uncrewed aircraft
+W_LIM = 1.0                                                    # platform limits: marginal 0.3, no-go 3 per cell (met_core.LIMIT_COST)
 
 
 class CorridorIn(BaseModel):
@@ -102,14 +107,19 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
     h = h or (150.0 if body.domain == "air" else 2.0)
     unit = {**mover, "h_agl": h}
     sig = p.sigma_db
-    speed = body.speed_kmh or SPEED[body.domain]
-    mpc = cell / 1000 / speed * 60                             # minutes to cross one cell
-
-    # time layers: the picture every step_min minutes from T+t, as far as the trip is likely to take (other units move)
+    nominal = body.speed_kmh or SPEED[body.domain]
     direct = haversine_m(*start, *goal) / 1000
-    K = 1
-    if body.step_min:
-        K = max(1, min(body.layers, int(direct * 1.5 / speed * 60 // body.step_min) + 2))
+    env_at = _env_factory(emo_api, p, body.domain, h, _bearing(start, goal), nominal)
+
+    def n_layers(v):
+        return max(1, min(body.layers, int(direct * 1.5 / v * 60 // body.step_min) + 2)) if body.step_min else 1
+
+    # platform limits set the speed (the slowest layer the trip is likely to cross), then the time layers follow
+    K = n_layers(nominal)
+    factor = min([(await env_at(t_min + k * body.step_min))["lim"]["speed_factor"] for k in range(K)])
+    speed = round(nominal * factor, 1)
+    K = n_layers(speed)
+    mpc = cell / 1000 / speed * 60                             # minutes to cross one cell
     emits = mover.get("eirp_dbm") is not None and mover.get("fixed_level_dbm") is None
     ub = emo_api.band(mover)
     sensors = [x for x in ents.values() if x["kind"] == "sensor" and x["side"] == opp and emo_api.overlap(*ub, *emo_api.band(x))]
@@ -121,6 +131,8 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
     zero = np.zeros(LA.shape)
 
     async def fields(tk, posk):
+        env = await env_at(tk)
+        sea_f = sea.astype(float)
         async def level_from(src, at, eirp, rx_h):
             a = posk(at)                                       # reach the grid's farthest corner (capped at 100 km)
             radius = max(haversine_m(a[0], a[1], LA[r, c], LO[r, c]) for r, c in ((0, 0), (0, -1), (-1, 0), (-1, -1))) / 1000 + 2
@@ -143,7 +155,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
             p_fix = zero
 
         # radar (air and sea units): echo margin from the one-way level, as in the run's radar picture
-        p_trk = zero
+        p_trk, clut_max = zero, 0.0
         if body.domain in ("air", "sea"):
             rcs = mover.get("rcs_m2") or emo_api._default_rcs({**unit, "sidc": "xxA" if body.domain == "air" else "xxS"})
             tr = []
@@ -154,8 +166,10 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                 lam = 3e8 / (rd["freq_mhz"] * 1e6)
                 fspl = 20 * np.log10(R) + 20 * math.log10(rd["freq_mhz"] * 1e6) - 147.55
                 excess = np.maximum(0.0, rd["eirp_dbm"] - one - fspl)
+                clutter = met_core.sea_clutter_db(env["lim"]["sea_state"], rd["freq_mhz"], h)
+                clut_max = max(clut_max, clutter)
                 echo = (rd["eirp_dbm"] + (rd.get("radar_gain_dbi") or 30.0) + 10 * math.log10(rcs * lam * lam / (4 * math.pi) ** 3)
-                        - 40 * np.log10(R) - 2 * excess)
+                        - 40 * np.log10(R) - 2 * excess - clutter * sea_f)            # sea clutter over sea cells only
                 tr.append(phi((echo - (rd.get("radar_mds_dbm") or -100.0)) / sig))
             if tr:
                 p_trk = 1 - np.prod([1 - v for v in tr], axis=0)
@@ -181,7 +195,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
             for e in on:
                 mw = mw + 10 ** (np.nan_to_num(sample(await emo_api.coverage_for(e, posk(e), h), LA, LO), nan=-999, neginf=-999) / 10)
             S = nav["fixed_level_dbm"] if nav else -128.0
-            req = (nav or {}).get("js_req_db") or 35.0
+            req = ((nav or {}).get("js_req_db") or 35.0) - env["space"]["gnss"]["loss_db"]
             p_gnss = phi((10 * np.log10(np.maximum(mw, 1e-30)) - S - req) / sig)
 
         # EMCON per cell: transmit (risk) or stay silent (two-way C2 lost, priced per cell); radar and GNSS either way
@@ -197,10 +211,10 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
             emit = c_emit <= c_sil
             c = np.where(emit, c_emit, c_sil)
         w_gnss = W_GNSS_AIR if body.domain == "air" else W_GNSS
-        cost = c + W_RADAR * p_trk + w_gnss * p_gnss
+        cost = c + W_RADAR * p_trk + w_gnss * p_gnss + W_LIM * env["lim"]["cost"]
         risk = np.maximum(np.where(emit, np.maximum(p_det, p_fix), 0.0), np.maximum(p_trk, p_gnss))
         return {"P": P, "p_det": p_det, "p_fix": p_fix, "p_trk": p_trk, "p_c2": p_c2, "p_gnss": p_gnss, "emit": emit,
-                "cost": cost, "risk": risk, "c2": c2_what, "jams": [e["name"] for e in on]}
+                "cost": cost, "risk": risk, "c2": c2_what, "jams": [e["name"] for e in on], "env": env, "clutter": clut_max}
 
     layers, posfs = [], []
     for k in range(K):
@@ -237,6 +251,8 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
               "p_radar": _pct(max(float(PT[q(n)]) for n in idx)), "p_gnss": _pct(max(float(PG[q(n)]) for n in idx)),
               "p_c2": _pct(min(float(PC[q(n)]) for n in idx)), "heard_by": names, "worst": _ll(LA, LO, cl(w)),
               "over_sea": bool(any(sea[cl(n)] for n in idx)), "_k": S_[w][2],
+              "limits": layers[S_[w][2]]["env"]["lim"]["status"], "sea_clutter_db": layers[S_[w][2]]["clutter"],
+              "gnss_space_db": layers[S_[w][2]]["env"]["space"]["gnss"]["loss_db"],
               "path": [_ll(LA, LO, cl(a))] * 2 if hold else _thin(LA, LO, [cl(n) for n in range(max(0, a - 1), b + 1)])}
         return lg
 
@@ -284,7 +300,8 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                "min_p_c2": min(x["p_c2"] for x in out_legs),
                "cost": round(r["cost"], 1), "direct_cost": round(straight, 1), "cell_m": round(cell),
                "band_km2": round(float(band.sum()) * (cell / 1000) ** 2, 1), "c2": layers[0]["c2"], "sensors": [x["name"] for x in sensors],
-               "gnss_jammers": sorted({nm for L in layers for nm in L["jams"]}), "duct": duct["text"] if duct else None}
+               "gnss_jammers": sorted({nm for L in layers for nm in L["jams"]}), "duct": duct["text"] if duct else None,
+               "nominal_speed_kmh": nominal, "speed_factor": factor, **_env_summary(layers, sorted({S_[n][2] for n in range(N)}), t_min, body.step_min)}
     when = (f"through {K} time layers {body.step_min:g} min apart from T+{t_min:g} (other units move on their tracks; "
             + ("holding allowed" if body.wait else "no holding") + "), with the last run's atmosphere") if K > 1 else \
         "at one time step with the last run's atmosphere; other units frozen at T+t"
@@ -295,9 +312,61 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                      "route's cost (each cell at the time the unit would reach it). Transmit or silent is chosen per cell "
                      "(silent costs two-way C2). Each leg's worst point is re-checked with the exact pairwise model "
                      "(verified values). GNSS: opposing jammers against the satellite level and the receivers' J/S "
-                     "threshold. Ducts are flagged, not modelled. Ground routes avoid sea and slopes over "
+                     "threshold. Ducts are flagged, not modelled. "
+                     + ("Met and space weather per layer from the forecast: platform limits price each layer and set the "
+                        "speed, sea clutter lowers the radar term over sea cells, storms lower the GNSS failure J/S (notional "
+                        "generic limits, met_core.LIMITS). " if getattr(p, "met", "standard") == "forecast" else
+                        "Platform limits, sea clutter and space weather need the forecast chosen (not applied). ")
+                     + "Ground routes avoid sea and slopes over "
                      f"{body.max_slope_pct:g}%; sea routes keep to water; air routes fly a set height above ground"
                      + (f" ({h:g} m)." if body.domain == "air" else ".")}
+
+
+def _bearing(a, b) -> float:
+    p1, p2, dl = math.radians(a[0]), math.radians(b[0]), math.radians(b[1] - a[1])
+    return (math.degrees(math.atan2(math.sin(dl) * math.cos(p2), math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl))) + 360) % 360
+
+
+def _env_factory(emo_api, p, domain, h, track_deg, speed_kmh):
+    """Met, space weather and platform limits for a time layer, memoised. With the forecast chosen the met is fetched
+    for the layer's own hour at the run's met point (cached), otherwise the last run's (standard) state is used."""
+    from datetime import timedelta
+    from . import met as metmod
+    from . import spacewx_core
+    from .db import get_db
+    last = emo_api._LAST.get("met") or metmod.standard()
+    forecast = getattr(p, "met", "standard") == "forecast"
+    t0 = emo_api._parse_time(getattr(p, "met_time", None))
+    lat, lon = last.get("lat", 0.0), last.get("lon", 0.0)
+    sw = get_db().get_snapshot("spaceweather")[0] if forecast else None
+    memo = {}
+
+    async def env_at(tk):
+        if tk not in memo:
+            when = t0 + timedelta(minutes=tk)
+            st = await metmod.met_state(lat, lon, when) if forecast else last
+            memo[tk] = {"t": tk, "met": st, "space": spacewx_core.at_time(sw, when, lat, lon),
+                        "lim": met_core.platform_limits(domain, st, h, track_deg, speed_kmh)}
+        return memo[tk]
+    return env_at
+
+
+def _env_summary(layers, used, t_min, step_min) -> dict:
+    """Worst platform-limit status on the layers the route uses, the reasons, sea state and space weather per layer."""
+    rank = {"unknown": -1, "go": 0, "marginal": 1, "no-go": 2}
+    envs = [layers[k]["env"] for k in used]
+    worst = max((e["lim"]["status"] for e in envs), key=lambda x: rank[x])
+    reasons = list(dict.fromkeys(r for e in envs for r in e["lim"]["reasons"]))
+    per = [{"t": e["t"], "limits": e["lim"]["status"], "speed_factor": e["lim"]["speed_factor"], "sea_state": e["lim"]["sea_state"],
+            "hf": e["space"]["hf"]["status"], "gnss_space_db": e["space"]["gnss"]["loss_db"], "sea_clutter_db": layers[k]["clutter"]}
+           for k, e in zip(used, envs)]
+    out = {"limits": worst, "limit_reasons": reasons[:8], "env_layers": per,
+           "max_sea_clutter_db": max(x["sea_clutter_db"] for x in per), "gnss_space_db": max(x["gnss_space_db"] for x in per),
+           "space": envs[0]["space"]["text"]}
+    if worst == "no-go":
+        out["limits_warning"] = ("Outside the platform's limits on at least one layer the route uses: "
+                                 + "; ".join(r for r in reasons if r.startswith("no-go")) + ".")
+    return out
 
 
 def _duct_note(met: dict, mover: dict, h: float, domain: str, ents: dict, opp: str, emits: bool) -> dict | None:

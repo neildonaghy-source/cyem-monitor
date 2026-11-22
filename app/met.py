@@ -267,6 +267,102 @@ def path_extra_db(d_m: float, f_hz: float, atm: dict) -> float:
     return loss
 
 
+# ---- met layer: a coarse grid over the map view (phase 4 part 2) --------------------------------------------------
+LAYER_STEPS = (0.25, 0.5, 1.0, 2.0, 4.0)     # grid spacing (degrees), the finest that keeps the view to MAX_POINTS
+MAX_POINTS = 25
+
+
+def grid_points(s: float, w: float, n: float, e: float, most: int = MAX_POINTS) -> tuple[float, list[tuple[float, float]]]:
+    """Points on a fixed lattice inside the box (so panning reuses the cache), at the finest spacing with at most
+    `most` points; always at least the box centre snapped to the lattice."""
+    for step in LAYER_STEPS:
+        la0, lo0 = math.ceil(s / step) * step, math.ceil(w / step) * step
+        nla, nlo = int(math.floor((n - la0) / step)) + 1, int(math.floor((e - lo0) / step)) + 1
+        if nla * nlo <= most:
+            pts = [(round(la0 + i * step, 2), round(lo0 + j * step, 2)) for i in range(max(0, nla)) for j in range(max(0, nlo))]
+            if pts:
+                return step, pts
+    step = LAYER_STEPS[-1]
+    return step, [(round(round((s + n) / 2 / step) * step, 2), round(round((w + e) / 2 / step) * step, 2))]
+
+
+async def _days_multi(kind: str, pts: list[tuple[float, float]], day: date) -> list[dict | None]:
+    """_day for many points: cached ones from the cache, the rest in one Open-Meteo request per 25 places."""
+    db = _db()
+    today = datetime.now(timezone.utc).date()
+    ttl = 3 * 3600 if day >= today - timedelta(days=1) else 7 * 86400
+    out: list[dict | None] = [None] * len(pts)
+    stale: dict[int, dict] = {}
+    todo = []
+    for i, (la, lo) in enumerate(pts):
+        row = db.one("SELECT fetched, body FROM met_cache WHERE key=?", (f"{kind}:{la:.2f}:{lo:.2f}:{day.isoformat()}",))
+        if row and time.time() - row["fetched"] < ttl:
+            out[i] = json.loads(row["body"])
+        else:
+            todo.append(i)
+            if row:
+                stale[i] = json.loads(row["body"])
+    for k in range(0, len(todo), 25):
+        chunk = todo[k:k + 25]
+        base = {"latitude": ",".join(f"{pts[i][0]:.2f}" for i in chunk), "longitude": ",".join(f"{pts[i][1]:.2f}" for i in chunk),
+                "timezone": "UTC", "start_date": day.isoformat(), "end_date": day.isoformat()}
+        try:
+            if kind == "marine":
+                body = await _fetch(MARINE_URL, {**base, "hourly": ",".join(MARINE)})
+            else:
+                url = FORECAST if day >= today - timedelta(days=2) else HISTORICAL
+                body = await _fetch(url, {**base, "hourly": ",".join(SURFACE + PLEVEL), "wind_speed_unit": "ms"})
+        except (httpx.HTTPError, ValueError, MetUnavailable):
+            for i in chunk:
+                out[i] = stale.get(i)
+            continue
+        bodies = body if isinstance(body, list) else [body]
+        with db.tx() as c:
+            for i, b in zip(chunk, bodies):
+                out[i] = b
+                la, lo = pts[i]
+                c.execute("INSERT OR REPLACE INTO met_cache (key, fetched, body) VALUES (?,?,?)",
+                          (f"{kind}:{la:.2f}:{lo:.2f}:{day.isoformat()}", time.time(), json.dumps(b)))
+    return out
+
+
+def summarise(st: dict) -> dict:
+    """What the map shows for one point of the met layer."""
+    ev = st.get("evap_duct") or {}
+    ducts = st.get("ducts") or []
+    cuts = [d["cutoff_ghz"] for d in ducts if d.get("cutoff_ghz")] + ([ev["cutoff_ghz"]] if ev.get("height_m", 0) >= 4 and ev.get("cutoff_ghz") else [])
+    sea = st.get("sea") or {}
+    return {"lat": st.get("lat"), "lon": st.get("lon"), "source": st.get("source"), "k": st.get("k"), "refraction": st.get("refraction"),
+            "dn_per_km": st.get("dn_per_km"), "rain_mm_h": st.get("rain_mm_h"), "visibility_m": st.get("visibility_m"),
+            "fog": (st.get("fog_lwc_gm3") or 0) > 0, "ducts": [{"kind": d["kind"], "base_m": d["base_m"], "top_m": d["top_m"],
+                                                               "cutoff_ghz": d.get("cutoff_ghz")} for d in ducts],
+            "evap_duct_m": ev.get("height_m") if ev.get("height_m", 0) >= 4 else None, "duct_cutoff_ghz": min(cuts) if cuts else None,
+            "wind_ms": st.get("wind_ms"), "gust_ms": st.get("gust_ms"), "wind_dir": st.get("wind_dir"),
+            "cloud_base_m": st.get("cloud_base_m"), "cloud_low_pct": st.get("cloud_low_pct"), "freezing_level_m": st.get("freezing_level_m"),
+            "wave_m": sea.get("wave_m"), "sea_state": mc.sea_state(sea.get("wave_m")), "warnings": st.get("warnings") or []}
+
+
+async def met_grid(s: float, w: float, n: float, e: float, when: datetime | None = None) -> dict:
+    """The met layer: a met state summary at each lattice point in the box, for the nearest hour."""
+    hour = valid_hour(when)
+    step, pts = grid_points(s, w, n, e)
+    fcs = await _days_multi("fc", pts, hour.date())
+    try:
+        mars = await _days_multi("marine", pts, hour.date())
+    except Exception:                                                     # no sea state is not fatal
+        mars = [None] * len(pts)
+    out, missing = [], 0
+    for (la, lo), fc, mar in zip(pts, fcs, mars):
+        if not fc:
+            missing += 1
+            continue
+        out.append(summarise(build_state(fc, mar, None, hour, la, lo)))
+    return {"valid_time": hour.strftime("%Y-%m-%dT%H:00Z"), "step_deg": step, "points": out, "missing": missing,
+            "notes": "Open-Meteo forecast at each point for the nearest hour: k-factor and refraction class over the lowest "
+                     "kilometre, rain, visibility, ducts in the model's pressure levels and the evaporation duct over the sea "
+                     "(neutral estimate; air over the sea taken at the point). Ducts are flagged, not modelled. Screening grade."}
+
+
 # ---- API -------------------------------------------------------------------------------------------------------
 from fastapi import APIRouter, HTTPException, Query  # noqa: E402
 
@@ -284,3 +380,19 @@ async def met_api(lat: float = Query(ge=-85, le=85), lon: float = Query(ge=-180,
             raise HTTPException(422, "time: not an ISO date and time")
         when = when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when
     return await met_state(lat, lon, when)
+
+
+@router.get("/grid")
+async def met_grid_api(s: float = Query(ge=-85, le=85), w: float = Query(ge=-180, le=180), n: float = Query(ge=-85, le=85),
+                       e: float = Query(ge=-180, le=180), time: str | None = None):
+    """The met layer for a map view (at most 25 points on a 0.25 to 4 degree lattice)."""
+    if n <= s or e <= w or n - s > 20 or e - w > 30:
+        raise HTTPException(422, "box: south below north, west below east, at most 20 by 30 degrees")
+    when = None
+    if time:
+        try:
+            when = datetime.fromisoformat(time.strip().replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(422, "time: not an ISO date and time")
+        when = when.replace(tzinfo=timezone.utc) if when.tzinfo is None else when
+    return await met_grid(s, w, n, e, when)

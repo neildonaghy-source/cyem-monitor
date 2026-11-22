@@ -46,7 +46,8 @@ MODEL_CAVEAT = (
     "plane-earth ground reflection for low antennas, antennas assumed sited clear of obstacles within 150 m, "
     "and an ITU-R P.528-style cap on air paths. Atmosphere: standard 4/3 earth unless met is chosen; then the "
     "k-factor comes from the forecast refractivity gradient in the lowest kilometre, rain (ITU-R P.838 with the "
-    "P.530 path reduction) and fog (P.840) at the scenario centre and time (Open-Meteo), one state for the whole area. "
+    "P.530 path reduction) and fog (P.840) at the scenario centre and time (Open-Meteo), one state for the whole area, "
+    "and space weather (NOAA SWPC scales) lowers the J/S at which GNSS receivers fail (notional screening values). "
     "Jamming: bandwidth dilution, hopping and processing gain; noise or spoofing. Radar: range equation with "
     "main-lobe, sidelobe and self-screening noise jamming. DF: best two-bearing cut, or least squares for three or "
     "more bearings. Not modelled: propagation in ducting layers (ducts are flagged with their cut-off frequency, "
@@ -732,15 +733,34 @@ def met_line(m: dict | None) -> str:
 @router.post("/run")
 async def run(p: RunIn, t_min: float = 0, light: bool = False, keep: bool = True):
     met_st, atm = await resolve_met(p, t_min)
-    tok = ATM.set(atm)
+    space = resolve_space(p, t_min, met_st)
+    tok, tok2 = ATM.set(atm), SPACE.set(space)
     try:
         res = await _run(p, t_min, light, keep)
     finally:
         ATM.reset(tok)
-    res["met"] = met_st
+        SPACE.reset(tok2)
+    res["met"], res["space"] = met_st, space
     if keep:
-        _LAST.update({"met": met_st, "atm": atm})
+        _LAST.update({"met": met_st, "atm": atm, "space": space})
     return res
+
+
+SPACE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("cyem_space", default=None)
+
+
+def resolve_space(p: RunIn, t_min: float, met_st: dict) -> dict:
+    """Space weather at the scenario centre for the run's time (phase 4 part 2). Only with the forecast chosen: the
+    standard setting keeps runs reproducible, so GNSS margins and HF are then left as entered."""
+    from datetime import timedelta
+    from . import spacewx_core
+    when = _parse_time(p.met_time) + timedelta(minutes=t_min)
+    if p.met != "forecast":
+        st = spacewx_core.at_time(None, when, met_st.get("lat", 0.0), met_st.get("lon", 0.0))
+        st["text"] = "Space weather not applied (standard environment chosen)."
+        return st
+    sw, _ = get_db().get_snapshot("spaceweather")
+    return spacewx_core.at_time(sw, when, met_st.get("lat", 0.0), met_st.get("lon", 0.0))
 
 
 async def _run(p: RunIn, t_min: float, light: bool, keep: bool):
@@ -853,6 +873,8 @@ async def _run(p: RunIn, t_min: float, light: bool, keep: bool):
         space = nn.get("fixed_level_dbm") is not None
         nlo, nhi = victim_band(nn)
         jsreq = nn["js_req_db"] if nn.get("js_req_db") is not None else p.js_req_db
+        sw_loss = ((SPACE.get() or {}).get("gnss") or {}).get("loss_db", 0.0) if nn.get("category") == "nav" else 0.0
+        jsreq = round(jsreq - sw_loss, 1)                     # space weather: a GNSS receiver fails at less J/S
         nsens = nn.get("sens_dbm") or p.default_sens
         S = np.full(LA.shape, float(nn["fixed_level_dbm"])) if space else (None if light else lv[nn["id"]])
         covd = np.ones(LA.shape, bool) if space else (np.zeros(LA.shape, bool) if light else S >= nsens)
@@ -883,7 +905,8 @@ async def _run(p: RunIn, t_min: float, light: bool, keep: bool):
         cov_n = int(covd.sum())
         per_net.append({"net": nn["name"], "side": nn["side"], "category": nn.get("category"), "space": space,
                         "coverage_km2": None if space else round(cov_n * km2, 1), "denied_km2": round(float(den.sum()) * km2, 1),
-                        "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq})
+                        "denied_pct": round(100 * float(den.sum()) / max(1, cov_n), 1), "js_req_db": jsreq,
+                        "space_weather_db": sw_loss})
 
     radar = await radar_picture(ents, radiating, effectors, p, _prob)
     for j in jamming:
@@ -1099,7 +1122,8 @@ def scenario_context(selected: list[str] | None = None) -> str:
     thr = _LAST["params"].df_fix_good_m
     fx = [f for f in _LAST["fixes"] if f["fix"]]
     L = [f"Time T+{_LAST['t']:g} min. A fix is TARGET-QUALITY FIX if its error is within {thr:g} m.",
-         "ATMOSPHERE: " + met_line(_LAST.get("met"))]
+         "ATMOSPHERE: " + met_line(_LAST.get("met")),
+         "SPACE WEATHER: " + ((_LAST.get("space") or {}).get("text") or "not assessed")]
     for side in ("blue", "red"):
         tg = [f for f in fx if f["target_side"] == side and f["targetable"]]
         nt = [f for f in fx if f["target_side"] == side and not f["targetable"]]
@@ -1368,6 +1392,8 @@ async def emo_export(phases: str = "0", df_fix_good_m: float | None = None):
         ents = _all()
         doc.add_heading(f"Phase T+{t:g} min", 1)
         doc.add_paragraph(met_line(res.get("met")))
+        if (res.get("space") or {}).get("text"):
+            doc.add_paragraph(res["space"]["text"])
         tgt = [f for f in res["fixes"] if f["targetable"]]
         den = sorted(res["nets"], key=lambda x: -x["denied_pct"])
         doc.add_paragraph(f"{len(tgt)} target-quality fix(es) (threshold {params.df_fix_good_m:g} m). "

@@ -175,11 +175,12 @@ usable cell stays at or under `threshold` for the whole dwell (the same cell hel
 than a step); consecutive layers merge, and each window's best cell is re-checked with the exact pairwise model.
 
 Mast profiles (`exposure_core.MASTS`, notional): periscope 1.5 m, 0.1 m²; UHF 250 MHz 40 dBm; UHF satcom 300 MHz,
-20 dBm towards the horizon; HF 8 MHz 47 dBm; masts 2 m, 0.5 m². The coverage model starts at 20 MHz, so HF interception
+20 dBm towards the horizon; HF 8 MHz 47 dBm; masts 2 m, 0.5 m². `eirp_dbm` overrides the profile's power (power control as EP; "power" in the card). The coverage model starts at 20 MHz, so HF interception
 is a screening rule: heard by opposing HF ES out to about 250 km over the sea (`hf_groundwave_p`); skywave interception
 by distant ES is not modelled. No bathymetry (all water is taken as deep enough), no acoustic, visual, wake or
 radar-periscope-detection modes beyond the radar term. Vignette 8, the North Minch (`subsurface-minches`): an MPA on
-station T+0 to T+60 and from T+120, a frigate working north and an ES/DF ship off Rubha Reidh.
+station T+0 to T+60 and from T+120, a frigate working west across the southern North Minch and an ES/DF ship off
+Rubha Reidh. At 26 dBm the MPA's gap opens a window to the north-east (on synthetic sea); at the profile's 40 dBm none.
 
 Corridors now respect sensors' on-station schedules too (an airborne ES off station no longer hears the unit).
 

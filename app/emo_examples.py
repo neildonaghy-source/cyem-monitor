@@ -39,7 +39,7 @@ TOP_REQUIRED = ("id", "title", "about", "centre", "zoom", "entities")
 CORRIDOR = {"mover": (str,), "to": (list,), "domain": (str,), "step_min": NUM, "alt_m": NUM, "speed_kmh": NUM,
             "note": (str,)}
 EXPOSURE = {"mover": (str,), "mast": (str,), "dwell_min": NUM, "step_min": NUM, "layers": (int,), "radius_km": NUM,
-            "speed_kmh": NUM, "threshold": NUM, "note": (str,)}
+            "speed_kmh": NUM, "threshold": NUM, "eirp_dbm": NUM, "note": (str,)}
 SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR, "exposure": EXPOSURE}
 
 

@@ -78,7 +78,7 @@ def windows(risk: np.ndarray, usable: np.ndarray, times: list[float], threshold:
             if wins and wins[-1]["k_to"] == k - 1:
                 w = wins[-1]
                 w["k_to"] = k
-                if best < w["risk"]:
+                if best < w["risk"] - 0.01:                # keep the earliest cell unless a later one is clearly better
                     w.update(cell=(int(c[0]), int(c[1])), risk=best, k_best=k)
             else:
                 wins.append({"k_from": k, "k_to": k, "k_best": k, "cell": (int(c[0]), int(c[1])), "risk": best})

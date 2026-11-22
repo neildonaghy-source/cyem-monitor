@@ -34,6 +34,31 @@ entities a duct could carry ("In a duct: ..."). Ducts are flagged, not modelled:
 One met state covers the whole scenario. `python -m app.cli met <lat> <lon> [time]` and `GET /api/met` give the same
 state for any place; it is cached per 0.05 degree square and day (`met_cache`, 3 hours for recent days).
 
+Phase 4 part 2 (22 Nov 2026):
+
+- **Met layer** (Map layers > EM / spectrum, off by default, zoom 5+): Open-Meteo at up to 25 points on a fixed
+  0.25 to 4 degree lattice over the view, for the nearest hour: k and refraction class (colour), rain, fog, any duct
+  (with its cut-off), wind arrow (downwind) and speed; tap a point for cloud base, freezing level and sea state.
+  `GET /api/met/grid?s=&w=&n=&e=&time=`; one batched request per view, sharing the `met_cache` with runs.
+- **Space weather by time step** (`app/spacewx_core.py`, tested), only with the forecast chosen so standard runs stay
+  reproducible: from the SWPC scales now (within 6 hours) or the 3-day forecast, and the sun's elevation at the
+  scenario centre for that step. HF: R1-R2 degrade and R3+ black out the sunlit side, S1+ polar cap absorption
+  poleward of 60 degrees, G3+ depress the MUF, storms add night-time auroral absorption at high latitude. GNSS: the J/S
+  at which a nav receiver fails falls 1, 2, 3, 5 and 8 dB for G1 to G5 (half as much again poleward of 55 degrees),
+  plus 3 dB in daylight during R3+. Notional screening values. The run has a **Space weather** card, nav nets show
+  `space_weather_db`, the timeline board has `space` per step (HF, GNSS loss, HF nets affected), Ask and the Word export
+  say what was applied.
+- **Corridors**: with the forecast chosen each time layer takes the met and space weather for its own time. Platform
+  limits (`met_core.platform_limits`, generic notional values in `met_core.LIMITS`): air (small UAS or helicopter at
+  low level) wind, gusts, rain, visibility, cloud base against the flying height, icing (freezing level at or near the
+  flying height with visible moisture), ground speed from the headwind along the track; sea (small craft) wind, sea
+  state (Douglas, from wave height; speed 0.9 to 0.3 of nominal from sea state 3), visibility; ground heavy rain, snow
+  and fog slow but never stop. Marginal adds 0.3 and no-go 3 to every cell of the layer, so the route avoids the bad
+  hours where it can; the speed is set by the slowest layer. A no-go on any layer used is reported. Sea clutter
+  (`met_core.sea_clutter_db`: 2.5 dB per sea state above 1, more at X band, fading above 50 m) lowers the radar term
+  over sea cells for sea and low-level air routes. Storms lower the GNSS failure J/S. All of it appears in the
+  Corridor card (limits line, Limits column, space weather) and the summary (`limits`, `env_layers`).
+
 ## Workflow
 
 1. **Load** a scenario or build one, then Run. Examples: 0 NW Scotland and the Minches (operational MDO), 0b Suwałki Gap,
@@ -110,6 +135,8 @@ X-band radar; choose the forecast atmosphere to see the evaporation duct flag), 
 - Met: the forecast model's pressure levels are about 250 m apart near the ground, so thin elevated ducts are missed;
   the evaporation duct is the neutral-stability estimate (the card says when the air is stable); rain is the hourly
   mean, not the peak of a shower.
+- Platform limits, sea clutter and space-weather effects are screening heuristics with notional values, at the run's
+  met point only (one place per time layer, not per cell); propagation itself still uses the run's atmosphere.
 
 - Surface-model terrain; clutter clearance only on pairwise paths, not on the map rasters (a few dB difference at 1 km pixels).
 - Air and space paths use the standard analysis with earth curvature, not ITU-R P.528; within 100 km at aircraft heights this is line of sight anyway.

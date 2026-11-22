@@ -21,15 +21,23 @@
     });
     document.body.dataset.corrHolds = r.legs.filter((lg) => lg.hold).length;
   }
+  const CORR_LIM = { go: 'ok', marginal: 'warn', 'no-go': 'bad' };
+  function emoCorridorEnv(s) {
+    if (!s.limits) return '';
+    if (s.limits === 'unknown') return `<p class="dim">Platform limits, sea clutter and space weather: choose the forecast (Met) and run again to apply them.</p>`;
+    const spd = s.speed_factor != null && s.speed_factor !== 1 ? ` Speed ${Math.round(s.speed_factor * 100)}% of ${s.nominal_speed_kmh} km/h.` : '';
+    return `<p class="${CORR_LIM[s.limits] || ''}">Platform limits: <b>${esc(s.limits)}</b>${(s.limit_reasons || []).length ? ` (${esc(s.limit_reasons.join('; '))})` : ''}.${spd}${s.max_sea_clutter_db ? ` Sea clutter up to ${s.max_sea_clutter_db} dB on the radar term over the sea.` : ''}</p>
+      ${s.limits_warning ? `<p class="bad">${esc(s.limits_warning)}</p>` : ''}<p class="dim">${esc(s.space || '')}${s.gnss_space_db ? ` GNSS fails at ${s.gnss_space_db} dB less J/S.` : ''}</p>`;
+  }
   function emoCorridorHtml(r) {
     const s = r.summary, v = (lg) => lg.verified ? `${lg.verified.p_detect}%${lg.verified.p_c2 != null ? ` / ${lg.verified.p_c2}%` : ''}` : '–';
     const when = s.layers > 1 ? ` Through ${s.layers} time layers ${s.step_min} min apart; arrives T+${s.arrive_t} min${s.hold_min ? ` including ${s.hold_min} min holding` : ''}.` : '';
     return `<p><b>${esc(r.unit)}</b> (${esc(r.domain)}) ${s.km} km in about ${s.minutes} min at ${s.speed_kmh} km/h <span class="dim">(direct ${s.direct_km} km)</span>; transmitting on ${s.transmit_pct}% of the route.${when}
       Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, GNSS denied ${s.max_p_gnss ?? 0}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost} against ${s.direct_cost} straight; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
-      ${s.duct ? `<p class="warn">Duct: ${esc(s.duct)}</p>` : ''}${(s.gnss_jammers || []).length ? `<p class="dim">GNSS jammers counted: ${esc(s.gnss_jammers.join(', '))}.</p>` : ''}
+      ${s.duct ? `<p class="warn">Duct: ${esc(s.duct)}</p>` : ''}${emoCorridorEnv(s)}${(s.gnss_jammers || []).length ? `<p class="dim">GNSS jammers counted: ${esc(s.gnss_jammers.join(', '))}.</p>` : ''}
       <p><span style="color:${CORR_COL.transmit}">■</span> transmit leg <span style="color:${CORR_COL.silent}">■</span> silent leg <span style="color:#fff">●</span> hold <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
-      <table class="grid"><tr><th>Leg</th><th>T+</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>GNSS</th><th>C2</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
-      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.t_from ?? '–'}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.hold ? 'hold, ' : ''}${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_gnss ?? 0}%</td><td class="mono">${lg.p_c2}%</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
+      <table class="grid"><tr><th>Leg</th><th>T+</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>GNSS</th><th>C2</th><th title="platform limits on the leg's layer; sea clutter on the radar term">Limits</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
+      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.t_from ?? '–'}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.hold ? 'hold, ' : ''}${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_gnss ?? 0}%</td><td class="mono">${lg.p_c2}%</td><td class="${CORR_LIM[lg.limits] || ''}">${esc(lg.limits || '–')}${lg.sea_clutter_db ? ` <span class="dim">clutter ${lg.sea_clutter_db} dB</span>` : ''}</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
       ${s.sensors.length ? '' : '<p class="dim">No opposing ES sensor covers this unit\'s band.</p>'}<p class="dim">${esc(r.notes)}</p>`;
   }
   function emoCorridor() {
@@ -204,7 +212,7 @@
     const w = r.windows;
     return `<p><span style="color:#45d38a">■</span> undetected <span style="color:#f3b23e">■</span> detected <span style="color:#ff4646">■</span> target-quality fix <span style="color:#dc3cdc">■</span> denied</p>${svg}
       ${w ? `<h4>Windows of EM advantage for ${esc(w.net)}</h4><p>${esc(w.summary)}</p>${w.advantage.length ? `<p>Undetected and not denied: ${w.advantage.map((x) => `T+${x.from_min}–${x.to_min} min`).join(', ')}</p>` : '<p class="bad">No step where the control station is unheard and all users are undenied: siting alone gives no window; use EMCON or another bearer.</p>'}` : ''}
-      ${emoTimelineMet(r)}${r.notes ? `<p class="dim">${esc(r.notes)}</p>` : ''}`;
+      ${emoTimelineMet(r)}${emoTimelineSpace(r)}${r.notes ? `<p class="dim">${esc(r.notes)}</p>` : ''}`;
   }
   function emoDock() {
     if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
@@ -397,7 +405,7 @@
     const fx = r.fixes.filter((f) => f.fix || f.lobs);
     const row = (cells) => `<tr>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`;
     out.innerHTML = `
-      ${emoMetCard(r.met)}
+      ${emoMetCard(r.met)}${emoSpaceCard(r.space)}
       ${r.score ? `<h3 class="sec">Scoreboard</h3>${emoScoreTable(r)}` : ''}
       ${r.radar?.length ? `<h3 class="sec">Radar: tracks and screening</h3><table class="grid"><tr><th>Radar</th><th>Target</th><th>km</th><th>Echo margin</th><th>Result</th></tr>${r.radar.filter((x) => x.detected || x.jam).map((x) => `<tr><td style="color:${SIDE_COL[x.radar_side]}">${esc(x.radar)}</td><td style="color:${SIDE_COL[x.target_side]}">${esc(x.target)} <span class="dim">${x.rcs_m2} m²</span></td><td class="mono">${x.range_km}</td><td class="mono">${x.margin_db >= 0 ? '+' : ''}${x.margin_db} dB · ${x.p}%</td><td>${x.tracked ? '<b style="color:#45d38a">tracked</b>' : x.screened ? `<b style="color:#dc3cdc">screened</b> by ${esc(x.jam.jammer)} (${esc(x.jam.mode)}, J/S ${x.jam.js_db} dB, burn-through ${x.jam.burnthrough_km} km)` : 'no track'}</td></tr>`).join('')}</table>` : ''}
       <h3 class="sec">ES: what each side can see and fix</h3>
@@ -428,6 +436,19 @@
     return `<h3 class="sec">Met ${fc ? `<span class="dim">Open-Meteo, valid ${esc(m.valid_time || '')} at ${m.lat}, ${m.lon}</span>` : '<span class="dim">standard atmosphere</span>'}</h3>
       <table class="grid">${cells.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table>
       ${(m.warnings || []).map((w) => `<p class="warn">${esc(w)}</p>`).join('')}${(m.notes || []).map((w) => `<p class="dim">${esc(w)}</p>`).join('')}`;
+  }
+  function emoSpaceCard(sp) {
+    if (!sp) return '';
+    const hf = sp.hf || {}, gn = sp.gnss || {};
+    const cls = { normal: 'ok', degraded: 'warn', blackout: 'bad' }[hf.status] || 'dim';
+    return `<h3 class="sec">Space weather <span class="dim">${esc(sp.source || '')}, ${sp.sunlit ? 'sunlit' : 'dark'} (sun ${sp.sun_elev_deg}°)</span></h3>
+      <p><span class="${cls}">HF ${esc(hf.status || 'unknown')}</span>${(hf.notes || []).length ? `: ${esc(hf.notes.join('; '))}` : ''}. GNSS ${gn.loss_db ? `fails at <b>${gn.loss_db} dB</b> less J/S${(gn.notes || []).length ? ` (${esc(gn.notes.join('; '))})` : ''}` : 'unaffected'}.</p>
+      <p class="dim">${esc(sp.text || '')}</p>`;
+  }
+  function emoTimelineSpace(r) {
+    const sp = (r.board || []).map((b) => b.space).filter(Boolean);
+    if (!sp.length || sp.every((x) => (x.hf === 'normal' || x.hf === 'unknown') && !x.gnss_loss_db)) return '';
+    return `<p>Space weather by step: ${(r.board || []).map((b) => b.space ? `T+${b.t} HF ${b.space.hf}${b.space.gnss_loss_db ? `, GNSS −${b.space.gnss_loss_db} dB` : ''}${(b.space.hf_nets || []).length ? ` (${b.space.hf_nets.length} HF nets)` : ''}` : '').filter(Boolean).join(' · ')}</p>`;
   }
   function emoTimelineMet(r) {
     const ms = (r.board || []).map((b) => b.met).filter(Boolean);

@@ -1,8 +1,8 @@
 /* CyEM Monitor service worker: makes the app installable and keeps the shell
    available if the tailnet drops. Network-first for everything; only the static
    shell is cached as a fallback. API responses are never cached. */
-const CACHE = 'cyem-shell-v73';
-const SHELL = ['/', '/static/style.css?v=2026-11-20b', '/static/app.js?v=2026-11-20b', '/static/vendor/leaflet.js', '/static/vendor/leaflet.css', '/static/vendor/marked.umd.js', '/static/vendor/purify.min.js', '/static/vendor/milsymbol.js', '/manifest.webmanifest', '/static/icons/favicon.svg', '/static/icons/favicon-32.png', '/static/icons/apple-touch-icon.png', '/static/icons/icon-192.png', '/static/icons/icon-512.png'];
+const CACHE = 'cyem-shell-v74';
+const SHELL = ['/', '/static/style.css?v=2026-11-22a', '/static/app.js?v=2026-11-22a', '/static/vendor/leaflet.js', '/static/vendor/leaflet.css', '/static/vendor/marked.umd.js', '/static/vendor/purify.min.js', '/static/vendor/milsymbol.js', '/manifest.webmanifest', '/static/icons/favicon.svg', '/static/icons/favicon-32.png', '/static/icons/apple-touch-icon.png', '/static/icons/icon-192.png', '/static/icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => null)); self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

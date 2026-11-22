@@ -133,3 +133,44 @@ def test_api_and_cli(tmpdb, monkeypatch, capsys):
     assert cli.main(["met", "51.25", "-1.85", "2026-11-18T21:00"]) == 0
     out = capsys.readouterr().out
     assert '"source": "open-meteo"' in out and "profile (m above ground, N, M)" in out
+
+
+# ---- met layer (phase 4 part 2) -----------------------------------------------------------------------------------
+def test_grid_points_lattice_and_cap():
+    from app.met import grid_points
+    step, pts = grid_points(51.0, -2.0, 51.9, -1.1)
+    assert step == 0.25 and len(pts) == 16 and (51.0, -2.0) in pts and all(round(a / 0.25, 6) % 1 == 0 for a, _ in pts)
+    step, pts = grid_points(49.0, -8.0, 59.0, 2.0)                           # most of the UK: coarser lattice
+    assert step == 4.0 and 1 < len(pts) <= 25                                  # 2 degrees would be 30 points
+    step, pts = grid_points(51.01, -1.99, 51.02, -1.98)                      # tiny view: the snapped centre
+    assert len(pts) == 1
+
+
+def test_met_grid_batches_and_caches(tmpdb, monkeypatch):
+    met = tmpdb
+    calls = []
+
+    async def fake(url, params):
+        lats, lons = params["latitude"].split(","), params["longitude"].split(",")
+        calls.append((url, len(lats)))
+        if "marine" in url:
+            return [{"latitude": float(a), "longitude": float(b), "hourly": {"time": ["2026-11-18T21:00"], "sea_surface_temperature": [None]}}
+                    for a, b in zip(lats, lons)]
+        return [{**_fc(), "latitude": float(a), "longitude": float(b)} for a, b in zip(lats, lons)]
+    monkeypatch.setattr(met, "_fetch", fake)
+    g = asyncio.run(met.met_grid(51.0, -2.0, 51.9, -1.1, HOUR))
+    assert len(g["points"]) == 16 and g["missing"] == 0 and g["valid_time"] == "2026-11-18T21:00Z"
+    assert [n for _, n in calls] == [16, 16]                                 # one forecast and one marine request
+    p0 = g["points"][0]
+    assert p0["source"] == "open-meteo" and p0["k"] > 1 and p0["rain_mm_h"] == 2.4 and p0["wind_ms"] == 3.2
+    assert asyncio.run(met.met_grid(51.0, -2.0, 51.9, -1.1, HOUR))["points"] and len(calls) == 2     # all from the cache
+    st = asyncio.run(met.met_state(51.0, -2.0, HOUR))                       # met_state shares the cache
+    assert st["source"] == "open-meteo" and len(calls) == 2
+
+
+def test_met_grid_api_rejects_a_huge_box(tmpdb):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    assert c.get("/api/met/grid?s=40&w=-20&n=70&e=20").status_code == 422
+    assert c.get("/api/met/grid?s=52&w=-2&n=51&e=-1").status_code == 422

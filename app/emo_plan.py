@@ -608,10 +608,15 @@ async def timeline(body: TimelineIn):
             row["heard_by"].append(heard.get(name, []))
             row["targetable"].append(name in tgt)
             row["denied"].append(name in den)
-        m = r.get("met") or {}
+        m, sp = r.get("met") or {}, r.get("space") or {}
+        hf = (sp.get("hf") or {}).get("status", "unknown")
         board.append({"t": tm, **{sd: r["score"][sd] for sd in ("blue", "red")},
                       "met": {"valid_time": m.get("valid_time"), **(m.get("used") or {}), "refraction": m.get("refraction"),
-                              "ducts": len(m.get("ducts") or []) + (1 if (m.get("evap_duct") or {}).get("height_m", 0) >= 4 else 0)}})
+                              "ducts": len(m.get("ducts") or []) + (1 if (m.get("evap_duct") or {}).get("height_m", 0) >= 4 else 0)},
+                      "space": {"source": sp.get("source"), "sunlit": sp.get("sunlit"), "hf": hf,
+                                "gnss_loss_db": (sp.get("gnss") or {}).get("loss_db", 0.0),
+                                "hf_nets": [e["name"] for e in ents.values() if e["freq_mhz"] < 30 and e["kind"] in ("emitter", "receiver")]
+                                if hf in ("degraded", "blackout") else []}})
     windows = None
     if body.net and body.net in rows:
         ctrl = rows[body.net]
@@ -634,7 +639,8 @@ async def timeline(body: TimelineIn):
     return {"steps": steps, "step_min": body.step_min, "horizon_min": round(horizon, 1), "rows": rows, "board": board, "windows": windows,
             "notes": "Light analysis per step (pairwise terrain paths, no map rasters). Detected = detected by the other side's ES; "
                      "target-quality fix = DF fix within the targeting threshold; denied = a jammer beats the user's own net at that step. "
-                     "With the forecast chosen, each step uses the met for its own hour (k-factor, rain, fog)."}
+                     "With the forecast chosen, each step uses the met for its own hour (k-factor, rain, fog) and the space weather "
+                     "for its own time (HF on the sunlit or dark side, GNSS margin in storms; current scales or the 3-day forecast)."}
 
 
 # ---- A5: more decision variables: power, antenna azimuth, channel, joint re-siting -------------------------------

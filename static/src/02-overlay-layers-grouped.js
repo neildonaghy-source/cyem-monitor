@@ -23,6 +23,8 @@
       legend: `${DOT('rgba(255,220,60,.6)', 9)} &lt;5 ${DOT('rgba(255,140,66,.7)', 9)} 5–15 ${DOT('rgba(255,60,60,.8)', 9)} 15–25 ${DOT('rgba(255,80,220,.85)', 9)} &gt;25 MHz` },
     { id: 'aurora', group: 'iono', label: 'Aurora oval (OVATION)', colour: '#45d38a', on: true, load: loadAurora, every: 15,
       legend: `${DOT('rgba(69,211,138,.5)', 9)} 10% ${DOT('rgba(240,200,60,.7)', 9)} 40% ${DOT('rgba(255,70,70,.85)', 9)} 70%+` },
+    { id: 'met', group: 'em', label: 'Met: refraction, rain, ducts (forecast)', colour: '#f3b23e', on: false, load: loadMet, every: 60,
+      legend: `${DOT('#3cc7ff', 8)} sub ${DOT('#8593a6', 8)} normal ${DOT('#f3b23e', 8)} super-refraction ${DOT('#ff5c5c', 8)} trapping · k, rain mm/h, fog, duct, wind arrow (downwind) · Open-Meteo, nearest hour, zoom 5+` },
     { id: 'gpsjam', group: 'em', label: 'GNSS interference', colour: '#ff5c5c', on: true, load: loadGpsjam, every: 10,
       legend: `${G('⬢', '#ff5c5c')} high (&gt;10% aircraft) ${G('⬢', '#f3b23e')} medium (2–10%)` },
     { id: 'milair', group: 'em', label: 'Military aircraft (live)', colour: '#f3b23e', on: true, load: loadMilair, every: 2,

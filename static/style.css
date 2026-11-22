@@ -408,3 +408,10 @@ button.armed { background: #5a1b1b !important; border-color: #ff5c5c !important;
 #sdr-live-frame.full .lvbar .dim { flex: 1; }
 #sdr-live-frame.full .lvbar button { height: 34px; padding: 0 14px; font-size: 13px; border: 1px solid #3c8cff; }
 #sdr-live-frame.full iframe { flex: 1; height: auto; border-radius: 0; }
+/* met layer (phase 4 part 2) */
+.metdiv { background: none; border: 0; }
+.metpt { display: inline-block; white-space: nowrap; transform: translate(-50%, -50%); padding: 1px 5px; border: 1px solid #8593a6;
+  border-radius: 9px; background: rgba(12, 18, 26, .82); font: 10px/14px var(--mono, monospace); color: var(--text, #dfe6ee); }
+.metpt b { font-weight: 600; }
+.metw { margin-left: 4px; color: #c8d3e0; }
+.metarr { display: inline-block; margin-right: 1px; }

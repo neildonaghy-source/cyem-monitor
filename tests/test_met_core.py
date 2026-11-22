@@ -79,3 +79,57 @@ def test_fog_from_visibility_matches_itu_typical_values():
 
 def test_cloud_base_from_dew_point_spread():
     assert m.cloud_base_m(8.4, 7.3) == 138 and m.cloud_base_m(None, 3) is None
+
+
+# ---- phase 4 part 2: sea state, clutter, platform limits ---------------------------------------------------------
+def test_douglas_sea_state():
+    assert m.sea_state(None) is None
+    assert [m.sea_state(h) for h in (0.0, 0.05, 0.3, 1.0, 2.0, 3.0, 5.0, 7.0, 12.0, 15.0)] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+
+def test_sea_clutter_grows_with_sea_state_and_band_and_fades_with_height():
+    assert m.sea_clutter_db(1, 9400, 5) == 0 and m.sea_clutter_db(None, 9400, 5) == 0
+    x3, x5 = m.sea_clutter_db(3, 9400, 5), m.sea_clutter_db(5, 9400, 5)
+    assert 0 < x3 < x5 <= 20
+    assert m.sea_clutter_db(5, 3000, 5) == pytest.approx(10.0) and m.sea_clutter_db(5, 1300, 5) < 10 < x5
+    assert m.sea_clutter_db(5, 9400, 175) == pytest.approx(x5 / 2, abs=0.1) and m.sea_clutter_db(5, 9400, 400) == 0
+    assert m.sea_clutter_db(9, 30000, 0) == 20.0 and m.sea_clutter_db(5, 150, 5) == 0
+
+
+def _st(**kw):
+    base = {"source": "open-meteo", "wind_ms": 4.0, "gust_ms": 7.0, "wind_dir": 270.0, "rain_mm_h": 0.0, "snow_cm_h": 0.0,
+            "visibility_m": 20000.0, "cloud_base_m": 900.0, "cloud_low_pct": 20.0, "freezing_level_m": 2500.0, "rh_pct": 70.0, "sea": None}
+    return {**base, **kw}
+
+
+def test_platform_limits_go_marginal_no_go():
+    assert m.platform_limits("air", {"source": "standard"})["status"] == "unknown"
+    assert m.platform_limits("air", _st(), 120)["status"] == "go"
+    r = m.platform_limits("air", _st(wind_ms=12.0), 120)
+    assert r["status"] == "marginal" and r["cost"] == m.LIMIT_COST["marginal"] and "wind 12" in r["reasons"][0]
+    assert m.platform_limits("air", _st(gust_ms=22.0), 120)["status"] == "no-go"
+    assert m.platform_limits("air", _st(cloud_base_m=150.0, cloud_low_pct=80.0), 120)["status"] == "marginal"
+    ice = m.platform_limits("air", _st(freezing_level_m=100.0, cloud_low_pct=80.0), 120)
+    assert ice["status"] == "no-go" and any("icing" in x for x in ice["reasons"])
+    assert m.platform_limits("air", _st(freezing_level_m=300.0, rain_mm_h=1.0), 120)["status"] == "marginal"
+    assert m.platform_limits("air", _st(freezing_level_m=300.0), 120)["status"] == "go"        # no visible moisture
+
+
+def test_headwind_slows_aircraft_and_sea_state_slows_boats():
+    # wind from the west at 10 m/s against a westbound 100 km/h (27.8 m/s) UAS
+    west = m.platform_limits("air", _st(wind_ms=10.0, wind_dir=270.0), 120, track_deg=270, speed_kmh=100)
+    east = m.platform_limits("air", _st(wind_ms=10.0, wind_dir=270.0), 120, track_deg=90, speed_kmh=100)
+    assert west["speed_factor"] == pytest.approx(1 - 10 / 27.78, abs=0.01) and east["speed_factor"] > 1
+    assert m.headwind_ms(10, 0, 90) == pytest.approx(0, abs=1e-9)
+    calm = m.platform_limits("sea", _st(sea={"wave_m": 0.3}))
+    rough = m.platform_limits("sea", _st(sea={"wave_m": 2.0}))
+    storm = m.platform_limits("sea", _st(sea={"wave_m": 3.0}, wind_ms=18.0))
+    assert calm["status"] == "go" and calm["speed_factor"] == 1.0
+    assert rough["status"] == "marginal" and rough["sea_state"] == 4 and rough["speed_factor"] == 0.75
+    assert storm["status"] == "no-go" and storm["speed_factor"] == 0.5
+
+
+def test_ground_is_slowed_never_stopped():
+    r = m.platform_limits("ground", _st(snow_cm_h=4.0, visibility_m=100.0))
+    assert r["status"] == "marginal" and r["speed_factor"] == 0.5
+    assert m.platform_limits("ground", _st(rain_mm_h=9.0))["speed_factor"] == 0.7

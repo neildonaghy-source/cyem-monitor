@@ -99,5 +99,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
   `emo_api.run`). Corridors take met, limits, clutter and space weather per layer (`corridor_api._env_factory`).
 - EMO examples (22 Nov 2026, finding 13): JSON in `data/emo_examples/`, checked by `app/emo_examples.check` on load
   (bad files left out and logged); `tests/test_emo_examples.py` must stay green. Notional values only.
+- Amphibious (phase 6 part 1, 22 Nov 2026): corridor domain `amphib` (water to the beach, land only within 1 km of it),
+  `met_core.LIMITS["amphib"]`, `breaker_height_m`, `surf` (priced round the landing point per layer; holds allowed),
+  summary `beach` (relay check through the craft). Opposing comms EA lowers corridor C2 in every domain. Example 7 Studland.
 - Default screen: first run opens on the UK with live layers only; reference layers and notional EMO off (`cyem.layersv` migration).
 - Icon source and build script: `native/Icon/` (`build_icons.py` regenerates the Xcode AppIcon set and `static/icons/`).

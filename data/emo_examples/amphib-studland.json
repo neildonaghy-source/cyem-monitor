@@ -1,0 +1,28 @@
+{
+  "id": "amphib-studland",
+  "order": 11,
+  "title": "7. Amphibious ship to shore (Studland Bay, Dorset; notional)",
+  "about": "Blue lands a craft from a ship in Poole Bay on to Studland beach. The ship controls a VHF landing-craft net that the craft and a beach party use. Red holds the shore: an ES/DF site on Ballard Down, a second DF across the bay at Hengistbury, a coastal X-band radar at Durlston and a VHF jammer at Swanage, partly masked from the beach by Ballard Down. Grey: harbour VTS and the chain ferry. All values notional.",
+  "centre": [50.64, -1.9],
+  "zoom": 11,
+  "params": {"df_fix_good_m": 1500},
+  "corridor": {
+    "mover": "Blue landing craft",
+    "to": [50.656, -1.946],
+    "domain": "amphib",
+    "step_min": 10,
+    "note": "Worked corridor (amphibious): the landing craft runs in from the ship to Studland beach. Ten-minute layers: the planner weighs the coastal radar (sea clutter with the forecast), red ES and DF, and the Swanage jammer against the craft's net, holds offshore if the surf is over the limit and reports whether the beach party hears the ship direct or needs the craft as a relay. Choose the forecast atmosphere and run first for surf, sea state and the evaporation duct."
+  },
+  "entities": [
+    {"name": "Blue LC net (ship)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 50.645, "lon": -1.875, "h_agl": 20, "freq_mhz": 62.0, "bw_khz": 25, "eirp_dbm": 47, "sens_dbm": -110, "js_req_db": 0, "sidc": "SFSPCL---------", "notes": "Notional ship in Poole Bay controlling the landing-craft net"},
+    {"name": "Blue landing craft", "side": "blue", "kind": "receiver", "net": "Blue LC net (ship)", "lat": 50.643, "lon": -1.882, "h_agl": 3, "freq_mhz": 62.0, "bw_khz": 25, "eirp_dbm": 40, "rcs_m2": 200, "sidc": "SFSPCL---------", "notes": "Notional landing craft; plan its corridor to the beach"},
+    {"name": "Blue beach party", "side": "blue", "kind": "receiver", "net": "Blue LC net (ship)", "lat": 50.661, "lon": -1.952, "h_agl": 2, "freq_mhz": 62.0, "bw_khz": 25, "eirp_dbm": 37, "sidc": "SFGPUCR--------", "notes": "Notional party ashore behind the beach"},
+    {"name": "Blue ship radar", "side": "blue", "kind": "emitter", "category": "radar", "lat": 50.645, "lon": -1.875, "h_agl": 25, "freq_mhz": 9410, "bw_khz": 20000, "eirp_dbm": 80, "sidc": "SFSPCL---------", "active": false, "notes": "Off for the run-in (EMCON)"},
+    {"name": "Red ES/DF (Ballard Down)", "side": "red", "kind": "sensor", "category": "df", "lat": 50.629, "lon": -1.955, "h_agl": 5, "freq_mhz": 20, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -112, "df_rms_deg": 3, "sidc": "SHGPUUMSED-----"},
+    {"name": "Red DF (Hengistbury)", "side": "red", "kind": "sensor", "category": "df", "lat": 50.716, "lon": -1.765, "h_agl": 5, "freq_mhz": 20, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -112, "df_rms_deg": 3, "sidc": "SHGPUUMSED-----"},
+    {"name": "Red coastal radar (Durlston)", "side": "red", "kind": "emitter", "category": "radar", "lat": 50.596, "lon": -1.952, "h_agl": 60, "freq_mhz": 9300, "bw_khz": 20000, "eirp_dbm": 80, "sidc": "SHGPUUS--------", "pattern": "sector", "azimuth": 90, "beamwidth": 180},
+    {"name": "Red VHF jammer (Swanage)", "side": "red", "kind": "effector", "category": "comms", "lat": 50.609, "lon": -1.96, "h_agl": 10, "freq_mhz": 62.0, "bw_khz": 25, "eirp_dbm": 55, "sidc": "SHGPUUMSEJ-----", "notes": "Shore-based, against the landing-craft net"},
+    {"name": "Poole Harbour VTS (marine VHF)", "side": "grey", "kind": "emitter", "category": "comms", "lat": 50.687, "lon": -1.947, "h_agl": 20, "freq_mhz": 156.8, "bw_khz": 25, "eirp_dbm": 44, "sens_dbm": -110, "js_req_db": 0, "sidc": "SNGPU----------"},
+    {"name": "Chain ferry (Sandbanks)", "side": "grey", "kind": "receiver", "net": "Poole Harbour VTS (marine VHF)", "lat": 50.679, "lon": -1.947, "h_agl": 4, "freq_mhz": 156.8, "bw_khz": 25, "eirp_dbm": 37, "sidc": "SNSPXM---------"}
+  ]
+}

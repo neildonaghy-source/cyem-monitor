@@ -191,9 +191,40 @@ LIMITS = {
     "air": {"wind_ms": (10.0, 15.0), "gust_ms": (15.0, 20.0), "rain_mm_h": (4.0, 10.0), "visibility_m": (1500.0, None)},
     "sea": {"wind_ms": (11.0, 17.0), "sea_state": (4, 5), "visibility_m": (1000.0, None)},
     "ground": {"rain_mm_h": (8.0, None), "snow_cm_h": (1.0, None), "visibility_m": (200.0, None)},
+    "amphib": {"wind_ms": (10.0, 15.0), "sea_state": (3, 4), "visibility_m": (500.0, None), "surf_m": (1.0, 1.5)},
 }
 LIMIT_COST = {"go": 0.0, "marginal": 0.3, "no-go": 3.0, "unknown": 0.0}
 SEA_SPEED = {3: 0.9, 4: 0.75, 5: 0.5}                          # small craft speed factor by sea state (6 and over: 0.3)
+CRAFT_SPEED = {2: 0.9, 3: 0.7, 4: 0.5}                         # landing craft (amphib) by sea state (5 and over: 0.3)
+
+
+def breaker_height_m(wave_m: float | None, period_s: float | None = None) -> float | None:
+    """Screening breaker height at the beach from the offshore significant wave height and period: Komar and Gaudet
+    (1973), Hb = 0.39 g^0.2 (T H0^2)^0.4, kept between 0.5 and 1.5 times H0 (no bathymetry, so no shoaling or
+    refraction by the real beach). With no period the breaker is taken as H0."""
+    if wave_m is None:
+        return None
+    if wave_m <= 0:
+        return 0.0
+    if not period_s:
+        return round(wave_m, 2)
+    hb = 0.39 * 9.81 ** 0.2 * (period_s * wave_m ** 2) ** 0.4
+    return round(max(0.5 * wave_m, min(1.5 * wave_m, hb)), 2)
+
+
+def surf(st: dict) -> dict:
+    """Go, marginal or no-go for a landing on the beach, from the breaker height (notional LIMITS["amphib"]["surf_m"])."""
+    if st.get("source") != "open-meteo":
+        return {"status": "unknown", "breaker_m": None, "cost": 0.0, "reason": "no forecast chosen: surf not assessed"}
+    sea = st.get("sea") or {}
+    hb = breaker_height_m(sea.get("wave_m"), sea.get("wave_period_s"))
+    if hb is None:
+        return {"status": "unknown", "breaker_m": None, "cost": 0.0, "reason": "no wave forecast for the beach"}
+    mg, ng = LIMITS["amphib"]["surf_m"]
+    status = "no-go" if hb >= ng else "marginal" if hb >= mg else "go"
+    return {"status": status, "breaker_m": hb, "cost": LIMIT_COST[status],
+            "reason": f"{status}: surf about {hb:g} m at the beach" + (f" ({sea['wave_m']:g} m, {sea['wave_period_s']:g} s offshore)"
+                                                                       if sea.get("wave_period_s") else "")}
 
 
 def headwind_ms(wind_ms: float | None, wind_from_deg: float | None, track_deg: float) -> float:
@@ -208,7 +239,8 @@ def platform_limits(domain: str, st: dict, alt_m: float | None = None, track_deg
 
     Air: wind, gusts, rain, visibility, cloud base against the flying height, icing (freezing level at or near the
     flying height in cloud, rain or fog); ground speed from the headwind along the track. Sea: wind, sea state
-    (speed falls with it), visibility. Ground: heavy rain, snow, fog slow the move but never stop it."""
+    (speed falls with it), visibility. Amphib (landing craft): tighter wind and sea state; surf is assessed apart, at the
+    beach (surf()). Ground: heavy rain, snow, fog slow the move but never stop it."""
     if st.get("source") != "open-meteo":
         return {"status": "unknown", "speed_factor": 1.0, "cost": 0.0, "sea_state": None,
                 "reasons": ["no forecast chosen: platform limits not assessed"]}
@@ -237,7 +269,7 @@ def platform_limits(domain: str, st: dict, alt_m: float | None = None, track_deg
     check("rain_mm_h", st.get("rain_mm_h"), "rain", "mm/h")
     check("snow_cm_h", st.get("snow_cm_h"), "snow", "cm/h")
     check("visibility_m", st.get("visibility_m"), "visibility", "m", below=True)
-    if domain == "sea":
+    if domain in ("sea", "amphib"):
         check("sea_state", ss, "sea state", "(Douglas)")
     factor = 1.0
     if domain == "air":
@@ -256,6 +288,8 @@ def platform_limits(domain: str, st: dict, alt_m: float | None = None, track_deg
                 reasons.append(f"headwind about {hw:.0f} m/s along the track: ground speed {factor * 100:.0f}% of air speed")
     elif domain == "sea":
         factor = SEA_SPEED.get(ss, 1.0 if (ss or 0) < 3 else 0.3)
+    elif domain == "amphib":
+        factor = CRAFT_SPEED.get(ss, 1.0 if (ss or 0) < 2 else 0.3)
     else:
         if (st.get("snow_cm_h") or 0) >= 3:
             factor = 0.5

@@ -1,0 +1,20 @@
+{
+  "id": "brecon-siting",
+  "order": 6,
+  "title": "2. Siting and terrain masking (Brecon Beacons, Sennybridge)",
+  "about": "Blue HQ in the Usk valley and a directional hilltop relay; red ES/DF on high ground and in a valley. Drag the HQ up the hillside or turn the relay: exposure and fixes change. The EMCON siting lesson.",
+  "centre": [51.96, -3.45],
+  "zoom": 10,
+  "entities": [
+    {"name": "Blue HQ (valley)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 51.947, "lon": -3.39, "h_agl": 6, "freq_mhz": 62.3, "bw_khz": 25, "eirp_dbm": 44, "sidc": "SFGPUH---------", "sens_dbm": -110, "js_req_db": 0},
+    {"name": "Blue patrol", "side": "blue", "kind": "receiver", "net": "Blue HQ (valley)", "lat": 51.99, "lon": -3.55, "h_agl": 2, "freq_mhz": 62.3, "bw_khz": 25, "eirp_dbm": 37, "sidc": "SFGPUCI--------", "radius_km": 15, "track": [[51.96, -3.47], [51.93, -3.42]], "speed_kmh": 5},
+    {"name": "Blue hill relay", "side": "blue", "kind": "emitter", "category": "comms", "lat": 51.884, "lon": -3.437, "h_agl": 10, "freq_mhz": 320, "bw_khz": 500, "eirp_dbm": 47, "sidc": "SFGPUUS--------", "pattern": "sector", "azimuth": 0, "beamwidth": 45},
+    {"name": "Red ES/DF (high ground)", "side": "red", "kind": "sensor", "category": "df", "lat": 52.05, "lon": -3.5, "h_agl": 12, "freq_mhz": 30, "f_hi_mhz": 400, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 2, "sidc": "SHGPUUMSED-----"},
+    {"name": "Red ES/DF (valley)", "side": "red", "kind": "sensor", "category": "df", "lat": 51.995, "lon": -3.8, "h_agl": 8, "freq_mhz": 30, "f_hi_mhz": 400, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 2, "sidc": "SHGPUUMSED-----"},
+    {"name": "Red VHF jammer", "side": "red", "kind": "effector", "category": "comms", "lat": 52.02, "lon": -3.65, "h_agl": 8, "freq_mhz": 62.3, "bw_khz": 25, "eirp_dbm": 57, "sidc": "SHGPUUMSEJ-----", "notes": "Spot on the blue net: test siting against EA too"},
+    {"name": "FM broadcast (notional)", "side": "grey", "kind": "emitter", "category": "comms", "lat": 51.99, "lon": -3.4, "h_agl": 60, "freq_mhz": 97.0, "bw_khz": 200, "eirp_dbm": 67, "sidc": "SNGPU----------"},
+    {"name": "Mobile mast (Brecon)", "side": "grey", "kind": "emitter", "category": "comms", "lat": 51.947, "lon": -3.395, "h_agl": 25, "freq_mhz": 806.0, "bw_khz": 10000, "eirp_dbm": 60, "sidc": "SNGPU----------"},
+    {"name": "Blue ES/DF (Sennybridge)", "side": "blue", "kind": "sensor", "category": "df", "lat": 51.99, "lon": -3.57, "h_agl": 12, "freq_mhz": 30, "f_hi_mhz": 400, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 2, "sidc": "SFGPUUMSED-----"},
+    {"name": "Blue ES/DF (Pen y Fan)", "side": "blue", "kind": "sensor", "category": "df", "lat": 51.884, "lon": -3.437, "h_agl": 10, "freq_mhz": 30, "f_hi_mhz": 400, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 2, "sidc": "SFGPUUMSED-----"}
+  ]
+}

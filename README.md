@@ -290,7 +290,7 @@ EMO button (and phone Tools sheet). Notional scenarios only. Symmetric model: bo
 - Examples: battlegroup vignette (30 entities), Brecon siting, Solent maritime, A303 GNSS, C-UAS vs datalink.
 - Performance: first run of the vignette about 48 s (terrain grids and paths computed 3 at a time; cyem container
   raised to 4 CPUs), later steps 10 to 20 s; results cached per position.
-Code: `app/emo_api.py`, `app/emo_examples.py`, `app/ems_core.py`; tests `tests/test_emo.py`.
+Code: `app/emo_api.py`, `app/emo_examples.py` (loads and checks `data/emo_examples/*.json`), `app/ems_core.py`; tests `tests/test_emo.py`, `tests/test_emo_examples.py`.
 
 - **Focus (added 2026-09-25):** tap a symbol to see only that entity: its footprint in strength bands against the opposing sensors, who picks it up (margin, DF), what it hears, what it jams or is jammed by, and its fix. Whole-picture washes are off by default (tick boxes in the panel). Footprints stop at the entity compute radius (Edit to change).
 - **Footprint radius (2026-09-25):** up to 100 km; blank = automatic (airborne 100, HF/VHF 80, UHF 60, 1 GHz+ 40 km). Pairwise detections and DF fixes are computed along full terrain paths at any range; only the map footprints use the radius. Same compute cost (fixed 600 samples per radial, coarser steps at long range). DEM keeps up to 40 tiles open.

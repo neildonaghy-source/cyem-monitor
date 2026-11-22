@@ -1,0 +1,24 @@
+{
+  "id": "solent-maritime",
+  "order": 7,
+  "title": "3. Maritime ES and EA (Solent and Channel)",
+  "about": "Blue ship on a UHF net transits out of Portsmouth; a red ES vessel tracks east along the Channel and a red jammer vessel holds offshore. Blue shore ES/DF can fix the jammer. Sea paths give long ranges.",
+  "centre": [50.66, -1.4],
+  "zoom": 10,
+  "corridor": {"mover": "Blue ship", "to": [50.64, -1.7], "domain": "sea", "step_min": 15, "note": "Worked corridor (maritime): the ship leaves the Solent by the Needles Channel past the red ES vessel tracking east and the X-band radar on the jammer vessel. Choose the forecast atmosphere and run first: an evaporation duct over the Channel is flagged on the sea legs (X band is trapped; the UHF net is not). Fifteen-minute layers."},
+  "entities": [
+    {"name": "Blue ship", "side": "blue", "kind": "emitter", "category": "comms", "lat": 50.78, "lon": -1.1, "h_agl": 20, "freq_mhz": 252.4, "bw_khz": 25, "eirp_dbm": 50, "sidc": "SFSPCL---------", "sens_dbm": -105, "js_req_db": 0, "track": [[50.72, -1.25], [50.66, -1.6]], "speed_kmh": 25},
+    {"name": "Blue shore HQ", "side": "blue", "kind": "receiver", "net": "Blue ship", "lat": 50.8, "lon": -1.1, "h_agl": 15, "freq_mhz": 252.4, "bw_khz": 25, "eirp_dbm": 47, "sidc": "SFGPUH---------"},
+    {"name": "Blue shore ES/DF (Portsdown)", "side": "blue", "kind": "sensor", "category": "df", "lat": 50.86, "lon": -1.09, "h_agl": 20, "freq_mhz": 30, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 2, "sidc": "SFGPUUMSED-----"},
+    {"name": "Blue shore ES/DF (Needles)", "side": "blue", "kind": "sensor", "category": "df", "lat": 50.662, "lon": -1.58, "h_agl": 20, "freq_mhz": 30, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 2, "sidc": "SFGPUUMSED-----"},
+    {"name": "Red ES vessel", "side": "red", "kind": "sensor", "category": "df", "lat": 50.55, "lon": -1.9, "h_agl": 15, "freq_mhz": 30, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -115, "df_rms_deg": 3, "sidc": "SHSPCL---------", "track": [[50.58, -1.2]], "speed_kmh": 18},
+    {"name": "Red jammer vessel", "side": "red", "kind": "effector", "category": "comms", "lat": 50.5, "lon": -1.4, "h_agl": 15, "freq_mhz": 252.4, "bw_khz": 100, "eirp_dbm": 60, "sidc": "SHSPCL---------"},
+    {"name": "Red vessel radar", "side": "red", "kind": "emitter", "category": "radar", "lat": 50.5, "lon": -1.4, "h_agl": 15, "freq_mhz": 9410, "bw_khz": 20000, "eirp_dbm": 80, "sidc": "SHSPCL---------", "notes": "Surface search, X band, peak EIRP; the evaporation duct traps it"},
+    {"name": "Coastguard VTS radar (Needles)", "side": "grey", "kind": "emitter", "category": "radar", "lat": 50.662, "lon": -1.585, "h_agl": 60, "freq_mhz": 9410, "bw_khz": 20000, "eirp_dbm": 80, "sidc": "SNGPU----------"},
+    {"name": "Isle of Wight ferry (marine VHF)", "side": "grey", "kind": "emitter", "category": "comms", "lat": 50.795, "lon": -1.105, "h_agl": 15, "freq_mhz": 156.8, "bw_khz": 25, "eirp_dbm": 44, "sidc": "SNSPXM---------", "sens_dbm": -110, "js_req_db": 0, "track": [[50.735, -1.165]], "speed_kmh": 25},
+    {"name": "Yacht (Solent)", "side": "grey", "kind": "receiver", "net": "Isle of Wight ferry (marine VHF)", "lat": 50.76, "lon": -1.3, "h_agl": 5, "freq_mhz": 156.8, "bw_khz": 25, "eirp_dbm": 37, "sidc": "SNSPXM---------"},
+    {"name": "GPS L1 (civil users)", "side": "grey", "kind": "emitter", "category": "nav", "lat": 50.75, "lon": -1.25, "h_agl": 0, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SNGPU----------", "fixed_level_dbm": -128, "js_req_db": 35, "sens_dbm": -140},
+    {"name": "Civil GNSS (ferry)", "side": "grey", "kind": "receiver", "net": "GPS L1 (civil users)", "lat": 50.795, "lon": -1.105, "h_agl": 15, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SNSPXM---------"},
+    {"name": "Civil GNSS (Cowes)", "side": "grey", "kind": "receiver", "net": "GPS L1 (civil users)", "lat": 50.76, "lon": -1.3, "h_agl": 2, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SNGPU----------"}
+  ]
+}

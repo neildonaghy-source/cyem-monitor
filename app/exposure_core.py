@@ -36,6 +36,14 @@ def hf_groundwave_p(d_km, range_km: float = HF_GW_KM):
     return np.clip((range_km - d) / (0.3 * range_km) + 0.5, 0.0, 1.0)
 
 
+def hf_range_km(eirp_dbm: float | None, ref_dbm: float = 47.0) -> float:
+    """HF groundwave interception range for a mast power: HF_GW_KM at the profile's 47 dBm, scaled 10 dB per halving
+    or doubling of range (screening rule, notional; floor 10 km)."""
+    if eirp_dbm is None:
+        return HF_GW_KM
+    return max(10.0, HF_GW_KM * 2 ** ((eirp_dbm - ref_dbm) / 10.0))
+
+
 def combine(*ps) -> np.ndarray:
     """Chance at least one of several independent events happens."""
     out = None

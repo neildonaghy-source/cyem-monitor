@@ -176,7 +176,8 @@ than a step); consecutive layers merge, and each window's best cell is re-checke
 
 Mast profiles (`exposure_core.MASTS`, notional): periscope 1.5 m, 0.1 m²; UHF 250 MHz 40 dBm; UHF satcom 300 MHz,
 20 dBm towards the horizon; HF 8 MHz 47 dBm; masts 2 m, 0.5 m². `eirp_dbm` overrides the profile's power (power control as EP; "power" in the card). The coverage model starts at 20 MHz, so HF interception
-is a screening rule: heard by opposing HF ES out to about 250 km over the sea (`hf_groundwave_p`); skywave interception
+is a screening rule: heard by opposing HF ES out to about 250 km over the sea at 47 dBm, the range halving per 10 dB
+less power (`hf_groundwave_p`, `hf_range_km`); skywave interception
 by distant ES is not modelled. No bathymetry (all water is taken as deep enough), no acoustic, visual, wake or
 radar-periscope-detection modes beyond the radar term. Vignette 8, the North Minch (`subsurface-minches`): an MPA on
 station T+0 to T+60 and from T+120, a frigate working west across the southern North Minch and an ES/DF ship off

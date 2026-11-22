@@ -154,3 +154,13 @@ def test_landing_craft_limits_are_tighter_than_small_craft():
     assert sea["status"] == "go" and lc["status"] == "marginal" and lc["speed_factor"] < sea["speed_factor"]
     assert m.platform_limits("amphib", _st(sea={"wave_m": 2.0}))["status"] == "no-go"
     assert m.platform_limits("amphib", _st(wind_ms=16.0, sea={"wave_m": 0.3}))["status"] == "no-go"
+
+
+# ---- phase 6: on foot and batteries -------------------------------------------------------------------------------
+def test_foot_limits_and_batteries():
+    r = m.platform_limits("foot", _st(temp_c=-5.0, snow_cm_h=2.0))
+    assert r["status"] == "marginal" and r["speed_factor"] == 0.7 and r["battery_factor"] == 0.5
+    assert any("batteries about 50%" in x for x in r["reasons"])
+    assert m.platform_limits("foot", _st(temp_c=25.0))["battery_factor"] == 1.0
+    assert m.platform_limits("ground", _st(temp_c=-5.0))["battery_factor"] == 1.0          # vehicle power
+    assert m.battery_factor(None) == 1.0 and m.battery_factor(-40) == 0.4 and m.battery_factor(10) == 0.8

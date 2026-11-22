@@ -146,6 +146,19 @@ the unit's C2: power-summed J after the hop or bandwidth penalty against the con
 threshold, as in the run (`p_jam` per leg, `c2_jammers` and `max_p_jam` in the summary; the verified C2 includes it).
 Only when the unit hears a control station; a control station's own users are not re-assessed.
 
+### Dismounted and civil corridors (22 Nov 2026)
+
+- **On foot** (`domain: foot`): dismounted and SOF, 4 km/h, slopes up to 60%, leg-by-leg EMCON against red ES and DF
+  as for vehicles. With the forecast chosen, cold lowers battery endurance (`met_core.battery_factor`, notional: 2%
+  per degree below 20 C, not under 40%; also reported for UAS), and heavy rain or snow slow the move.
+- **Civil (grey)** units can plan: only jamming by either side (GNSS, and comms against their own net) and their own C2
+  count; a civil unit is not hiding from ES or radar. Every leg names the GNSS jammers that deny it on their own
+  (`jammed_by`); `collateral` groups them by side and leg, which is the collateral check on own EA.
+- GNSS and comms jammers and radars in corridors now reach the grid's far corner (up to 100 km) instead of stopping at
+  their footprint radius, as the sensors already did.
+- Worked vignettes: 2 Brecon (the patrol on foot), 0b Suwałki (a notional civil air ambulance at 600 m through
+  two-sided GNSS jamming; the road below is masked by terrain, so a road evacuation shows nothing).
+
 ## Known limits
 
 - Net availability counts a user only if it holds its own control station (in range, control on air) and is not

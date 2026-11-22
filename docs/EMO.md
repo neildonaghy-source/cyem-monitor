@@ -94,6 +94,7 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 | POST /plan/coa {side, coa: mlcoa or mdcoa}, POST /plan/coa/revert | Other side's response, applied and reversible |
 | POST /plan/timeline {step_min, net} | Per-step strips, advantage windows, scoreboard per step |
 | POST /plan/corridor {mover, to_lat, to_lon, domain, step_min, wait, gnss, ...} | EM manoeuvre corridor: band, legs (EMCON, holds, T+), verified worst points |
+| POST /plan/windows {terminal, sat_lon, side, step_min, horizon_min} | Satcom and GNSS windows: look angle, terrain horizon, uplink jamming; each GNSS user by step |
 | POST /plan/exposure {mover, mast, dwell_min, radius_km, speed_kmh, step_min, layers, threshold, ...} | Sub-surface exposure windows: risk per time layer, windows (T+, best cell, verified), clear-water overlay |
 | GET/POST /coas, POST /coas/{id}/load, DELETE /coas/{id} | Courses of action |
 | POST /ask {question, selected} | Computed plan for siting questions, else Qwen summary |
@@ -184,6 +185,26 @@ station T+0 to T+60 and from T+120, a frigate working west across the southern N
 Rubha Reidh. At 26 dBm the MPA's gap opens a window to the north-east (on synthetic sea); at the profile's 40 dBm none.
 
 Corridors now respect sensors' on-station schedules too (an airborne ES off station no longer hears the unit).
+
+### Satcom and GNSS windows (phase 6 part 3, 22 Nov 2026)
+
+**Sat/GNSS** in the EMO dock (`POST /api/emo/plan/windows`, `app/satwin_core.py` pure and tested, `app/satwin_api.py`)
+steps through time from T+t (units move on their tracks, emitters keep their schedules):
+
+- **Satcom** for a chosen terminal: the geostationary look angle (the slot the antenna points at, or one given), the
+  terrain horizon on that bearing from the surface model over 20 km (the satellite must clear it by 0.5 degree), and
+  uplink jamming: opposing jammers in the terminal's band that can themselves see the slot give J/S at the satellite
+  from the EIRP difference and the two slant ranges, diluted by the terminal's hopping or spreading, against the
+  terminal's J/S threshold. Status per step: clear, degraded, denied, blocked (terrain) or off air; a pointing warning
+  if the antenna's azimuth misses the slot. Not modelled: spot-beam isolation or nulling at the satellite, downlink
+  jamming.
+- **GNSS** for every user of the side's GNSS nets: J/S from opposing jammers (power-summed) and spoofers on exact
+  terrain paths at each step, by the run's rules (a spoofer between 3 and 30 dB deceives), with the space weather for
+  each step's time when the forecast is chosen.
+- **Windows**: runs of steps where the link or fix holds (clear or degraded), drawn as a strip per row.
+- Worked vignettes: 0c Vestfjord (the raid force's X-band satcom at about 14 degrees elevation, a notional red uplink
+  jammer on the coast off the air T+40 to T+70; the fighters' and landing craft's GNSS), 4 A303 (each GNSS user as
+  the jammer drives east and the spoofer sits west of Stonehenge).
 
 ## Known limits
 

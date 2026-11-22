@@ -6,6 +6,7 @@
   "centre": [67.95, 13.8],
   "zoom": 8,
   "params": {"df_fix_good_m": 3000},
+  "windows": {"terminal": "Blue raid SATCOM", "step_min": 10, "horizon_min": 120, "note": "Worked windows: the raid force's X-band satcom ashore on Lofoten looks south at about 14 degrees, low enough for the mountains to matter, and a notional red uplink jammer on the coast, on the air T+0 to T+40 and from T+70, can see the same satellite. When can the raid force send, and when do the raid's and the fighters' GNSS hold against the jammer on the mountain?"},
   "entities": [
     {"name": "Blue LPD (UHF net)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 67.75, "lon": 13.0, "h_agl": 25, "freq_mhz": 252.4, "bw_khz": 25, "eirp_dbm": 50, "sidc": "SFSPCL---------", "sens_dbm": -105, "js_req_db": 0},
     {"name": "Blue frigate (UHF)", "side": "blue", "kind": "receiver", "net": "Blue LPD (UHF net)", "lat": 67.85, "lon": 13.3, "h_agl": 25, "freq_mhz": 252.4, "bw_khz": 25, "eirp_dbm": 47, "sidc": "SFSPCL---------", "track": [[68.0, 13.6]], "speed_kmh": 25},
@@ -54,6 +55,7 @@
     {"name": "Civil GNSS (ferry)", "side": "grey", "kind": "receiver", "net": "GPS L1 (civil users)", "lat": 67.3, "lon": 14.35, "h_agl": 20, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SNSPXM---------", "track": [[68.1, 13.9]], "speed_kmh": 30},
     {"name": "Civil GNSS (Leknes airport)", "side": "grey", "kind": "receiver", "net": "GPS L1 (civil users)", "lat": 68.152, "lon": 13.609, "h_agl": 2, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SNGPU----------"},
     {"name": "Blue fighter EA pod", "side": "blue", "kind": "effector", "category": "radar", "lat": 67.7, "lon": 13.2, "h_agl": 8000, "freq_mhz": 9800, "bw_khz": 500000, "eirp_dbm": 60, "sidc": "SFAPMFF--------", "track": [[68.1, 14.1], [67.7, 13.2]], "speed_kmh": 700, "notes": "Self-protection pod on the fighter pair against the red targeting radar (X-band): mainlobe, self-screening"},
-    {"name": "Blue stand-off radar jammer", "side": "blue", "kind": "effector", "category": "radar", "lat": 67.5, "lon": 13.0, "h_agl": 9000, "freq_mhz": 3000, "bw_khz": 200000, "eirp_dbm": 80, "sidc": "SFAPMFJ--------", "track": [[67.6, 13.8], [67.5, 13.0]], "speed_kmh": 500, "notes": "Against the red SAM radar (S-band) from stand-off"}
+    {"name": "Blue stand-off radar jammer", "side": "blue", "kind": "effector", "category": "radar", "lat": 67.5, "lon": 13.0, "h_agl": 9000, "freq_mhz": 3000, "bw_khz": 200000, "eirp_dbm": 80, "sidc": "SFAPMFJ--------", "track": [[67.6, 13.8], [67.5, 13.0]], "speed_kmh": 500, "notes": "Against the red SAM radar (S-band) from stand-off"},
+    {"name": "Red satcom uplink jammer", "side": "red", "kind": "effector", "category": "comms", "lat": 68.235, "lon": 14.6, "h_agl": 10, "freq_mhz": 7975, "bw_khz": 50000, "eirp_dbm": 85, "sidc": "SHGPUUMSEJ-----", "schedule": [[0, 40], [70, 240]], "notes": "Notional: X-band barrage aimed at the raid force's satellite (uplink); off the air T+40 to T+70"}
   ]
 }

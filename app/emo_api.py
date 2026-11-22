@@ -958,7 +958,7 @@ async def score_now():
 async def examples():
     from .emo_examples import EXAMPLES
     return {"examples": [{"id": k, "title": v["title"], "about": v["about"], "centre": v["centre"], "zoom": v["zoom"],
-                          "entities": len(v["entities"]), "corridor": v.get("corridor"), "exposure": v.get("exposure")} for k, v in EXAMPLES.items()]}
+                          "entities": len(v["entities"]), "corridor": v.get("corridor"), "exposure": v.get("exposure"), "windows": v.get("windows")} for k, v in EXAMPLES.items()]}
 
 
 @router.post("/examples/{name}")
@@ -982,7 +982,7 @@ async def load_example(name: str):
     _LAST.clear()      # this workspace's last analysis must not feed planning calls; path and footprint caches are keyed
                        # on entity, radio parameters, position and atmosphere, so other workspaces keep theirs
     return {"loaded": name, "title": ex["title"], "about": ex["about"], "centre": ex["centre"], "zoom": ex["zoom"],
-            "params": ex.get("params", {}), "corridor": ex.get("corridor"), "exposure": ex.get("exposure"),
+            "params": ex.get("params", {}), "corridor": ex.get("corridor"), "exposure": ex.get("exposure"), "windows": ex.get("windows"),
             "entities": _all()}
 
 

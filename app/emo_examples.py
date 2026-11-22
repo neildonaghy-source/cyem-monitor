@@ -34,13 +34,15 @@ REQUIRED = ("name", "side", "kind", "lat", "lon", "freq_mhz")
 ENUMS = {"side": ("blue", "red", "grey"), "kind": ("emitter", "receiver", "sensor", "effector"),
          "pattern": ("omni", "sector"), "ea_mode": ("noise", "spoof")}
 TOP = {"id": (str,), "order": (int,), "title": (str,), "about": (str,), "centre": (list,), "zoom": (int,),
-       "params": (dict,), "corridor": (dict,), "exposure": (dict,), "entities": (list,)}
+       "params": (dict,), "corridor": (dict,), "exposure": (dict,), "windows": (dict,), "entities": (list,)}
 TOP_REQUIRED = ("id", "title", "about", "centre", "zoom", "entities")
 CORRIDOR = {"mover": (str,), "to": (list,), "domain": (str,), "step_min": NUM, "alt_m": NUM, "speed_kmh": NUM,
             "note": (str,)}
 EXPOSURE = {"mover": (str,), "mast": (str,), "dwell_min": NUM, "step_min": NUM, "layers": (int,), "radius_km": NUM,
             "speed_kmh": NUM, "threshold": NUM, "eirp_dbm": NUM, "note": (str,)}
-SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR, "exposure": EXPOSURE}
+WINDOWS = {"terminal": (str,), "sat_lon": NUM, "side": (str,), "gnss": (bool,), "step_min": NUM, "horizon_min": NUM,
+           "note": (str,)}
+SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR, "exposure": EXPOSURE, "windows": WINDOWS}
 
 
 def _latlon(p) -> bool:
@@ -143,6 +145,17 @@ def check(ex: dict, stem: str | None = None) -> list[str]:
             err.append(f"exposure: mover '{x.get('mover')}' is not an entity in this example")
         if x.get("mast", "uhf") not in ("periscope", "uhf", "satcom", "hf"):
             err.append("exposure: mast must be periscope, uhf, satcom or hf")
+    wn = ex.get("windows")
+    if wn is not None:
+        for k, v in wn.items():
+            if k not in WINDOWS:
+                err.append(f"windows: unknown field '{k}'")
+            elif not _typed(v, WINDOWS[k]):
+                err.append(f"windows: '{k}' has the wrong type")
+        if wn.get("terminal") is not None and wn["terminal"] not in names:
+            err.append(f"windows: terminal '{wn['terminal']}' is not an entity in this example")
+        if wn.get("side") not in (None, "blue", "red"):
+            err.append("windows: side must be blue or red")
     return err
 
 

@@ -158,6 +158,61 @@
     });
     return b;
   }
+  // ---- Sat/GNSS windows: satcom look angle, terrain horizon and uplink jamming; GNSS users by step (POST /api/emo/plan/windows)
+  const winLayer = L.layerGroup().addTo(map);
+  const WIN_COL = { clear: '#45d38a', degraded: '#f3b23e', denied: '#dc3cdc', deceived: '#ff5c5c', blocked: '#8593a6', 'off air': '#3a4350' };
+  function emoWindowsClear() { if (EMO.win) EMO.win.res = null; winLayer.clearLayers(); document.body.dataset.winRows = 0; }
+  function emoWindowsDraw() {
+    winLayer.clearLayers(); const r = EMO.win?.res; document.body.dataset.winRows = r ? ((r.satcom ? 1 : 0) + (r.gnss?.users.length || 0)) : 0; if (!r?.satcom) return;
+    const t = EMO.ents.find((e) => e.name === r.satcom.terminal); const row = r.satcom.rows[0]; if (!t || !row) return;
+    const d = 20 / 111, a = row.az * Math.PI / 180, end = [t.lat + d * Math.cos(a), t.lon + d * Math.sin(a) / Math.cos(t.lat * Math.PI / 180)];
+    L.polyline([[t.lat, t.lon], end], { color: WIN_COL[row.status] || '#fff', weight: 3, dashArray: '6 4' })
+      .bindTooltip(`Look to the satellite at ${r.satcom.sat_lon}°: azimuth ${row.az}°, elevation ${row.el}° (terrain ${row.horizon}°)`).addTo(winLayer);
+  }
+  function emoStrip(rows) { return rows.map((x) => `<td title="T+${x.t}: ${esc(x.status)}" style="background:${WIN_COL[x.status] || '#3a4350'};min-width:9px;padding:0"></td>`).join(''); }
+  function emoWindowsHtml(r) {
+    const span = (ws) => ws.length ? ws.map((w) => `T+${w.from_min}–${w.to_min}`).join(', ') : '<span class="bad">none</span>';
+    const sat = r.satcom, g = r.gnss;
+    return `${sat ? `<h4>Satcom: ${esc(sat.terminal)}</h4><p>Slot ${sat.sat_lon}° (${esc(sat.slot_from)}): azimuth ${sat.rows[0].az}°, elevation ${Math.min(...sat.rows.map((x) => x.el))}–${Math.max(...sat.rows.map((x) => x.el))}°, terrain horizon ${sat.rows[0].horizon}°.
+        Uplink jammers considered: ${esc(sat.jammers_considered.join(', ') || 'none in band')}. Fails at J/S ${sat.js_req_db} dB. <b>Windows: ${span(sat.windows)}</b>.</p>
+        ${sat.pointing ? `<p class="warn">${esc(sat.pointing)}</p>` : ''}` : ''}
+      <table class="grid"><tr><th></th>${r.times.map((t, i) => `<th class="mono" style="font-size:9px">${i % 3 ? '' : t}</th>`).join('')}<th>Windows</th></tr>
+      ${sat ? `<tr><td>${esc(sat.terminal)}</td>${emoStrip(sat.rows)}<td>${span(sat.windows)}</td></tr>` : ''}
+      ${(g?.users || []).map((u) => `<tr><td>${esc(u.user)}</td>${emoStrip(u.rows)}<td>${span(u.windows)}</td></tr>`).join('')}</table>
+      <p>${Object.entries(WIN_COL).map(([k, c]) => `<span style="color:${c}">■</span> ${k}`).join(' ')}</p>
+      ${g ? `<p class="dim">GNSS: ${g.users.length} ${esc(r.side)} users against ${esc(g.effectors.join(', ') || 'no opposing GNSS jammers or spoofers')}.</p>` : ''}
+      <p class="dim">${esc(r.notes)}</p>`;
+  }
+  function emoWindows() {
+    const terms = EMO.ents.filter((e) => (e.side === 'blue' || e.side === 'red') && e.eirp_dbm != null && e.kind !== 'effector' && (e.freq_mhz >= 240 && /sat/i.test(e.name) || e.freq_mhz >= 1000 && e.pattern === 'sector'));
+    const c = EMO.win = EMO.win || { step: 10, horizon: '', slot: '' };
+    if (c.terminal === undefined) c.terminal = (terms.find((e) => e.side === EMO.side) || terms[0])?.name || '';
+    const b = emoDockCard('Sat/GNSS windows', `<div class="specset">Satcom terminal <select id="win-term" aria-label="Satcom terminal"><option value="">none (GNSS only)</option>${terms.map((e) => `<option${e.name === c.terminal ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
+        slot <input id="win-slot" aria-label="Geostationary slot, degrees east" type="number" min="-180" max="180" step="0.1" placeholder="auto" value="${c.slot}" style="width:58px">°E</div>
+      <div class="specset">Every <input id="win-step" aria-label="Step, minutes" type="number" min="1" max="120" value="${c.step}" style="width:48px"> min for <input id="win-hor" aria-label="Horizon, minutes" type="number" min="1" max="1440" placeholder="tracks" value="${c.horizon}" style="width:58px"> min
+        ${EMO.winVignette ? '<button id="win-vig" title="Fill in the worked windows that come with this example">Worked vignette</button>' : ''}</div>
+      ${EMO.winVignette ? `<p class="dim">${esc(EMO.winVignette.note || '')}</p>` : ''}
+      <div class="specset"><button id="win-go" class="primary">Find windows</button> <button id="win-clear">Clear</button> <span id="win-st" class="dim"></span></div>
+      <div id="win-out">${c.res ? emoWindowsHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min, ${EMO.side} GNSS users and the chosen terminal. Notional data; screening grade.</p>`}</div>`);
+    const read = () => { c.terminal = b.querySelector('#win-term').value; c.slot = b.querySelector('#win-slot').value; c.step = Math.max(1, +b.querySelector('#win-step').value || 10); c.horizon = b.querySelector('#win-hor').value; };
+    b.querySelector('#win-vig')?.addEventListener('click', () => {
+      const v = EMO.winVignette; read(); Object.assign(c, { terminal: v.terminal || '', slot: v.sat_lon ?? '', step: v.step_min || c.step, horizon: v.horizon_min || '', res: null });
+      emoWindowsDraw(); emoWindows();
+    });
+    b.querySelector('#win-clear').addEventListener('click', () => { emoWindowsClear(); emoWindows(); });
+    b.querySelector('#win-go').addEventListener('click', async () => {
+      read(); const st = b.querySelector('#win-st'); st.innerHTML = '<span class="spinner"></span> working…';
+      const body = { step_min: c.step, side: EMO.side };
+      if (c.terminal) body.terminal = c.terminal;
+      if (c.slot !== '') body.sat_lon = +c.slot;
+      if (c.horizon !== '') body.horizon_min = +c.horizon;
+      try {
+        c.res = await postJson(`/api/emo/plan/windows?t_min=${EMO.t}`, body);
+        emoWindowsDraw(); if (document.getElementById('emo-dockcard')) emoWindows();
+      } catch (err) { st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    });
+    return b;
+  }
   function emoDockCard(title, html) {
     let c = document.getElementById('emo-dockcard'); if (!c) { c = document.createElement('div'); c.id = 'emo-dockcard'; document.body.appendChild(c); }
     c.innerHTML = `<div class="emo-card-head"><b>${title}</b><span class="btns"><button id="emo-dockclose">×</button></span></div><div id="emo-dockbody">${html}</div>`;
@@ -182,6 +237,7 @@
     }
     if (tool === 'corridor') { emoCorridor(); return; }
     if (tool === 'exposure') { emoExposure(); return; }
+    if (tool === 'windows') { emoWindows(); return; }
     if (tool === 'time') { const sc = document.getElementById('emo-scrub'); if (sc) sc.classList.toggle(matchMedia('(pointer: coarse)').matches ? 'open' : 'closed'); else emoScrubber(); return; }
     if (tool === 'side') { EMO.side = EMO.side === 'blue' ? 'red' : 'blue'; localStorage.setItem('cyem-side', EMO.side); document.getElementById('emo-dock')?.remove(); emoDock(); document.getElementById('emo-dockcard')?.remove(); return; }
     if (tool === 'layers') {
@@ -289,7 +345,7 @@
   function emoDock() {
     if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['exposure', 'Exposure'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['exposure', 'Exposure'], ['windows', 'Sat/GNSS'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -375,7 +431,7 @@
     EMO.hidden = true; EMO.playing = false; EMO.pending = false; try { EMO.abort?.abort(); } catch (e) { /* ignore */ }
     if (staleTimer) { clearInterval(staleTimer); staleTimer = null; } clearInterval(emoTick);
     EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; EMO.res = null;
-    emoLayer.clearLayers(); planLayer.clearLayers(); emoCorridorClear(); emoExposureClear();
+    emoLayer.clearLayers(); planLayer.clearLayers(); emoCorridorClear(); emoExposureClear(); emoWindowsClear();
     ['emo-chip', 'emo-dock', 'emo-dockcard', 'emo-card', 'emo-askbar', 'emo-askcard', 'emo-stale', 'emo-scrub'].forEach((id) => document.getElementById(id)?.remove());
     document.body.classList.remove('emo-hascard', 'emo-nolabels');
     if ($('#modal-title').textContent.startsWith('EMO')) $('#modal').classList.remove('show');
@@ -599,7 +655,7 @@
       try {
         emoAbortRun();
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
-        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; EMO.expVignette = r.exposure || null; emoCorridorClear(); emoExposureClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; EMO.expVignette = r.exposure || null; EMO.winVignette = r.windows || null; if (EMO.win) EMO.win.terminal = undefined; emoCorridorClear(); emoExposureClear(); emoWindowsClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
       } catch (err) { emoStatus(err.message); }
     });

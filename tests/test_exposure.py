@@ -108,10 +108,13 @@ def test_minches_vignette_plans(emo, monkeypatch):
         r = await emo.load_example("subsurface-minches")
         assert r["exposure"] == v
         await emo.run(emo.RunIn(), light=True)
-        body = {k: v[k] for k in ("mover", "mast", "dwell_min", "step_min", "layers", "radius_km") if k in v}
-        return await exposure_api.plan_exposure(exposure_api.ExposureIn(**body, cell_m=2000))
-    r = asyncio.run(go())
-    assert len(r["layers"]) == v["layers"] and r["unit"] == "Blue SSK"
+        body = {k: v[k] for k in ("mover", "mast", "dwell_min", "step_min", "layers", "radius_km", "eirp_dbm") if k in v}
+        lo = await exposure_api.plan_exposure(exposure_api.ExposureIn(**body, cell_m=1000))
+        full = await exposure_api.plan_exposure(exposure_api.ExposureIn(**{**body, "eirp_dbm": None}, cell_m=1000))
+        return lo, full
+    r, full = asyncio.run(go())
+    assert len(r["layers"]) == v["layers"] and r["unit"] == "Blue SSK" and r["eirp_dbm"] == 26 and full["eirp_dbm"] == 40
+    assert r["windows"] and r["windows"][0]["t_from"] == 60 and not full["windows"]        # the MPA's gap, at low power only
     assert {"Red MPA radar", "Red frigate radar"} <= set(r["summary"]["radars"]) | {"Red MPA radar"}
     assert "Red MPA radar" not in r["layers"][2]["radars"] and "Red MPA radar" in r["layers"][0]["radars"]   # T+60: off station
 

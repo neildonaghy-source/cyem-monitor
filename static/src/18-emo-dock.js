@@ -127,7 +127,8 @@
     const b = emoDockCard('Exposure', `<div class="specset">Unit <select id="exp-unit" aria-label="Unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
         Mast <select id="exp-mast" aria-label="Mast">${MASTS.map(([k, l]) => `<option value="${k}"${c.mast === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="specset">Up for ${num('exp-dwell', c.dwell, 1, 120, 50, 'Mast up, minutes')} min within ${num('exp-rad', c.radius, 2, 60, 50, 'Radius, km')} km
-        at ${num('exp-speed', c.speed, 1, 50, 46, 'Transit speed, km/h')} km/h</div>
+        at ${num('exp-speed', c.speed, 1, 50, 46, 'Transit speed, km/h')} km/h
+        <span title="Override the mast profile's power (blank: the profile's)">power <input id="exp-eirp" aria-label="Mast EIRP, dBm" type="number" min="-10" max="60" placeholder="profile" value="${c.eirp ?? ''}" style="width:58px"> dBm</span></div>
       <div class="specset">Layers every ${num('exp-step', c.step, 0, 180, 50, 'Layers every, minutes')} min × ${num('exp-n', c.layers, 1, 8, 40, 'Number of layers')}
         risk at most ${num('exp-thr', c.thr, 1, 90, 44, 'Highest risk, %')}%
         ${EMO.expVignette ? '<button id="exp-vig" title="Fill in the worked exposure that comes with this example">Worked vignette</button>' : ''}</div>
@@ -136,9 +137,10 @@
       <div id="exp-out">${c.res ? emoExposureHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min round the unit, with the last run's atmosphere. Notional mast profiles; screening grade.</p>`}</div>`);
     const read = () => { c.mover = b.querySelector('#exp-unit').value; c.mast = b.querySelector('#exp-mast').value; c.dwell = +b.querySelector('#exp-dwell').value || 10;
       c.radius = +b.querySelector('#exp-rad').value || 15; c.speed = +b.querySelector('#exp-speed').value || 10; c.step = Math.max(0, +b.querySelector('#exp-step').value || 0);
-      c.layers = Math.min(8, Math.max(1, +b.querySelector('#exp-n').value || 6)); c.thr = Math.min(90, Math.max(1, +b.querySelector('#exp-thr').value || 20)); };
+      c.layers = Math.min(8, Math.max(1, +b.querySelector('#exp-n').value || 6)); c.thr = Math.min(90, Math.max(1, +b.querySelector('#exp-thr').value || 20));
+      const ev = b.querySelector('#exp-eirp').value; c.eirp = ev === '' ? null : +ev; };
     b.querySelector('#exp-vig')?.addEventListener('click', () => {
-      const v = EMO.expVignette; read(); Object.assign(c, { mover: v.mover, mast: v.mast || c.mast, dwell: v.dwell_min || c.dwell, step: v.step_min ?? c.step, layers: v.layers || c.layers, radius: v.radius_km || c.radius, speed: v.speed_kmh || c.speed, thr: v.threshold ? Math.round(v.threshold * 100) : c.thr, res: null });
+      const v = EMO.expVignette; read(); Object.assign(c, { mover: v.mover, mast: v.mast || c.mast, dwell: v.dwell_min || c.dwell, step: v.step_min ?? c.step, layers: v.layers || c.layers, radius: v.radius_km || c.radius, speed: v.speed_kmh || c.speed, thr: v.threshold ? Math.round(v.threshold * 100) : c.thr, eirp: v.eirp_dbm ?? null, res: null });
       emoExposureDraw(); emoExposure();
     });
     b.querySelector('#exp-clear').addEventListener('click', () => { emoExposureClear(); emoExposure(); });
@@ -147,6 +149,7 @@
       const tick = setInterval(() => { st.textContent = `searching… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
       st.innerHTML = '<span class="spinner"></span> searching…';
       const body = { mover: c.mover, mast: c.mast, dwell_min: c.dwell, radius_km: c.radius, speed_kmh: c.speed, step_min: c.step, layers: c.layers, threshold: c.thr / 100 };
+      if (c.eirp != null && !Number.isNaN(c.eirp)) body.eirp_dbm = c.eirp;
       try {
         c.res = await postJson(`/api/emo/plan/exposure?t_min=${EMO.t}`, body); clearInterval(tick);
         emoExposureDraw(); if (c.res.bounds) map.fitBounds(c.res.bounds, { padding: [20, 20] });

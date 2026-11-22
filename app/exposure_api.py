@@ -39,6 +39,7 @@ class ExposureIn(BaseModel):
     layers: int = Field(default=6, ge=1, le=8)
     threshold: float = Field(default=0.2, ge=0.01, le=0.9)     # highest acceptable combined risk
     cell_m: float = Field(default=1000, ge=250, le=5000)
+    eirp_dbm: float | None = Field(default=None, ge=-10, le=60)    # override the mast profile's EIRP (power control)
 
 
 def _box(c, radius_km, cell_m):
@@ -67,7 +68,10 @@ async def plan_exposure(body: ExposureIn, t_min: float = 0):
     if side == "grey":
         raise HTTPException(422, "exposure windows are for blue or red units")
     opp = "red" if side == "blue" else "blue"
-    mast = xc.MASTS[body.mast]
+    mast = dict(xc.MASTS[body.mast])
+    if body.eirp_dbm is not None and mast["eirp_dbm"] is not None:
+        mast["eirp_dbm"] = body.eirp_dbm
+        mast["label"] = mast["label"].split(" (")[0] + f" ({mast['freq_mhz']:g} MHz, {body.eirp_dbm:g} dBm)"
     start = tuple(pos(mover))
     centre = (body.centre_lat, body.centre_lon) if body.centre_lat is not None and body.centre_lon is not None else start
     LA, LO, bounds, cell = _box(centre, body.radius_km, body.cell_m)
@@ -219,7 +223,7 @@ async def plan_exposure(body: ExposureIn, t_min: float = 0):
     worst_sea = max((x["sea_state"] or 0) for x in out_layers)
     first = out_w[0] if out_w else None
     text = (f"{len(out_w)} window(s) for {mast['label']} with the mast up {body.dwell_min:g} min at {round(body.threshold * 100)}% "
-            "risk or less" + (f"; first T+{first['t_from']:g}, best at {first['at'][0]:.4f}, {first['at'][1]:.4f} "
+            "risk or less" + (f"; first T+{first['t_from']:g}, best T+{first['t_best']:g} at {first['at'][0]:.4f}, {first['at'][1]:.4f} "
                               f"({first['risk_over_dwell']}%: radar {first['p_radar']}%, ES {first['p_esm']}%, link {first['p_link']}%)."
                               if first else ": none in the area and time searched."))
     notes = ("Screening grade. Exposure = opposing radar on the raised mast (notional cross-section, sea clutter from the "
@@ -235,7 +239,7 @@ async def plan_exposure(body: ExposureIn, t_min: float = 0):
              + "Notional mast profiles (exposure_core.MASTS).")
     return {"unit": mover["name"], "side": side, "mast": body.mast, "mast_label": mast["label"], "t_min": t_min, "bounds": bounds,
             "centre": list(centre), "start": list(start), "cell_m": round(cell), "dwell_layers": nd, "layers": out_layers,
-            "windows": out_w, "band": band, "band_t": times[kb],
+            "windows": out_w, "band": band, "band_t": times[kb], "eirp_dbm": mast["eirp_dbm"],
             "summary": {"windows": len(out_w), "text": text, "sensors": [x["name"] for x in sensors],
                         "radars": sorted({nm for x in L for nm in x["radars"]}), "c2_jammers": sorted({e["name"] for e in cjams}),
                         "max_sea_state": worst_sea or None},

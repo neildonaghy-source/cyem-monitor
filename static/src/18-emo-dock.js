@@ -184,7 +184,7 @@
       <p class="dim">${esc(r.notes)}</p>`;
   }
   function emoWindows() {
-    const terms = EMO.ents.filter((e) => (e.side === 'blue' || e.side === 'red') && e.eirp_dbm != null && e.kind !== 'effector' && (e.freq_mhz >= 240 && /sat/i.test(e.name) || e.freq_mhz >= 1000 && e.pattern === 'sector'));
+    const terms = EMO.ents.filter((e) => (e.side === 'blue' || e.side === 'red') && e.eirp_dbm != null && e.kind !== 'effector' && e.category !== 'radar' && (e.freq_mhz >= 240 && /sat/i.test(e.name) || e.freq_mhz >= 1000 && e.pattern === 'sector'));
     const c = EMO.win = EMO.win || { step: 10, horizon: '', slot: '' };
     if (c.terminal === undefined) c.terminal = (terms.find((e) => e.side === EMO.side) || terms[0])?.name || '';
     const b = emoDockCard('Sat/GNSS windows', `<div class="specset">Satcom terminal <select id="win-term" aria-label="Satcom terminal"><option value="">none (GNSS only)</option>${terms.map((e) => `<option${e.name === c.terminal ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>

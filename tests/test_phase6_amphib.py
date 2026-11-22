@@ -142,3 +142,18 @@ def test_amphib_is_a_valid_example_domain():
     assert emo_examples.check(ex) == []
     ex["corridor"]["domain"] = "submarine"
     assert any("domain" in e for e in emo_examples.check(ex))
+
+
+def test_beach_report_counts_the_jammer(emo, monkeypatch):
+    """The exact beach figures include the comms jammer, so they agree with the grid's C2 on the last leg."""
+    from app import corridor_api
+    _flat(monkeypatch, 0.0)
+    _landing(emo, jammer=True)
+
+    async def go():
+        await emo.run(emo.RunIn(), light=True)
+        return await corridor_api.plan_corridor(corridor_api.CorridorIn(mover="Blue LC", to_lat=51.0, to_lon=-1.004,
+                                                                        domain="amphib", cell_m=500))
+    b = asyncio.run(go())["summary"]["beach"]
+    assert b["p_jam"] is not None and b["p_jam"] > 0 and b["p_c2"] < 100 and "jamming denies it" in b["text"]
+    assert b["party"][0]["direct_pct"] < 100

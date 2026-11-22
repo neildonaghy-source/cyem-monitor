@@ -332,7 +332,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                "nominal_speed_kmh": nominal, "speed_factor": factor, **_env_summary(layers, sorted({S_[n][2] for n in range(N)}), t_min, body.step_min)}
     if body.domain == "amphib":
         summary["beach"] = await _beach(emo_api, mover, unit, ents, ctl, p, layers, S_[N - 1][2], posfs, _ll(LA, LO, cl(N - 1)),
-                                        float(PC[q(N - 1)]), at_t(N - 1))
+                                        float(PC[q(N - 1)]), at_t(N - 1), cjams)
         if summary["beach"]["surf"] == "no-go":
             summary["limits_warning"] = ((summary.get("limits_warning") or "") + " Surf at the beach is outside the landing "
                                          f"craft's limits at T+{at_t(N - 1):g} ({summary['beach']['breaker_m']:g} m).").strip()
@@ -465,10 +465,11 @@ async def _p_jam(emo_api, ctl, here, at, S, jams, pos, p) -> int | None:
     return int(round(50 * (1 + math.erf(m / (p.sigma_db * math.sqrt(2))))))
 
 
-async def _beach(emo_api, mover, unit, ents, ctl, p, layers, k, posfs, at, p_c2_grid, t_arr) -> dict:
-    """Ship to shore at the landing point, at the arrival layer: surf, the craft's C2 there (exact), and for each
-    receiver of the same net within 3 km of the beach (the beach party) whether it hears the control direct or
-    needs the craft as a relay (the craft hears the control and is within 3 km)."""
+async def _beach(emo_api, mover, unit, ents, ctl, p, layers, k, posfs, at, p_c2_grid, t_arr, cjams=()) -> dict:
+    """Ship to shore at the landing point, at the arrival layer: surf, the craft's C2 there (exact, less the chance an
+    opposing comms jammer denies it), and for each receiver of the same net within 3 km of the beach (the beach party)
+    whether it hears the control direct or needs the craft as a relay (the craft hears the control and is within 3 km).
+    Jamming is applied to the direct path at the party; the relay hop is on the same net, so it is jammed too."""
     from .link_core import haversine_m
     env = layers[k]["env"]
     pos = posfs[k]
@@ -481,18 +482,29 @@ async def _beach(emo_api, mover, unit, ents, ctl, p, layers, k, posfs, at, p_c2_
     sens = lambda u: u.get("sens_dbm") or ctl.get("sens_dbm") or p.default_sens                      # noqa: E731
     pr = lambda m: int(round(50 * (1 + math.erf(m / (p.sigma_db * math.sqrt(2))))))              # noqa: E731
     here = {**unit, "id": f"corr:{mover['id']}:beach", "updated_at": f"{mover['updated_at']}|beach"}
-    craft = pr(await emo_api.p2p_level(ctl, pos(ctl), here, tuple(at)) - sens(mover))
-    out["p_c2"] = craft
+    jams = [e for e in cjams if emo_api.on_air(e, t_arr)]
+    S = await emo_api.p2p_level(ctl, pos(ctl), here, tuple(at))
+    craft = pr(S - sens(mover))
+    jc = await _p_jam(emo_api, ctl, here, tuple(at), S, jams, pos, p)
+    if jc is not None:
+        craft = int(round(craft * (1 - W_JAM * jc / 100)))
+    out["p_c2"], out["p_jam"] = craft, jc
     party = [u for u in ents.values() if u.get("net") == ctl["id"] and u["kind"] == "receiver" and u["id"] != mover["id"]
              and haversine_m(*pos(u), *at) <= 3000]
     for u in party:
-        direct = pr(await emo_api.p2p_level(ctl, pos(ctl), u, pos(u)) - sens(u))
+        Su = await emo_api.p2p_level(ctl, pos(ctl), u, pos(u))
+        ju = await _p_jam(emo_api, ctl, u, pos(u), Su, jams, pos, p)
+        cut = 1 - W_JAM * (ju or 0) / 100
+        direct = int(round(pr(Su - sens(u)) * cut))
         relay = None
         if mover.get("eirp_dbm") is not None:
-            relay = pr(await emo_api.p2p_level(here, tuple(at), u, pos(u)) - sens(u))
+            Sr = await emo_api.p2p_level(here, tuple(at), u, pos(u))
+            jr = await _p_jam(emo_api, ctl, u, pos(u), Sr, jams, pos, p)
+            relay = int(round(pr(Sr - sens(u)) * (1 - W_JAM * (jr or 0) / 100)))
         out["party"].append({"name": u["name"], "direct_pct": direct, "via_craft_pct": relay,
                              "needs_relay": direct < 50 and (relay or 0) >= 50})
-    bits = [f"Landing craft hears {ctl['name']} at the beach: {craft}%."]
+    bits = [f"Landing craft hears {ctl['name']} at the beach: {craft}%"
+            + (f" (jamming denies it {jc}% of the time)." if jc else ".")]
     for x in out["party"]:
         if x["direct_pct"] >= 50:
             bits.append(f"{x['name']} hears it direct ({x['direct_pct']}%).")

@@ -3,7 +3,18 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 13:00 UTC)
+## Where things are (22 Nov 2026, 14:45 UTC)
+
+- Corridors on foot and for civil units (22 Nov, PR #67, release 2026-11-22c): the dismounted half of 6c and the civil
+  half of 6d. Domain `foot` (4 km/h, slopes to 60%, `met_core.battery_factor` with the forecast), grey movers (jamming
+  only, `jammed_by` per leg, `collateral` by side), and corridor jammers and radars reach the grid's far corner
+  (`reach()`, up to 100 km). Vignettes 2 Brecon (foot) and 0b Suwałki (a new notional grey "Air ambulance (GNSS)" at
+  600 m). 197 tests pass (the suite takes 7 to 12 minutes; run it with nohup). `main` 6c4a369 deployed on the EVO
+  (healthy, 0 restarts). Live check in private workspace p6live2 (emptied): Brecon 11.4 km on foot, batteries 73% at
+  6.4 C; Suwałki air ambulance GNSS 96% denied, both red mast jammers named; Studland unchanged (4.9 km, radar 94%).
+  Built in a second, interactive session while the scheduled run did part 1; Neil chose to port it on top of part 1
+  (its own amphibious version dropped; branch `wip/phase6-foot-grey-session2` kept unmerged for reference). Recorded
+  on trade (CHANGELOG, runbook 4.2) and on the Mac mini (see the bundle line below once made).
 
 - Phase 6 part 1 (22 Nov, PRs #63, #64, release 2026-11-22b): amphibious ship to shore. Corridor domain `amphib`
   (landing craft keeps to water; land only within 1 km of the landing point), `met_core.LIMITS["amphib"]`,
@@ -122,8 +133,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 6. [x] **Phase 6 part 1: amphibious ship to shore** (done 22 Nov, PRs #63, #64).
 6b. **Phase 6 part 2: sub-surface exposure windows** (where and when masts can be raised for HF, UHF or satcom without
    red radar, ESM or maritime patrol aircraft detection; first vignette NW Scotland, the Minches).
-6c. **Phase 6 part 3: dismounted and SOF infiltration, and satcom and GNSS windows**.
-6d. **Phase 6 part 4: spectrum (frequency-time) and grey (civil) corridors** (`docs/REBUILD-PLAN.md`, corridor table).
+6c. **Phase 6 part 3: satcom and GNSS windows** (dismounted and SOF done 22 Nov, PR #67: domain `foot`).
+6d. **Phase 6 part 4: spectrum (frequency-time)** (grey (civil) corridors done 22 Nov, PR #67) (`docs/REBUILD-PLAN.md`,
+   corridor table).
 7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.
 
 ## How to work

@@ -3,7 +3,7 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 14:45 UTC)
+## Where things are (22 Nov 2026, 13:50 UTC)
 
 - Corridors on foot and for civil units (22 Nov, PR #67, release 2026-11-22c): the dismounted half of 6c and the civil
   half of 6d. Domain `foot` (4 km/h, slopes to 60%, `met_core.battery_factor` with the forecast), grey movers (jamming

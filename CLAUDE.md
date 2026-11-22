@@ -102,6 +102,9 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Satcom and GNSS windows (phase 6 part 3, 22 Nov 2026): `satwin_core.py` (pure, tested: GEO look angle, slot from
   azimuth, terrain horizon, uplink J/S, GNSS status, spans) and `satwin_api.py` (`POST /api/emo/plan/windows`); example
   key `windows` (schema `emo_examples.WINDOWS`); Sat/GNSS card in the EMO dock.
+- Spectrum by frequency and time (phase 6 part 4, 22 Nov 2026): `fqt_core.py` (pure, tested: band defaults, channel grid,
+  net status, ranking) and `fqt_api.py` (`POST /api/emo/plan/spectrum`; levels once per step at the net's frequency, per
+  channel overlap and dilution; own, civil and Ofcom WTR clashes); example key `spectrum` (schema `SPECTRUM`); Spectrum card.
 - EMO examples (22 Nov 2026, finding 13): JSON in `data/emo_examples/`, checked by `app/emo_examples.check` on load
   (bad files left out and logged); `tests/test_emo_examples.py` must stay green. Notional values only.
 - Amphibious (phase 6 part 1, 22 Nov 2026): corridor domain `amphib` (water to the beach, land only within 1 km of it),

@@ -95,6 +95,7 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 | POST /plan/timeline {step_min, net} | Per-step strips, advantage windows, scoreboard per step |
 | POST /plan/corridor {mover, to_lat, to_lon, domain, step_min, wait, gnss, ...} | EM manoeuvre corridor: band, legs (EMCON, holds, T+), verified worst points |
 | POST /plan/windows {terminal, sat_lon, side, step_min, horizon_min} | Satcom and GNSS windows: look angle, terrain horizon, uplink jamming; each GNSS user by step |
+| POST /plan/spectrum {net, lo_mhz, hi_mhz, step_khz, hop, step_min, horizon_min, wtr_km} | Spectrum by frequency and time: each channel, the net's own and a hop set across the band, step by step against opposing jamming; own, civil and Ofcom WTR clashes; best channels |
 | POST /plan/exposure {mover, mast, dwell_min, radius_km, speed_kmh, step_min, layers, threshold, ...} | Sub-surface exposure windows: risk per time layer, windows (T+, best cell, verified), clear-water overlay |
 | GET/POST /coas, POST /coas/{id}/load, DELETE /coas/{id} | Courses of action |
 | POST /ask {question, selected} | Computed plan for siting questions, else Qwen summary |
@@ -205,6 +206,26 @@ steps through time from T+t (units move on their tracks, emitters keep their sch
 - Worked vignettes: 0c Vestfjord (the raid force's X-band satcom at about 14 degrees elevation, a notional red uplink
   jammer on the coast off the air T+40 to T+70; the fighters' and landing craft's GNSS), 4 A303 (each GNSS user as
   the jammer drives east and the spoofer sits west of Stonehenge).
+
+### Spectrum by frequency and time (phase 6 part 4, 22 Nov 2026)
+
+**Spectrum** in the EMO dock (`POST /api/emo/plan/spectrum`, `app/fqt_core.py` pure and tested, `app/fqt_api.py`) takes
+one net's control station and steps through time from T+t (units on their tracks, emitters on their schedules):
+
+- Candidate channels across the net's band (default the generic band it sits in: 30-88 MHz VHF, 225-400 MHz UHF, else
+  plus or minus 10%; at most 48 channels, ends kept), the net's own channel (with its hopping), and a hop set across
+  the whole band.
+- At each step the control station's level at each user and every opposing comms or datalink jammer's level there are
+  worked out once on exact terrain paths at the net's own frequency (path loss varies little across one band). On a
+  channel a jammer counts only where its band overlaps it, diluted as in the run. The net is denied on a channel at a
+  step if any user's J/S reaches the net's threshold; degraded within 6 dB of it.
+- Deconfliction per channel: own nets and civil emitters in the scenario on it, and Ofcom WTR licences within 30 km of
+  the net (UK only, advisory; examples on hover). Best channels: most steps usable, clear of own and civil emitters,
+  lowest worst J/S, fewest licences.
+- Worked vignettes: 1 Salisbury Plain (the battlegroup net against the 40-60 MHz barrage and a spot jammer closing on
+  its channel; WTR round the Plain), 0b Suwałki (the Bowman hopping division net against a 35-55 MHz barrage).
+- Browser checks: `tests/ui/windows_check.py` (Sat/GNSS, private workspace wincheck1) and `tests/ui/spectrum_check.py`
+  (private workspace speccheck1), each emptied at the end.
 
 ## Known limits
 

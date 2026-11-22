@@ -6,6 +6,7 @@
   "centre": [51.22, -1.96],
   "zoom": 11,
   "corridor": {"mover": "Blue B Coy", "to": [51.178, -1.995], "domain": "ground", "step_min": 10, "note": "Worked corridor (ground): B Coy moves forward to a blocking position south-west of Red Coy 2's axis while red's airborne ES flies its racetrack. Ten-minute time layers: the planner keeps B Coy in dead ground from the red DF pair, goes silent where a fix is likely and may hold while the airborne ES passes."},
+  "spectrum": {"net": "Blue BG Main HQ", "step_min": 10, "horizon_min": 60, "note": "Worked spectrum: the battlegroup net on 51.325 MHz single channel faces a red barrage across 40-60 MHz and a spot jammer on its own channel that closes from the west. Which channels across 30-88 MHz stay usable as the spot jammer moves, and which of them are clear of own nets, civil emitters and Ofcom licences round Salisbury Plain?"},
   "entities": [
     {"name": "Blue BG Main HQ", "side": "blue", "kind": "emitter", "category": "comms", "lat": 51.205, "lon": -1.78, "h_agl": 8, "freq_mhz": 51.325, "bw_khz": 25, "eirp_dbm": 47, "sidc": "SFGPUH---------", "sens_dbm": -110, "js_req_db": 0, "radius_km": 30},
     {"name": "Blue Step-up HQ", "side": "blue", "kind": "receiver", "net": "Blue BG Main HQ", "lat": 51.225, "lon": -1.83, "h_agl": 6, "freq_mhz": 51.325, "bw_khz": 25, "eirp_dbm": 44, "sidc": "SFGPUH---------", "radius_km": 25, "track": [[51.235, -1.88]], "speed_kmh": 20, "notes": "Jumps forward"},

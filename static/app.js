@@ -1,7 +1,7 @@
 /* CyEM Monitor UI — vanilla JS, Leaflet, marked. No build step. */
 (() => {
   'use strict';
-  const BUILD = '2026-11-22g';
+  const BUILD = '2026-11-22h';
   // Shared start-up setup (Map layers > Save this setup as the start-up default). Applied once per app launch;
   // changes during a session stand until the app is closed, unless saved as the new default.
   const START = (() => {
@@ -2148,6 +2148,55 @@
     });
     return b;
   }
+  // ---- Spectrum by frequency and time for one net (POST /api/emo/plan/spectrum)
+  function emoSpectrumHtml(r) {
+    const cf = (c) => { const x = c.conflicts || {}; const w = x.wtr || {};
+      return [x.own?.length ? `<span class="warn" title="${esc(x.own.join(', '))}">own ${x.own.length}</span>` : '', x.civil?.length ? `<span class="warn" title="${esc(x.civil.join(', '))}">civil ${x.civil.length}</span>` : '',
+        w.count ? `<span class="dim" title="${esc((w.examples || []).map((e) => `${e.f_mhz} ${e.product || ''} ${e.company || ''}`).join('; '))}">WTR ${w.count}</span>` : ''].filter(Boolean).join(' ') || '–'; };
+    const row = (label, c) => `<tr><td class="mono">${label}</td>${emoStrip(c.steps)}<td class="mono">${c.usable_steps}/${c.steps.length}</td><td class="mono">${c.worst_js_db ?? '–'}</td><td>${cf(c)}</td></tr>`;
+    return `<p>${esc(r.summary)}</p>
+      ${r.best.length ? `<p>Best: ${r.best.map((b) => `<b class="mono">${b.f_mhz}</b>`).join(', ')} MHz <span class="dim">(most steps usable, clear of own and civil emitters, lowest J/S)</span>.</p>` : ''}
+      <table class="grid"><tr><th>MHz</th>${r.times.map((t, i) => `<th class="mono" style="font-size:9px">${i % 3 ? '' : t}</th>`).join('')}<th>Usable</th><th title="worst user's J/S, dB">J/S</th><th>Shares with</th></tr>
+      ${row(`own ${r.current.f_mhz}${r.current.hop_khz ? ' hop' : ''}`, r.current)}${r.hopset ? row(`hop ${r.band[0]}–${r.band[1]}`, r.hopset) : ''}
+      ${r.channels.map((c) => row(c.f_mhz, c)).join('')}</table>
+      <p>${['clear', 'degraded', 'denied'].map((k) => `<span style="color:${WIN_COL[k]}">■</span> ${k}`).join(' ')} · fails at J/S ${r.js_req_db} dB · jammers: ${esc(r.jammers.join(', ') || 'none in the band')}</p>
+      <p class="dim">${esc(r.notes)}</p>`;
+  }
+  function emoSpectrum() {
+    const ids = new Set(EMO.ents.filter((e) => e.net).map((e) => e.net));
+    const nets = EMO.ents.filter((e) => ids.has(e.id) && e.eirp_dbm != null && e.fixed_level_dbm == null && e.side !== 'grey')
+      .sort((a, b) => (a.side === EMO.side ? 0 : 1) - (b.side === EMO.side ? 0 : 1));
+    if (!nets.length) return emoDockCard('Spectrum', '<p class="dim">No nets (control stations with users) in this scenario.</p>');
+    const c = EMO.spec = EMO.spec || { step: 10, horizon: '', lo: '', hi: '', stepk: '' };
+    if (!nets.some((e) => e.name === c.net)) c.net = nets[0].name;
+    const num = (id, v, ph, w, label) => `<input id="${id}" aria-label="${label}" type="number" placeholder="${ph}" value="${v}" style="width:${w}px">`;
+    const b = emoDockCard('Spectrum', `<div class="specset">Net <select id="spec-net" aria-label="Net">${nets.map((e) => `<option${e.name === c.net ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select></div>
+      <div class="specset">Band ${num('spec-lo', c.lo, 'auto', 56, 'Band from, MHz')}–${num('spec-hi', c.hi, 'auto', 56, 'Band to, MHz')} MHz, every ${num('spec-stepk', c.stepk, 'auto', 56, 'Channel spacing, kHz')} kHz</div>
+      <div class="specset">Every ${num('spec-step', c.step, '10', 46, 'Step, minutes')} min for ${num('spec-hor', c.horizon, 'tracks', 56, 'Horizon, minutes')} min
+        ${EMO.specVignette ? '<button id="spec-vig" title="Fill in the worked spectrum that comes with this example">Worked vignette</button>' : ''}</div>
+      ${EMO.specVignette ? `<p class="dim">${esc(EMO.specVignette.note || '')}</p>` : ''}
+      <div class="specset"><button id="spec-go" class="primary">Assess</button> <button id="spec-clear">Clear</button> <span id="spec-st" class="dim"></span></div>
+      <div id="spec-out">${c.res ? emoSpectrumHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min: channels across the net's band step by step against opposing jamming, with own, civil and Ofcom licence clashes. Notional data; screening grade.</p>`}</div>`);
+    const read = () => { c.net = b.querySelector('#spec-net').value; c.lo = b.querySelector('#spec-lo').value; c.hi = b.querySelector('#spec-hi').value;
+      c.stepk = b.querySelector('#spec-stepk').value; c.step = Math.max(1, +b.querySelector('#spec-step').value || 10); c.horizon = b.querySelector('#spec-hor').value; };
+    b.querySelector('#spec-vig')?.addEventListener('click', () => {
+      const v = EMO.specVignette; read(); Object.assign(c, { net: v.net, lo: v.lo_mhz ?? '', hi: v.hi_mhz ?? '', stepk: v.step_khz ?? '', step: v.step_min || c.step, horizon: v.horizon_min || '', res: null });
+      emoSpectrum();
+    });
+    b.querySelector('#spec-clear').addEventListener('click', () => { c.res = null; document.body.dataset.specChannels = 0; emoSpectrum(); });
+    b.querySelector('#spec-go').addEventListener('click', async () => {
+      read(); const st = b.querySelector('#spec-st'); st.innerHTML = '<span class="spinner"></span> assessing…';
+      const body = { net: c.net, step_min: c.step };
+      if (c.lo !== '' && c.hi !== '') { body.lo_mhz = +c.lo; body.hi_mhz = +c.hi; }
+      if (c.stepk !== '') body.step_khz = +c.stepk;
+      if (c.horizon !== '') body.horizon_min = +c.horizon;
+      try {
+        c.res = await postJson(`/api/emo/plan/spectrum?t_min=${EMO.t}`, body); document.body.dataset.specChannels = c.res.channels.length;
+        if (document.getElementById('emo-dockcard')) emoSpectrum();
+      } catch (err) { st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    });
+    return b;
+  }
   function emoDockCard(title, html) {
     let c = document.getElementById('emo-dockcard'); if (!c) { c = document.createElement('div'); c.id = 'emo-dockcard'; document.body.appendChild(c); }
     c.innerHTML = `<div class="emo-card-head"><b>${title}</b><span class="btns"><button id="emo-dockclose">×</button></span></div><div id="emo-dockbody">${html}</div>`;
@@ -2173,6 +2222,7 @@
     if (tool === 'corridor') { emoCorridor(); return; }
     if (tool === 'exposure') { emoExposure(); return; }
     if (tool === 'windows') { emoWindows(); return; }
+    if (tool === 'spectrum') { emoSpectrum(); return; }
     if (tool === 'time') { const sc = document.getElementById('emo-scrub'); if (sc) sc.classList.toggle(matchMedia('(pointer: coarse)').matches ? 'open' : 'closed'); else emoScrubber(); return; }
     if (tool === 'side') { EMO.side = EMO.side === 'blue' ? 'red' : 'blue'; localStorage.setItem('cyem-side', EMO.side); document.getElementById('emo-dock')?.remove(); emoDock(); document.getElementById('emo-dockcard')?.remove(); return; }
     if (tool === 'layers') {
@@ -2280,7 +2330,7 @@
   function emoDock() {
     if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['exposure', 'Exposure'], ['windows', 'Sat/GNSS'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['exposure', 'Exposure'], ['windows', 'Sat/GNSS'], ['spectrum', 'Spectrum'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -2590,7 +2640,7 @@
       try {
         emoAbortRun();
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
-        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; EMO.expVignette = r.exposure || null; EMO.winVignette = r.windows || null; if (EMO.win) EMO.win.terminal = undefined; emoCorridorClear(); emoExposureClear(); emoWindowsClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; EMO.expVignette = r.exposure || null; EMO.winVignette = r.windows || null; EMO.specVignette = r.spectrum || null; if (EMO.win) EMO.win.terminal = undefined; if (EMO.spec) EMO.spec.res = null; emoCorridorClear(); emoExposureClear(); emoWindowsClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
       } catch (err) { emoStatus(err.message); }
     });

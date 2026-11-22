@@ -34,7 +34,7 @@ REQUIRED = ("name", "side", "kind", "lat", "lon", "freq_mhz")
 ENUMS = {"side": ("blue", "red", "grey"), "kind": ("emitter", "receiver", "sensor", "effector"),
          "pattern": ("omni", "sector"), "ea_mode": ("noise", "spoof")}
 TOP = {"id": (str,), "order": (int,), "title": (str,), "about": (str,), "centre": (list,), "zoom": (int,),
-       "params": (dict,), "corridor": (dict,), "exposure": (dict,), "windows": (dict,), "entities": (list,)}
+       "params": (dict,), "corridor": (dict,), "exposure": (dict,), "windows": (dict,), "spectrum": (dict,), "entities": (list,)}
 TOP_REQUIRED = ("id", "title", "about", "centre", "zoom", "entities")
 CORRIDOR = {"mover": (str,), "to": (list,), "domain": (str,), "step_min": NUM, "alt_m": NUM, "speed_kmh": NUM,
             "note": (str,)}
@@ -42,7 +42,9 @@ EXPOSURE = {"mover": (str,), "mast": (str,), "dwell_min": NUM, "step_min": NUM, 
             "speed_kmh": NUM, "threshold": NUM, "eirp_dbm": NUM, "note": (str,)}
 WINDOWS = {"terminal": (str,), "sat_lon": NUM, "side": (str,), "gnss": (bool,), "step_min": NUM, "horizon_min": NUM,
            "note": (str,)}
-SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR, "exposure": EXPOSURE, "windows": WINDOWS}
+SPECTRUM = {"net": (str,), "lo_mhz": NUM, "hi_mhz": NUM, "step_khz": NUM, "hop": (bool,), "step_min": NUM,
+            "horizon_min": NUM, "note": (str,)}
+SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR, "exposure": EXPOSURE, "windows": WINDOWS, "spectrum": SPECTRUM}
 
 
 def _latlon(p) -> bool:
@@ -156,6 +158,17 @@ def check(ex: dict, stem: str | None = None) -> list[str]:
             err.append(f"windows: terminal '{wn['terminal']}' is not an entity in this example")
         if wn.get("side") not in (None, "blue", "red"):
             err.append("windows: side must be blue or red")
+    sp = ex.get("spectrum")
+    if sp is not None:
+        for k, v in sp.items():
+            if k not in SPECTRUM:
+                err.append(f"spectrum: unknown field '{k}'")
+            elif not _typed(v, SPECTRUM[k]):
+                err.append(f"spectrum: '{k}' has the wrong type")
+        if sp.get("net") not in names:
+            err.append(f"spectrum: net '{sp.get('net')}' is not an entity in this example")
+        if sp.get("lo_mhz") is not None and sp.get("hi_mhz") is not None and sp["hi_mhz"] <= sp["lo_mhz"]:
+            err.append("spectrum: lo_mhz must be below hi_mhz")
     return err
 
 

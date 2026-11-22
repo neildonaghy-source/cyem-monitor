@@ -5,6 +5,7 @@
   "about": "Red GPS L1 jammer in a vehicle heading east along the A303 against blue GNSS users. Satellite signal fixed at -128 dBm; blue fails at J/S of 35 dB (a common figure for civil C/A tracking). Blue ES/DF sites fix the jammer as it moves.",
   "centre": [51.15, -1.95],
   "zoom": 10,
+  "windows": {"step_min": 5, "horizon_min": 60, "note": "Worked windows: as the jammer drives east along the A303 and the spoofer sits west of Stonehenge, when does each blue GNSS user hold its fix? Choose the forecast and run first to add the space weather."},
   "entities": [
     {"name": "GPS L1 (space)", "side": "blue", "kind": "emitter", "category": "nav", "lat": 51.15, "lon": -1.95, "h_agl": 0, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SFGPUUS--------", "fixed_level_dbm": -128, "js_req_db": 35, "sens_dbm": -140},
     {"name": "Blue GNSS user (airfield)", "side": "blue", "kind": "receiver", "net": "GPS L1 (space)", "lat": 51.152, "lon": -1.747, "h_agl": 2, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SFGPUUS--------"},

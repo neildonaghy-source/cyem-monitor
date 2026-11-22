@@ -3,7 +3,23 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 16:05 UTC)
+## Where things are (22 Nov 2026, 16:40 UTC)
+
+- **Still to do from phase 6 part 4 (the MacBook link dropped at 16:35):** read the browser checks that were left
+  running on trade (`~/cyemui/20261122h/{spectrum,windows,corridor}_check.log`, `~/cyemui/out/ui_audit-20261122h.log`;
+  each check empties its own workspace) and make the Mac mini bundle for `main` at this entry. Trade's CHANGELOG and
+  runbook 4.2 are done. The scheduled task "CyEM rebuild: continue" was disabled by Neil at 15:37 and is still off.
+
+- Phase 6 part 4 (22 Nov, PR #81, release 2026-11-22h): spectrum by frequency and time. `app/fqt_core.py` (pure,
+  tested: band defaults, channel grid, net status, ranking) and `app/fqt_api.py` (`POST /api/emo/plan/spectrum`: levels
+  once per step on exact paths at the net's frequency, per channel overlap and dilution, own channel with hopping and a
+  hop set across the band, own, civil and Ofcom WTR clashes, best channels); Spectrum card; example key `spectrum`
+  (schema `SPECTRUM`) with vignettes 1 Salisbury Plain and 0b Suwałki; browser check `tests/ui/spectrum_check.py`.
+  224 tests pass. `main` 3041a11 deployed on the EVO (healthy, 0 restarts). Live check in private workspace p6live7
+  (emptied): the battlegroup net is denied on its own channel throughout (J/S 37 dB) and by 5 dB even as a hop set;
+  33 of 49 channels outside the 40-60 MHz barrage clear; the Bowman hopper at Suwałki denied by the barrage (J/S 3 dB);
+  WTR on real data: 9 of 49 channels in 150-175 MHz have business radio licences within 30 km of the Plain (none in
+  30-88 MHz). Phase 6 is complete. Recorded on trade (CHANGELOG, runbook 4.2).
 
 - Phase 6 part 3 (22 Nov, PR #76, release 2026-11-22f): satcom and GNSS windows. `app/satwin_core.py` (pure, tested:
   GEO look angle, slot from antenna azimuth, terrain horizon, uplink J/S, GNSS status, spans) and `app/satwin_api.py`
@@ -161,8 +177,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 6. [x] **Phase 6 part 1: amphibious ship to shore** (done 22 Nov, PRs #63, #64).
 6b. [x] **Phase 6 part 2: sub-surface exposure windows** (done 22 Nov, PRs #71 to #73).
 6c. [x] **Phase 6 part 3: satcom and GNSS windows** (done 22 Nov, PR #76; dismounted and SOF done 22 Nov, PR #67).
-6d. **Phase 6 part 4: spectrum (frequency-time)** (grey (civil) corridors done 22 Nov, PR #67) (`docs/REBUILD-PLAN.md`,
-   corridor table).
+6d. [x] **Phase 6 part 4: spectrum (frequency-time)** (done 22 Nov, PR #81; grey (civil) corridors done 22 Nov, PR #67).
 7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.
 
 ## How to work

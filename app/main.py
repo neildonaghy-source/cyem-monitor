@@ -36,6 +36,7 @@ from .met import router as met_router
 from .corridor_api import router as corridor_router
 from .exposure_api import router as exposure_router
 from .satwin_api import router as satwin_router
+from .fqt_api import router as fqt_router
 from .spectrum_store import ensure_schema
 from .prefs_api import router as prefs_router
 
@@ -147,6 +148,7 @@ app.include_router(met_router)
 app.include_router(corridor_router)
 app.include_router(exposure_router)
 app.include_router(satwin_router)
+app.include_router(fqt_router)
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 
 

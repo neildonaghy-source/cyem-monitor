@@ -7,6 +7,7 @@
   "zoom": 8,
   "params": {"df_fix_good_m": 5000},
   "corridor": {"mover": "Air ambulance (GNSS)", "to": [54.56, 23.35], "domain": "air", "alt_m": 600, "speed_kmh": 200, "step_min": 5, "note": "Worked corridor (civil): an air ambulance flies from Suwalki to Marijampole at 600 m through two-sided GNSS jamming (the road below is masked by terrain; the aircraft is not). Only jamming and the route are counted (a civil unit is not hiding); each leg names the GNSS jammers that deny it on their own, so the collateral of each side's EA shows."},
+  "spectrum": {"net": "NATO Div HQ, Bowman VHF (Augustów)", "step_min": 15, "horizon_min": 60, "note": "Worked spectrum: the division net hops across 30-88 MHz against a red barrage over 35-55 MHz. Compare its own hop set with single channels outside the barrage, step by step. No Ofcom licences outside the UK."},
   "entities": [
     {"name": "NATO Div HQ, Bowman VHF (Augustów)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 53.845, "lon": 22.98, "h_agl": 12, "freq_mhz": 42.3, "bw_khz": 25, "eirp_dbm": 47, "sidc": "SFGPUH---------", "sens_dbm": -110, "js_req_db": 0, "hop_bw_khz": 58000, "notes": "Frequency-hopping 30-88 MHz"},
     {"name": "NATO Bde HQ (Suwałki)", "side": "blue", "kind": "receiver", "net": "NATO Div HQ, Bowman VHF (Augustów)", "lat": 54.1, "lon": 22.93, "h_agl": 6, "freq_mhz": 42.3, "bw_khz": 25, "eirp_dbm": 44, "sidc": "SFGPUH---------"},

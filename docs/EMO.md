@@ -125,7 +125,26 @@ antennas up to 50 m; surface-based ducts anywhere below their top), not modelled
 Worked vignettes (the `corridor` field of an example; "Worked vignette" in the Corridor card fills it in): 1 Salisbury
 Plain (B Coy to a blocking position, ground, 10-minute layers), 3 Solent (the ship out by the Needles Channel past an
 X-band radar; choose the forecast atmosphere to see the evaporation duct flag), 6 UAS transit through GNSS jamming
-(air at 120 m, 5-minute layers, a moving jammer).
+(air at 120 m, 5-minute layers, a moving jammer), 7 Studland Bay (amphibious, the landing craft from the ship to the
+beach, 10-minute layers).
+
+### Amphibious ship to shore (phase 6 part 1, 22 Nov 2026)
+
+`domain: "amphib"`: a landing craft (nominal 15 km/h) keeps to water until the beach; land within 1 km of the landing
+point (1.5 cells at coarse grids) is allowed for the beach and its exits. Radar, sea clutter and the evaporation duct
+flag apply as at sea. With the forecast chosen: tighter limits than small craft (`met_core.LIMITS["amphib"]`: wind
+10/15 m/s, sea state 3/4, visibility 500 m; speed 90, 70 and 50% at sea states 2 to 4) and surf at the beach
+(`met_core.surf`: breaker height from the offshore wave height and period by Komar and Gaudet, kept within 0.5 to 1.5
+times the offshore height as there is no bathymetry; marginal 1.0 m, no-go 1.5 m, notional). Surf is priced on the
+cells round the landing point layer by layer, so with time layers and holding the craft can wait offshore for the surf
+to drop; a landing in no-go surf is warned. The summary's `beach` gives the surf, the craft's C2 at the beach (exact
+pairwise) and, for each receiver on the same net within 3 km of the beach (the beach party), whether it hears the
+control direct or needs the craft as a relay.
+
+In every domain, opposing communications and datalink jammers (effectors overlapping the net's band or hopset) now lower
+the unit's C2: power-summed J after the hop or bandwidth penalty against the control's signal and the net's J/S
+threshold, as in the run (`p_jam` per leg, `c2_jammers` and `max_p_jam` in the summary; the verified C2 includes it).
+Only when the unit hears a control station; a control station's own users are not re-assessed.
 
 ## Known limits
 

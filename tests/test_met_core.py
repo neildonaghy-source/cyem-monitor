@@ -133,3 +133,24 @@ def test_ground_is_slowed_never_stopped():
     r = m.platform_limits("ground", _st(snow_cm_h=4.0, visibility_m=100.0))
     assert r["status"] == "marginal" and r["speed_factor"] == 0.5
     assert m.platform_limits("ground", _st(rain_mm_h=9.0))["speed_factor"] == 0.7
+
+
+def test_breaker_height_and_surf_limits():
+    assert m.breaker_height_m(None) is None and m.breaker_height_m(0.0) == 0.0
+    assert m.breaker_height_m(1.2) == 1.2                                   # no period: breaker taken as H0
+    hb = m.breaker_height_m(1.0, 8.0)                                       # Komar and Gaudet: about 1.4 m
+    assert 1.3 < hb < 1.5
+    assert m.breaker_height_m(1.0, 30.0) == 1.5 and m.breaker_height_m(1.0, 0.5) == 0.5   # kept within 0.5 to 1.5 H0
+    assert m.surf({"source": "standard"})["status"] == "unknown"
+    assert m.surf(_st(sea={"wave_m": 0.4, "wave_period_s": 5.0}))["status"] == "go"
+    mid = m.surf(_st(sea={"wave_m": 0.9, "wave_period_s": 7.0}))
+    assert mid["status"] == "marginal" and mid["cost"] == m.LIMIT_COST["marginal"] and "surf about" in mid["reason"]
+    assert m.surf(_st(sea={"wave_m": 1.5, "wave_period_s": 8.0}))["status"] == "no-go"
+
+
+def test_landing_craft_limits_are_tighter_than_small_craft():
+    st = _st(sea={"wave_m": 1.0})                                           # sea state 3
+    sea, lc = m.platform_limits("sea", st), m.platform_limits("amphib", st)
+    assert sea["status"] == "go" and lc["status"] == "marginal" and lc["speed_factor"] < sea["speed_factor"]
+    assert m.platform_limits("amphib", _st(sea={"wave_m": 2.0}))["status"] == "no-go"
+    assert m.platform_limits("amphib", _st(wind_ms=16.0, sea={"wave_m": 0.3}))["status"] == "no-go"

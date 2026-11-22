@@ -13,6 +13,12 @@ jammers is a cost too (heaviest for air). Screening grade, the run's atmosphere;
 With the forecast chosen (phase 4 part 2), each layer also takes the met and space weather for its own time: platform
 limits (wind, gusts, sea state, cloud base, icing, visibility) price the layer and set the speed, sea clutter lowers the
 radar term over sea cells, and storms lower the J/S at which the unit's GNSS fails.
+Amphibious ship to shore (phase 6 part 1, domain "amphib"): a landing craft keeps to water until the beach (land within
+1 km of the landing point is allowed for the beach and its exits), with tighter sea-state and wind limits; surf at the
+beach is priced on the cells round the landing point layer by layer, so with time layers the craft may hold offshore
+for the surf to drop. Opposing communications jammers lower the unit's C2 in every domain (J/S against the net's
+threshold, as in the run). The beach report gives the craft's C2 there and whether the beach party on the same net
+hears the ship direct or needs the craft as a relay (exact pairwise model).
 """
 from __future__ import annotations
 
@@ -26,9 +32,10 @@ from . import met_core
 from .corridor_core import corridor_time, legs, phi, straight_cost
 
 router = APIRouter(prefix="/api/emo/plan", tags=["emo-plan"])
-SPEED = {"ground": 20.0, "sea": 25.0, "air": 150.0}
+SPEED = {"ground": 20.0, "sea": 25.0, "air": 150.0, "amphib": 15.0}
 W_DET, W_FIX, W_RADAR, W_C2 = 1.0, 2.0, 2.0, 1.0
 W_GNSS, W_GNSS_AIR = 0.5, 1.5                                  # loss of GNSS: worse for an uncrewed aircraft
+W_JAM = 1.0                                                    # own C2 lost to opposing comms EA (multiplies the C2 term)
 W_LIM = 1.0                                                    # platform limits: marginal 0.3, no-go 3 per cell (met_core.LIMIT_COST)
 
 
@@ -36,7 +43,7 @@ class CorridorIn(BaseModel):
     mover: str                                                  # entity name: the unit that moves
     to_lat: float = Field(ge=-85, le=85)
     to_lon: float = Field(ge=-180, le=180)
-    domain: str = Field(default="ground", pattern="^(ground|sea|air)$")
+    domain: str = Field(default="ground", pattern="^(ground|sea|air|amphib)$")
     speed_kmh: float | None = Field(default=None, gt=0, le=1000)
     alt_m: float | None = Field(default=None, ge=1, le=1000)   # air: height above ground (low level)
     emcon: str = Field(default="auto", pattern="^(auto|emit|silent)$")
@@ -99,6 +106,9 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
         ok = ~sea & (np.hypot(gx, gy) * 100 <= body.max_slope_pct)
     elif body.domain == "sea":
         ok = sea.copy()
+    elif body.domain == "amphib":                              # water, then the beach and its exits within 1 km of the landing point
+        near_goal = _dist_m(goal, LA, LO) <= max(1000.0, 1.5 * cell)
+        ok = sea | near_goal
     else:
         ok = np.ones(LA.shape, bool)
     for c in (s_ij, g_ij):
@@ -129,6 +139,10 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
     jams = [e for e in ents.values() if e["kind"] == "effector" and e["side"] == opp and e.get("category") == "nav"
             and e.get("eirp_dbm") is not None] if body.gnss else []
     zero = np.zeros(LA.shape)
+    beach_zone = (_dist_m(goal, LA, LO) <= max(1000.0, 1.5 * cell)) if body.domain == "amphib" else None
+    c2net = ctl if (ctl and ctl.get("eirp_dbm") is not None and ctl.get("fixed_level_dbm") is None) else None
+    cjams = [e for e in ents.values() if e["kind"] == "effector" and e["side"] == opp and e.get("category") in ("comms", "datalink")
+             and e.get("eirp_dbm") is not None and c2net and emo_api.overlap(*emo_api.victim_band(c2net), *emo_api.band(e))]
 
     async def fields(tk, posk):
         env = await env_at(tk)
@@ -156,7 +170,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
 
         # radar (air and sea units): echo margin from the one-way level, as in the run's radar picture
         p_trk, clut_max = zero, 0.0
-        if body.domain in ("air", "sea"):
+        if body.domain in ("air", "sea", "amphib"):
             rcs = mover.get("rcs_m2") or emo_api._default_rcs({**unit, "sidc": "xxA" if body.domain == "air" else "xxS"})
             tr = []
             for rd in [e for e in ents.values() if e.get("category") == "radar" and e["kind"] == "emitter" and e["side"] == opp
@@ -175,11 +189,21 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                 p_trk = 1 - np.prod([1 - v for v in tr], axis=0)
 
         # own C2: a net user hears its control; a control station reaches its weakest user
-        p_c2, c2_what = np.ones(LA.shape), "no net"
-        if ctl and emo_api.on_air(ctl, tk) and ctl.get("eirp_dbm") is not None and ctl.get("fixed_level_dbm") is None:
-            lv = sample(await emo_api.coverage_for(ctl, posk(ctl), h), LA, LO)
+        p_c2, c2_what, p_jam, jon = np.ones(LA.shape), "no net", zero, []
+        if c2net and emo_api.on_air(ctl, tk):
+            lv = np.nan_to_num(sample(await emo_api.coverage_for(ctl, posk(ctl), h), LA, LO), nan=-999, neginf=-999)
             sens = mover.get("sens_dbm") or ctl.get("sens_dbm") or p.default_sens
-            p_c2, c2_what = phi((np.nan_to_num(lv, nan=-999, neginf=-999) - sens) / sig), f"hears {ctl['name']}"
+            p_c2, c2_what = phi((lv - sens) / sig), f"hears {ctl['name']}"
+            # opposing comms EA at the unit: J/S against the net's threshold (spot against a hopper diluted, as in the run)
+            jon = [e for e in cjams if emo_api.on_air(e, tk)]
+            if jon:
+                mw = 0.0
+                for e in jon:
+                    jl = np.nan_to_num(sample(await emo_api.coverage_for(e, posk(e), h), LA, LO), nan=-999, neginf=-999)
+                    mw = mw + 10 ** ((jl - emo_api.jam_penalty(e, ctl)) / 10)
+                jsreq = ctl["js_req_db"] if ctl.get("js_req_db") is not None else p.js_req_db
+                p_jam = phi((10 * np.log10(np.maximum(mw, 1e-30)) - lv - jsreq) / sig)
+                p_c2 = p_c2 * (1 - W_JAM * p_jam)
         elif users and emits:
             worst = None
             for u in users:
@@ -212,9 +236,12 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
             c = np.where(emit, c_emit, c_sil)
         w_gnss = W_GNSS_AIR if body.domain == "air" else W_GNSS
         cost = c + W_RADAR * p_trk + w_gnss * p_gnss + W_LIM * env["lim"]["cost"]
+        if beach_zone is not None:                             # surf at the beach, this layer
+            cost = cost + W_LIM * env["surf"]["cost"] * beach_zone
         risk = np.maximum(np.where(emit, np.maximum(p_det, p_fix), 0.0), np.maximum(p_trk, p_gnss))
         return {"P": P, "p_det": p_det, "p_fix": p_fix, "p_trk": p_trk, "p_c2": p_c2, "p_gnss": p_gnss, "emit": emit,
-                "cost": cost, "risk": risk, "c2": c2_what, "jams": [e["name"] for e in on], "env": env, "clutter": clut_max}
+                "cost": cost, "risk": risk, "c2": c2_what, "jams": [e["name"] for e in on], "env": env, "clutter": clut_max,
+                "p_jam": p_jam, "c2_jams": [e["name"] for e in jon]}
 
     layers, posfs = [], []
     for k in range(K):
@@ -224,7 +251,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
         layers.append(await fields(tk, posk))
     st = lambda name: np.stack([L[name] for L in layers])                                    # noqa: E731
     COST, EMIT, RISK = st("cost"), st("emit"), st("risk")
-    PD, PF, PT, PC, PG = st("p_det"), st("p_fix"), st("p_trk"), st("p_c2"), st("p_gnss")
+    PD, PF, PT, PC, PG, PJ = st("p_det"), st("p_fix"), st("p_trk"), st("p_c2"), st("p_gnss"), st("p_jam")
 
     lay = body.step_min / mpc if body.step_min else 1e9
     r = corridor_time(COST, ok, s_ij, g_ij, lay, body.margin, wait=body.wait and K > 1, wait_cost=body.wait_cost)
@@ -249,7 +276,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
               "p_detect": _pct(max(float(PD[q(n)]) for n in idx) if tx else 0.0),
               "p_fix": _pct(max(float(PF[q(n)]) for n in idx) if tx else 0.0),
               "p_radar": _pct(max(float(PT[q(n)]) for n in idx)), "p_gnss": _pct(max(float(PG[q(n)]) for n in idx)),
-              "p_c2": _pct(min(float(PC[q(n)]) for n in idx)), "heard_by": names, "worst": _ll(LA, LO, cl(w)),
+              "p_c2": _pct(min(float(PC[q(n)]) for n in idx)), "p_jam": _pct(max(float(PJ[q(n)]) for n in idx)), "heard_by": names, "worst": _ll(LA, LO, cl(w)),
               "over_sea": bool(any(sea[cl(n)] for n in idx)), "_k": S_[w][2],
               "limits": layers[S_[w][2]]["env"]["lim"]["status"], "sea_clutter_db": layers[S_[w][2]]["clutter"],
               "gnss_space_db": layers[S_[w][2]]["env"]["space"]["gnss"]["loss_db"],
@@ -280,7 +307,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
         sub = [(0, n) for n in range(a, b + 1)]
         for x, y in legs(sub, emit_s, risk_s):
             out_legs.append(mk_leg(a + x, a + y))
-    await _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, posfs)
+    await _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, posfs, cjams)
     duct = _duct_note(emo_api._LAST.get("met") or {}, mover, h, body.domain, ents, opp, emits)
     for lg in out_legs:
         lg.pop("_k", None)
@@ -297,11 +324,18 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                "transmit_pct": round(100 * sum(x["km"] for x in moving if x["emcon"] == "transmit") / max(km, 1e-6)),
                "max_p_detect": max(x["p_detect"] for x in out_legs), "max_p_fix": max(x["p_fix"] for x in out_legs),
                "max_p_radar": max(x["p_radar"] for x in out_legs), "max_p_gnss": max(x["p_gnss"] for x in out_legs),
-               "min_p_c2": min(x["p_c2"] for x in out_legs),
+               "min_p_c2": min(x["p_c2"] for x in out_legs), "max_p_jam": max(x["p_jam"] for x in out_legs),
+               "c2_jammers": sorted({nm for L in layers for nm in L["c2_jams"]}),
                "cost": round(r["cost"], 1), "direct_cost": round(straight, 1), "cell_m": round(cell),
                "band_km2": round(float(band.sum()) * (cell / 1000) ** 2, 1), "c2": layers[0]["c2"], "sensors": [x["name"] for x in sensors],
                "gnss_jammers": sorted({nm for L in layers for nm in L["jams"]}), "duct": duct["text"] if duct else None,
                "nominal_speed_kmh": nominal, "speed_factor": factor, **_env_summary(layers, sorted({S_[n][2] for n in range(N)}), t_min, body.step_min)}
+    if body.domain == "amphib":
+        summary["beach"] = await _beach(emo_api, mover, unit, ents, ctl, p, layers, S_[N - 1][2], posfs, _ll(LA, LO, cl(N - 1)),
+                                        float(PC[q(N - 1)]), at_t(N - 1))
+        if summary["beach"]["surf"] == "no-go":
+            summary["limits_warning"] = ((summary.get("limits_warning") or "") + " Surf at the beach is outside the landing "
+                                         f"craft's limits at T+{at_t(N - 1):g} ({summary['beach']['breaker_m']:g} m).").strip()
     when = (f"through {K} time layers {body.step_min:g} min apart from T+{t_min:g} (other units move on their tracks; "
             + ("holding allowed" if body.wait else "no holding") + "), with the last run's atmosphere") if K > 1 else \
         "at one time step with the last run's atmosphere; other units frozen at T+t"
@@ -317,6 +351,11 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                         "speed, sea clutter lowers the radar term over sea cells, storms lower the GNSS failure J/S (notional "
                         "generic limits, met_core.LIMITS). " if getattr(p, "met", "standard") == "forecast" else
                         "Platform limits, sea clutter and space weather need the forecast chosen (not applied). ")
+                     + "Opposing communications jammers lower own C2 (J/S against the net's threshold). "
+                     + ("Amphibious: the landing craft keeps to water until the beach (land within 1 km of the landing "
+                        "point allowed); surf at the beach (breaker height from the offshore waves, Komar and Gaudet, no "
+                        "bathymetry) is priced on the cells round it per layer, so holding offshore for the surf to drop "
+                        "is allowed. " if body.domain == "amphib" else "")
                      + "Ground routes avoid sea and slopes over "
                      f"{body.max_slope_pct:g}%; sea routes keep to water; air routes fly a set height above ground"
                      + (f" ({h:g} m)." if body.domain == "air" else ".")}
@@ -346,7 +385,7 @@ def _env_factory(emo_api, p, domain, h, track_deg, speed_kmh):
             when = t0 + timedelta(minutes=tk)
             st = await metmod.met_state(lat, lon, when) if forecast else last
             memo[tk] = {"t": tk, "met": st, "space": spacewx_core.at_time(sw, when, lat, lon),
-                        "lim": met_core.platform_limits(domain, st, h, track_deg, speed_kmh)}
+                        "lim": met_core.platform_limits(domain, st, h, track_deg, speed_kmh), "surf": met_core.surf(st)}
         return memo[tk]
     return env_at
 
@@ -390,9 +429,9 @@ def _duct_note(met: dict, mover: dict, h: float, domain: str, ents: dict, opp: s
     return {"text": "; ".join(out) + ".", "anywhere": anywhere} if out else None
 
 
-async def _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, posfs):
+async def _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, posfs, cjams=()):
     """Exact pairwise check at each leg's worst point, with the other units where they are at that time: detection
-    by each sensor, and own C2 there."""
+    by each sensor, and own C2 there (less the chance an opposing comms jammer denies it)."""
     pr = lambda m: int(round(50 * (1 + math.erf(m / (p.sigma_db * math.sqrt(2))))))     # noqa: E731
     for lg in out_legs:
         pos = posfs[lg["_k"]]
@@ -403,10 +442,69 @@ async def _verify(emo_api, mover, unit, out_legs, sensors, ctl, p, emits, posfs)
             for x in sensors:
                 lv = await emo_api.p2p_level(here, at, x, pos(x))
                 det.append(pr(lv - (x.get("sens_dbm") or p.default_sens)))
-        c2 = None
+        c2 = jam = None
         if ctl and ctl["active"] and ctl.get("eirp_dbm") is not None and ctl.get("fixed_level_dbm") is None:
-            c2 = pr(await emo_api.p2p_level(ctl, pos(ctl), here, at) - (mover.get("sens_dbm") or ctl.get("sens_dbm") or p.default_sens))
-        lg["verified"] = {"p_detect": max(det) if det else 0, "p_c2": c2}
+            S = await emo_api.p2p_level(ctl, pos(ctl), here, at)
+            c2 = pr(S - (mover.get("sens_dbm") or ctl.get("sens_dbm") or p.default_sens))
+            jam = await _p_jam(emo_api, ctl, here, at, S, [e for e in cjams if e["active"]], pos, p)
+            if jam is not None:
+                c2 = int(round(c2 * (1 - W_JAM * jam / 100)))
+        lg["verified"] = {"p_detect": max(det) if det else 0, "p_c2": c2, "p_jam": jam}
+
+
+async def _p_jam(emo_api, ctl, here, at, S, jams, pos, p) -> int | None:
+    """Chance (%) the opposing comms jammers deny the net at a point: power-summed J (after the hop or bandwidth
+    penalty) over the signal S there, against the net's J/S threshold. None when no jammer applies."""
+    if not jams:
+        return None
+    mw = 0.0
+    for e in jams:
+        mw += 10 ** ((await emo_api.p2p_level(e, pos(e), here, at) - emo_api.jam_penalty(e, ctl)) / 10)
+    jsreq = ctl["js_req_db"] if ctl.get("js_req_db") is not None else p.js_req_db
+    m = 10 * math.log10(max(mw, 1e-30)) - S - jsreq
+    return int(round(50 * (1 + math.erf(m / (p.sigma_db * math.sqrt(2))))))
+
+
+async def _beach(emo_api, mover, unit, ents, ctl, p, layers, k, posfs, at, p_c2_grid, t_arr) -> dict:
+    """Ship to shore at the landing point, at the arrival layer: surf, the craft's C2 there (exact), and for each
+    receiver of the same net within 3 km of the beach (the beach party) whether it hears the control direct or
+    needs the craft as a relay (the craft hears the control and is within 3 km)."""
+    from .link_core import haversine_m
+    env = layers[k]["env"]
+    pos = posfs[k]
+    out = {"at": at, "t": t_arr, "surf": env["surf"]["status"], "breaker_m": env["surf"]["breaker_m"],
+           "surf_reason": env["surf"]["reason"], "p_c2_grid": _pct(p_c2_grid), "control": ctl["name"] if ctl else None,
+           "party": [], "text": ""}
+    if not (ctl and ctl.get("eirp_dbm") is not None and ctl.get("fixed_level_dbm") is None):
+        out["text"] = "No control station for the craft's net: beach C2 not assessed."
+        return out
+    sens = lambda u: u.get("sens_dbm") or ctl.get("sens_dbm") or p.default_sens                      # noqa: E731
+    pr = lambda m: int(round(50 * (1 + math.erf(m / (p.sigma_db * math.sqrt(2))))))              # noqa: E731
+    here = {**unit, "id": f"corr:{mover['id']}:beach", "updated_at": f"{mover['updated_at']}|beach"}
+    craft = pr(await emo_api.p2p_level(ctl, pos(ctl), here, tuple(at)) - sens(mover))
+    out["p_c2"] = craft
+    party = [u for u in ents.values() if u.get("net") == ctl["id"] and u["kind"] == "receiver" and u["id"] != mover["id"]
+             and haversine_m(*pos(u), *at) <= 3000]
+    for u in party:
+        direct = pr(await emo_api.p2p_level(ctl, pos(ctl), u, pos(u)) - sens(u))
+        relay = None
+        if mover.get("eirp_dbm") is not None:
+            relay = pr(await emo_api.p2p_level(here, tuple(at), u, pos(u)) - sens(u))
+        out["party"].append({"name": u["name"], "direct_pct": direct, "via_craft_pct": relay,
+                             "needs_relay": direct < 50 and (relay or 0) >= 50})
+    bits = [f"Landing craft hears {ctl['name']} at the beach: {craft}%."]
+    for x in out["party"]:
+        if x["direct_pct"] >= 50:
+            bits.append(f"{x['name']} hears it direct ({x['direct_pct']}%).")
+        elif x["needs_relay"]:
+            bits.append(f"{x['name']} does not hear it direct ({x['direct_pct']}%): relay through the craft "
+                        f"({x['via_craft_pct']}% from the beach, the craft {craft}% to the ship).")
+        else:
+            bits.append(f"{x['name']} does not hear it direct ({x['direct_pct']}%) and the craft is no relay "
+                        f"({x['via_craft_pct'] if x['via_craft_pct'] is not None else 'receive only'}).")
+    bits.append(env["surf"]["reason"][0].upper() + env["surf"]["reason"][1:] + ".")
+    out["text"] = " ".join(bits)
+    return out
 
 
 def _dist_m(a, LA, LO):

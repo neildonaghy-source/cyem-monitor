@@ -128,8 +128,8 @@ def check(ex: dict, stem: str | None = None) -> list[str]:
             err.append(f"corridor: mover '{c.get('mover')}' is not an entity in this example")
         if not _latlon(c.get("to")):
             err.append("corridor: 'to' must be [lat, lon]")
-        if c.get("domain") not in ("ground", "sea", "air"):
-            err.append("corridor: domain must be ground, sea or air")
+        if c.get("domain") not in ("ground", "sea", "air", "amphib"):
+            err.append("corridor: domain must be ground, sea, air or amphib")
     return err
 
 

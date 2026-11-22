@@ -97,6 +97,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
   `met_core.sea_state/sea_clutter_db/platform_limits` (notional `LIMITS`), `met.met_grid` + `GET /api/met/grid` (met map
   layer, batched Open-Meteo, shares `met_cache`). Space weather applies only with `met="forecast"` (`SPACE` contextvar in
   `emo_api.run`). Corridors take met, limits, clutter and space weather per layer (`corridor_api._env_factory`).
+- Corridors on foot and for civil units (22 Nov 2026): domain `foot` (`SLOPE`, `met_core.battery_factor`), grey movers
+  (jamming only, `jammed_by`, `collateral`), `reach()` stretches jammer and radar compute radii to the grid's far corner.
 - EMO examples (22 Nov 2026, finding 13): JSON in `data/emo_examples/`, checked by `app/emo_examples.check` on load
   (bad files left out and logged); `tests/test_emo_examples.py` must stay green. Notional values only.
 - Amphibious (phase 6 part 1, 22 Nov 2026): corridor domain `amphib` (water to the beach, land only within 1 km of it),

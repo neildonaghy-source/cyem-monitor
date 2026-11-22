@@ -5,6 +5,7 @@
   "about": "Blue HQ in the Usk valley and a directional hilltop relay; red ES/DF on high ground and in a valley. Drag the HQ up the hillside or turn the relay: exposure and fixes change. The EMCON siting lesson.",
   "centre": [51.96, -3.45],
   "zoom": 10,
+  "corridor": {"mover": "Blue patrol", "to": [51.93, -3.42], "domain": "foot", "step_min": 15, "note": "Worked corridor (dismounted): the patrol moves on foot towards the hill relay's valley, keeping in dead ground from the red ES/DF on the high ground and in the valley and going silent where a fix is likely. With the forecast chosen, cold weather lowers battery endurance."},
   "entities": [
     {"name": "Blue HQ (valley)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 51.947, "lon": -3.39, "h_agl": 6, "freq_mhz": 62.3, "bw_khz": 25, "eirp_dbm": 44, "sidc": "SFGPUH---------", "sens_dbm": -110, "js_req_db": 0},
     {"name": "Blue patrol", "side": "blue", "kind": "receiver", "net": "Blue HQ (valley)", "lat": 51.99, "lon": -3.55, "h_agl": 2, "freq_mhz": 62.3, "bw_khz": 25, "eirp_dbm": 37, "sidc": "SFGPUCI--------", "radius_km": 15, "track": [[51.96, -3.47], [51.93, -3.42]], "speed_kmh": 5},

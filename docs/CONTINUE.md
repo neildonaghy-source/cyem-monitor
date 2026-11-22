@@ -3,6 +3,12 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
+## In progress: do not start (22 Nov 2026, 15:40 UTC)
+
+- Phase 6c (satcom and GNSS windows) is being done in an interactive session with Neil, started 15:40 UTC. A
+  scheduled run that finds this section must not start 6c or any other slice: report that an interactive session
+  holds the rebuild and stop. The interactive session removes this section when 6c is merged, deployed and recorded.
+
 ## Where things are (22 Nov 2026, 14:50 UTC)
 
 - Phase 6 part 2 (22 Nov, PRs #71 to #73, release 2026-11-22e): sub-surface exposure windows. `app/exposure_core.py`

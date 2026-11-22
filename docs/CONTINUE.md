@@ -3,7 +3,21 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 13:50 UTC)
+## Where things are (22 Nov 2026, 14:50 UTC)
+
+- Phase 6 part 2 (22 Nov, PRs #71 to #73, release 2026-11-22e): sub-surface exposure windows. `app/exposure_core.py`
+  (pure, tested: notional `MASTS`, combine, reach, dwell, `windows`, HF groundwave rule `hf_groundwave_p` with
+  `hf_range_km` scaled by power) and `app/exposure_api.py` (`POST /api/emo/plan/exposure`; radar on the raised mast with
+  sea clutter, ES and DF on its transmission, the link it needs, water the boat can reach per layer; each window's best
+  cell verified). Exposure button and card in the EMO dock (power override). Example 8 the North Minch
+  (`subsurface-minches`, notional) with an `exposure` vignette (schema `emo_examples.EXPOSURE`). Corridors now respect
+  sensors' on-station schedules. 205 tests pass. `main` f782219 deployed on the EVO (healthy, 0 restarts). Live checks
+  in private workspaces p6live3 to p6live5 (emptied): UHF at 26 dBm one window T+60 to T+120 in the MPA's gap (best 9%,
+  verified detection 7%, link 100%); at the profile's 40 dBm none (red ESM hears it across the area); periscope clear
+  throughout; HF none at 47 dBm, a window in the gap at 20 dBm; 25 s per search on 1 km cells. From trade on 2026-11-22e
+  (`~/cyemui/20261122e`): ui_audit 45 PASS, 0 issues; corridor_check 12 PASS. Recorded on trade (CHANGELOG, runbook 4.2)
+  and on the Mac mini (`cyem-monitor-20261122-main-f782219.bundle`, clone-verified, README updated; older bundles kept).
+  Done in an interactive session at Neil's "Continue".
 
 - Corridors on foot and for civil units (22 Nov, PR #67, release 2026-11-22c): the dismounted half of 6c and the civil
   half of 6d. Domain `foot` (4 km/h, slopes to 60%, `met_core.battery_factor` with the forecast), grey movers (jamming
@@ -132,8 +146,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    HF availability and GNSS degradation per time step (space weather), sea clutter factor and platform limits (wind,
    sea state, cloud base, icing) feeding the corridor cost.
 6. [x] **Phase 6 part 1: amphibious ship to shore** (done 22 Nov, PRs #63, #64).
-6b. **Phase 6 part 2: sub-surface exposure windows** (where and when masts can be raised for HF, UHF or satcom without
-   red radar, ESM or maritime patrol aircraft detection; first vignette NW Scotland, the Minches).
+6b. [x] **Phase 6 part 2: sub-surface exposure windows** (done 22 Nov, PRs #71 to #73).
 6c. **Phase 6 part 3: satcom and GNSS windows** (dismounted and SOF done 22 Nov, PR #67: domain `foot`).
 6d. **Phase 6 part 4: spectrum (frequency-time)** (grey (civil) corridors done 22 Nov, PR #67) (`docs/REBUILD-PLAN.md`,
    corridor table).

@@ -1,0 +1,18 @@
+{
+  "id": "cuas-vs-datalink",
+  "order": 10,
+  "title": "5. C-UAS against a UAS datalink (Salisbury Plain)",
+  "about": "Red UAV flies an approach towards a blue position; blue C-UAS effector and ES. Watch J/S at the red UAV rise as it closes and the blue ES fix its ground station.",
+  "centre": [51.22, -1.95],
+  "zoom": 11,
+  "entities": [
+    {"name": "Red UAS GCS", "side": "red", "kind": "emitter", "category": "datalink", "lat": 51.235, "lon": -2.07, "h_agl": 10, "freq_mhz": 2200, "bw_khz": 5000, "eirp_dbm": 40, "sidc": "SHGPUUS--------", "sens_dbm": -95, "js_req_db": 6},
+    {"name": "Red UAV", "side": "red", "kind": "receiver", "net": "Red UAS GCS", "lat": 51.23, "lon": -2.05, "h_agl": 300, "freq_mhz": 2200, "bw_khz": 5000, "eirp_dbm": 30, "sidc": "SHAPMFQ--------", "track": [[51.225, -1.95], [51.22, -1.88]], "speed_kmh": 80},
+    {"name": "Blue C-UAS", "side": "blue", "kind": "effector", "category": "cuas", "lat": 51.22, "lon": -1.88, "h_agl": 5, "freq_mhz": 2300, "bw_khz": 200000, "eirp_dbm": 50, "sidc": "SFGPUUMSEJ-----", "radius_km": 15},
+    {"name": "Blue ES/DF 1", "side": "blue", "kind": "sensor", "category": "df", "lat": 51.26, "lon": -1.86, "h_agl": 10, "freq_mhz": 2000, "f_hi_mhz": 2500, "bw_khz": 25, "sens_dbm": -110, "df_rms_deg": 2, "sidc": "SFGPUUMSED-----"},
+    {"name": "Blue ES/DF 2", "side": "blue", "kind": "sensor", "category": "df", "lat": 51.17, "lon": -1.86, "h_agl": 10, "freq_mhz": 2000, "f_hi_mhz": 2500, "bw_khz": 25, "sens_dbm": -110, "df_rms_deg": 2, "sidc": "SFGPUUMSED-----"},
+    {"name": "Civil drone controller", "side": "grey", "kind": "emitter", "category": "datalink", "lat": 51.2, "lon": -1.86, "h_agl": 2, "freq_mhz": 2440, "bw_khz": 20000, "eirp_dbm": 20, "sidc": "SNGPU----------", "sens_dbm": -90, "js_req_db": 6},
+    {"name": "Civil hobby drone", "side": "grey", "kind": "receiver", "net": "Civil drone controller", "lat": 51.205, "lon": -1.855, "h_agl": 60, "freq_mhz": 2440, "bw_khz": 20000, "eirp_dbm": 20, "sidc": "SNAPCF---------"},
+    {"name": "Wi-Fi hotspot (farm)", "side": "grey", "kind": "emitter", "category": "other", "lat": 51.215, "lon": -1.89, "h_agl": 5, "freq_mhz": 2437, "bw_khz": 20000, "eirp_dbm": 20, "sidc": "SNGPU----------"}
+  ]
+}

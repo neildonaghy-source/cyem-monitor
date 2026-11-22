@@ -76,6 +76,11 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 
 - Unit and scenario: `docker run --rm -v "$PWD":/src:ro -w /src python:3.12-slim sh -c "pip install -q -r requirements.txt pytest; python -m pytest -q tests --ignore=tests/ui"`
   (scenario tests run every example on synthetic terrain with a throw-away database; no network needed)
+- Examples (finding 13, 22 Nov 2026): one JSON file per example in `data/emo_examples/<id>.json` (`id` matches the file
+  name, `order` sets the place in the list, `net` names another entity in the same file, optional `params` and
+  `corridor`). `app/emo_examples.py` checks each file on load; a file that fails is left out (logged) rather than
+  breaking the list. `tests/test_emo_examples.py` fails on any error and runs every entity through `EntityIn`. Notional
+  values only. To add one: copy a file, edit, run the tests.
 - Sanitiser (headless Chromium, no server): `python3 tests/ui/sanitize_check.py`
 - Browser smoke (on the box, private workspace, ~3 min): `bash tests/ui/run.sh`
 

@@ -1,0 +1,20 @@
+{
+  "id": "uas-gnss",
+  "order": 9,
+  "title": "6. UAS transit through GNSS jamming (Salisbury Plain)",
+  "about": "A blue UAS transits west from its ground station to observe a red position on Imber. Red has a fixed GNSS jammer on the high ground, a second on a vehicle moving along the road to the south, an ES/DF pair on the datalink band and a short-range air-defence radar. The worked corridor finds a route and timing that keeps the UAV's GNSS, its datalink to the GCS and its exposure to red ES and radar within bounds.",
+  "centre": [51.215, -1.95],
+  "zoom": 11,
+  "corridor": {"mover": "Blue UAV", "to": [51.25, -2.035], "domain": "air", "alt_m": 120, "step_min": 5, "speed_kmh": 100, "note": "Worked corridor (air): the UAV flies at 120 m to an observation point north of Imber. Five-minute layers: the vehicle jammer moves along the road, so the planner weighs GNSS denial, the datalink back to the GCS, red DF and the SHORAD radar leg by leg."},
+  "entities": [
+    {"name": "Blue UAS GCS", "side": "blue", "kind": "emitter", "category": "datalink", "lat": 51.2, "lon": -1.8, "h_agl": 5, "freq_mhz": 2350, "bw_khz": 5000, "eirp_dbm": 40, "sidc": "SFGPUUS--------", "sens_dbm": -95, "js_req_db": 6},
+    {"name": "Blue UAV", "side": "blue", "kind": "receiver", "net": "Blue UAS GCS", "lat": 51.205, "lon": -1.83, "h_agl": 120, "freq_mhz": 2350, "bw_khz": 5000, "eirp_dbm": 30, "sidc": "SFAPMFQ--------"},
+    {"name": "GPS L1 (space)", "side": "blue", "kind": "emitter", "category": "nav", "lat": 51.215, "lon": -1.95, "h_agl": 0, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SFGPUUS--------", "fixed_level_dbm": -128, "js_req_db": 35, "sens_dbm": -140},
+    {"name": "Blue UAV nav (GNSS)", "side": "blue", "kind": "receiver", "net": "GPS L1 (space)", "lat": 51.205, "lon": -1.83, "h_agl": 120, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": null, "sidc": "SFAPMFQ--------"},
+    {"name": "Red GNSS jammer (Imber)", "side": "red", "kind": "effector", "category": "nav", "lat": 51.24, "lon": -1.99, "h_agl": 3, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": 23, "sidc": "SHGPUUMSEJ-----", "radius_km": 25, "notes": "200 mW EIRP on high ground"},
+    {"name": "Red GNSS jammer (vehicle)", "side": "red", "kind": "effector", "category": "nav", "lat": 51.16, "lon": -2.06, "h_agl": 2, "freq_mhz": 1575.42, "bw_khz": 2046, "eirp_dbm": 20, "sidc": "SHGPUUMSEJ-----", "radius_km": 20, "track": [[51.185, -1.93]], "speed_kmh": 40, "notes": "100 mW EIRP, moving east along the road"},
+    {"name": "Red ES/DF 1", "side": "red", "kind": "sensor", "category": "df", "lat": 51.275, "lon": -2.07, "h_agl": 12, "freq_mhz": 2000, "f_hi_mhz": 2500, "bw_khz": 25, "sens_dbm": -110, "df_rms_deg": 2, "sidc": "SHGPUUMSED-----"},
+    {"name": "Red ES/DF 2", "side": "red", "kind": "sensor", "category": "df", "lat": 51.16, "lon": -2.11, "h_agl": 12, "freq_mhz": 2000, "f_hi_mhz": 2500, "bw_khz": 25, "sens_dbm": -110, "df_rms_deg": 2, "sidc": "SHGPUUMSED-----"},
+    {"name": "Red SHORAD radar", "side": "red", "kind": "emitter", "category": "radar", "lat": 51.225, "lon": -2.08, "h_agl": 6, "freq_mhz": 9400, "bw_khz": 10000, "eirp_dbm": 80, "sidc": "SHGPUUS--------", "notes": "Short-range air defence, X band, peak EIRP"}
+  ]
+}

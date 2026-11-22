@@ -132,7 +132,7 @@ async def plan_exposure(body: ExposureIn, t_min: float = 0):
         for x in [x for x in sensors if emo_api.on_air(x, tk)]:            # sensors keep their on-station schedules
             a = posk(x)
             if mast["freq_mhz"] < 20:                              # HF: groundwave screening rule (coverage starts at 20 MHz)
-                P[x["name"]] = xc.hf_groundwave_p(_dist_m(a, LA, LO) / 1000)
+                P[x["name"]] = xc.hf_groundwave_p(_dist_m(a, LA, LO) / 1000, xc.hf_range_km(mast["eirp_dbm"]))
                 continue
             cov = await emo_api.coverage_for(_pseudo(here_base, x, a, mast["eirp_dbm"], far(a)), a, h)
             lv = np.nan_to_num(sample(cov, LA, LO), nan=-999, neginf=-999)
@@ -231,7 +231,7 @@ async def plan_exposure(body: ExposureIn, t_min: float = 0):
              "same cell clear for the whole dwell and the link at 50% or better; the boat reaches only the water it can "
              f"cover at {body.speed_kmh:g} km/h by each layer. Best cells re-checked with the exact pairwise model. "
              "No bathymetry (all water taken as deep enough), no acoustic, visual or wake detection. "
-             + (f"HF: a groundwave screening rule (heard by opposing HF ES out to about {xc.HF_GW_KM:g} km over the sea, "
+             + (f"HF: a groundwave screening rule (heard by opposing HF ES out to about {xc.hf_range_km(mast['eirp_dbm']):.0f} km over the sea, "
                 "notional); skywave interception by distant ES is not modelled. " if body.mast == "hf" else "")
              + ("Satcom: the satellite is assumed in view and the uplink's upward beam is not modelled. " if body.mast == "satcom" else "")
              + ("Sea state and space weather from the forecast. " if getattr(p, "met", "standard") == "forecast"
@@ -259,7 +259,7 @@ async def _verify(emo_api, here_base, at, sensors, c2net, cjams, p, pos, mover, 
             continue
         if (here_base.get("freq_mhz") or 0) < 20:                # HF: the same groundwave rule as the grid
             from .link_core import haversine_m
-            det.append(int(round(100 * float(xc.hf_groundwave_p(haversine_m(*at, *pos(x)) / 1000)))))
+            det.append(int(round(100 * float(xc.hf_groundwave_p(haversine_m(*at, *pos(x)) / 1000, xc.hf_range_km(here_base.get("eirp_dbm")))))))
             continue
         det.append(pr(await emo_api.p2p_level(here, at, x, pos(x)) - (x.get("sens_dbm") or p.default_sens)))
     link = jam = None

@@ -122,3 +122,8 @@ def test_minches_vignette_plans(emo, monkeypatch):
 def test_hf_groundwave_rule():
     p = xc.hf_groundwave_p(np.array([0.0, 200.0, 250.0, 320.0, 400.0]))
     assert p[0] == 1.0 and p[1] == 1.0 and abs(p[2] - 0.5) < 1e-9 and p[3] == 0.0 and p[4] == 0.0
+
+
+def test_hf_range_scales_with_power():
+    assert xc.hf_range_km(None) == xc.hf_range_km(47) == 250.0
+    assert xc.hf_range_km(37) == 125.0 and xc.hf_range_km(57) == 500.0 and xc.hf_range_km(-10) == 10.0

@@ -12,9 +12,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   EVO (healthy, 0 restarts). Live check in private workspace p6live6 (emptied): 0c raid satcom slot 18.5 E, elevation
   13.4 deg, terrain clear, uplink jammer J/S 15 dB, window T+40 to T+60; fighters' GNSS denied throughout, UAV windows
   T+0-20 and T+40-120, landing craft clear; A303 users hold (Larkhill degraded from T+20); Salisbury Plain satcom clear at
-  30.9 deg. Recorded on trade (CHANGELOG, runbook 4.2) and on the Mac mini (bundle of the `main` that includes this entry;
-  see README there). Done in an interactive session with Neil; the scheduled task was disabled at 15:37 while it ran
-  (an "in progress" section in this file held off scheduled runs; removed now).
+  30.9 deg. Recorded on trade (CHANGELOG, runbook 4.2) and on the Mac mini (`cyem-monitor-20261122-main-bcd1a29.bundle`, clone-verified, README updated; older bundles kept).
+  Follow-ups: PR #78 `tests/ui/windows_check.py` (private workspace wincheck1, emptied) and PR #79 (the card listed sector
+  radars as terminals; release 2026-11-22g, `main` bcd1a29 deployed). From trade (`~/cyemui/20261122f`): windows_check 8
+  PASS, corridor_check 12 PASS, ui_audit 45 PASS, 0 FAIL. Done in an interactive session with Neil; the scheduled task
+  was disabled at 15:37 while it ran and is still off (turn it back on when wanted).
 
 - Phase 6 part 2 (22 Nov, PRs #71 to #73, release 2026-11-22e): sub-surface exposure windows. `app/exposure_core.py`
   (pure, tested: notional `MASTS`, combine, reach, dwell, `windows`, HF groundwave rule `hf_groundwave_p` with

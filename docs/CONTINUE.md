@@ -3,7 +3,21 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 03:30 UTC)
+## Where things are (22 Nov 2026, 13:45 UTC)
+
+- Phase 6 part 1 (22 Nov, PRs #63, #64, release 2026-11-22b): amphibious ship to shore. Corridor domain `amphib`
+  (landing craft keeps to water; land only within 1 km of the landing point), `met_core.LIMITS["amphib"]`,
+  `breaker_height_m` and `surf` (priced round the landing point per layer, so the craft can hold offshore), summary
+  `beach` (craft C2 at the beach, beach party direct or relay through the craft, all with jamming), opposing comms EA
+  lowers corridor C2 in every domain (`p_jam`, `c2_jammers`). Example 7 Studland Bay (`amphib-studland`, notional)
+  with a worked vignette; Corridor card has the Amphibious option and a beach line. 193 tests pass. `main` c7319c0
+  deployed on the EVO (healthy, 0 restarts). Live check in private workspace p6live1 (emptied): vignette 4.9 km, silent
+  throughout, Durlston radar 94% on the outer leg (65% with the forecast's 10.6 dB sea clutter), Swanage jammer denies
+  up to 58% on the inner leg, beach C2 80%, beach party hears the ship direct (95%); with today's forecast (1.3 m,
+  5.3 s) sea state 4 is no-go for the craft (speed halved) and the surf marginal (1.48 m). From trade: corridor_check
+  12 PASS on 2026-11-22b. Recorded on trade (CHANGELOG, runbook 4.2) and on the Mac mini
+  (`cyem-monitor-20261122-main-c7319c0.bundle`, clone-verified, README updated; older bundles kept). The phase 4
+  part 2 records were finished by another session at 12:31 (PR #62) while this run started.
 
 - Phase 4 part 2 (22 Nov, PR #60, release 2026-11-22a): `spacewx_core.py` (HF and GNSS by time step from the SWPC
   scales, only with the forecast chosen), `met_core` sea state, sea clutter and platform limits (notional `LIMITS`),
@@ -105,8 +119,11 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 5. [x] **Phase 4 part 2** (done 22 Nov, PRs #60, #61): met layer on the map,
    HF availability and GNSS degradation per time step (space weather), sea clutter factor and platform limits (wind,
    sea state, cloud base, icing) feeding the corridor cost.
-6. **Phase 6**: amphibious, sub-surface exposure windows, dismounted and SOF, spectrum (frequency-time), satcom and
-   GNSS windows, grey (civil) corridors (`docs/REBUILD-PLAN.md`, corridor table).
+6. [x] **Phase 6 part 1: amphibious ship to shore** (done 22 Nov, PRs #63, #64).
+6b. **Phase 6 part 2: sub-surface exposure windows** (where and when masts can be raised for HF, UHF or satcom without
+   red radar, ESM or maritime patrol aircraft detection; first vignette NW Scotland, the Minches).
+6c. **Phase 6 part 3: dismounted and SOF infiltration, and satcom and GNSS windows**.
+6d. **Phase 6 part 4: spectrum (frequency-time) and grey (civil) corridors** (`docs/REBUILD-PLAN.md`, corridor table).
 7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.
 
 ## How to work

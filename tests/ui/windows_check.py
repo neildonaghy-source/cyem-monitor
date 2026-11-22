@@ -38,7 +38,7 @@ async def main():
         rec("scenario runs", bool(chip), chip or "")
         await pg.click("[data-dock=windows]")
         terms = await pg.evaluate("() => [...document.querySelectorAll('#win-term option')].map(o => o.textContent)")
-        rec("card lists satcom terminals", "Blue raid SATCOM" in terms, ", ".join(terms[:4]))
+        rec("card lists satcom terminals, not radars", "Blue raid SATCOM" in terms and not any("radar" in t for t in terms), ", ".join(terms[:4]))
         await pg.select_option("#win-term", label="Blue raid SATCOM")
         await pg.fill("#win-hor", "120")
         await pg.click("#win-go")

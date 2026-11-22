@@ -34,11 +34,13 @@ REQUIRED = ("name", "side", "kind", "lat", "lon", "freq_mhz")
 ENUMS = {"side": ("blue", "red", "grey"), "kind": ("emitter", "receiver", "sensor", "effector"),
          "pattern": ("omni", "sector"), "ea_mode": ("noise", "spoof")}
 TOP = {"id": (str,), "order": (int,), "title": (str,), "about": (str,), "centre": (list,), "zoom": (int,),
-       "params": (dict,), "corridor": (dict,), "entities": (list,)}
+       "params": (dict,), "corridor": (dict,), "exposure": (dict,), "entities": (list,)}
 TOP_REQUIRED = ("id", "title", "about", "centre", "zoom", "entities")
 CORRIDOR = {"mover": (str,), "to": (list,), "domain": (str,), "step_min": NUM, "alt_m": NUM, "speed_kmh": NUM,
             "note": (str,)}
-SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR}
+EXPOSURE = {"mover": (str,), "mast": (str,), "dwell_min": NUM, "step_min": NUM, "layers": (int,), "radius_km": NUM,
+            "speed_kmh": NUM, "threshold": NUM, "note": (str,)}
+SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR, "exposure": EXPOSURE}
 
 
 def _latlon(p) -> bool:
@@ -130,6 +132,17 @@ def check(ex: dict, stem: str | None = None) -> list[str]:
             err.append("corridor: 'to' must be [lat, lon]")
         if c.get("domain") not in ("ground", "sea", "air", "amphib", "foot"):
             err.append("corridor: domain must be ground, sea, air, amphib or foot")
+    x = ex.get("exposure")
+    if x is not None:
+        for k, v in x.items():
+            if k not in EXPOSURE:
+                err.append(f"exposure: unknown field '{k}'")
+            elif not _typed(v, EXPOSURE[k]):
+                err.append(f"exposure: '{k}' has the wrong type")
+        if x.get("mover") not in names:
+            err.append(f"exposure: mover '{x.get('mover')}' is not an entity in this example")
+        if x.get("mast", "uhf") not in ("periscope", "uhf", "satcom", "hf"):
+            err.append("exposure: mast must be periscope, uhf, satcom or hf")
     return err
 
 

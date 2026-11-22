@@ -14,7 +14,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   6.4 C; Suwałki air ambulance GNSS 96% denied, both red mast jammers named; Studland unchanged (4.9 km, radar 94%).
   Built in a second, interactive session while the scheduled run did part 1; Neil chose to port it on top of part 1
   (its own amphibious version dropped; branch `wip/phase6-foot-grey-session2` kept unmerged for reference). Recorded
-  on trade (CHANGELOG, runbook 4.2) and on the Mac mini (see the bundle line below once made).
+  on trade (CHANGELOG, runbook 4.2) and on the Mac mini (`cyem-monitor-20261122-main-75a83f6.bundle`, clone-verified,
+  README updated; older bundles kept). From trade on 2026-11-22c: corridor_check 12 PASS, ui_audit 45 PASS, 0 FAIL.
 
 - Phase 6 part 1 (22 Nov, PRs #63, #64, release 2026-11-22b): amphibious ship to shore. Corridor domain `amphib`
   (landing craft keeps to water; land only within 1 km of the landing point), `met_core.LIMITS["amphib"]`,

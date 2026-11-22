@@ -3,7 +3,18 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 03:00 UTC)
+## Where things are (22 Nov 2026, 03:30 UTC)
+
+- Phase 4 part 2 (22 Nov, PR #60, release 2026-11-22a): `spacewx_core.py` (HF and GNSS by time step from the SWPC
+  scales, only with the forecast chosen), `met_core` sea state, sea clutter and platform limits (notional `LIMITS`),
+  corridors take met, limits, clutter and space weather per layer, met map layer (`GET /api/met/grid`, layer "Met:
+  refraction, rain, ducts", off by default), Space weather card and timeline line. 185 tests pass. `main` 24f8779
+  deployed on the EVO (healthy, 0 restarts). Live check in private workspace p4live1 (emptied): met grid 12 points in
+  0.3 s (cached 0.01 s); Solent corridor sea state 3, speed 22.5 of 25 km/h, clutter 7.1 dB; UAS corridor marginal on
+  low cloud (162 m against 120 m), tailwind 122 km/h ground speed; space weather quiet (G0 R0 S0). From trade:
+  ui_audit 45 PASS, 0 FAIL, phone 0 issues. **Still to do (the MacBook link dropped at 03:30):** corridor_check
+  (`~/cyemui/20261122/corridor_check.py` on trade, the new copy), the trade CHANGELOG and runbook 4.2 entry, and the Mac
+  mini bundle for 24f8779. The next run does these first.
 
 - Finding 13 (22 Nov, PRs #57, #58): the 11 EMO examples are JSON files in `data/emo_examples/<id>.json`, checked on
   load by `app/emo_examples.check` (bad files left out and logged); `tests/test_emo_examples.py`; 167 tests pass.
@@ -91,9 +102,9 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    2026-11-20b: the MacBook link dropped. Optional: remove the Airspy HF+ and SDRPlay entries from OpenWebRX+ on trade.
 4. [x] **Finding 13** (done 22 Nov, PRs #57, #58): scenarios moved from `app/emo_examples.py` to
    `data/emo_examples/*.json` with a schema check on load and `tests/test_emo_examples.py`.
-5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
-   degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
-   icing) feeding the corridor cost.
+5. [x] **Phase 4 part 2** (merged and deployed 22 Nov, PR #60; records pending, see the top): met layer on the map,
+   HF availability and GNSS degradation per time step (space weather), sea clutter factor and platform limits (wind,
+   sea state, cloud base, icing) feeding the corridor cost.
 6. **Phase 6**: amphibious, sub-surface exposure windows, dismounted and SOF, spectrum (frequency-time), satcom and
    GNSS windows, grey (civil) corridors (`docs/REBUILD-PLAN.md`, corridor table).
 7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.

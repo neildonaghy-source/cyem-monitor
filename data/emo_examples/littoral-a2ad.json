@@ -6,6 +6,7 @@
   "centre": [67.95, 13.8],
   "zoom": 8,
   "params": {"df_fix_good_m": 3000},
+  "corridor": {"mover": "Blue landing craft (UHF)", "to": [68.12, 13.93], "domain": "amphib", "ashore": "foot", "step_min": 15, "note": "Worked corridor (amphibious): the landing craft runs in from the LPD past the red coastal radars and patrol boat ES, lands the raid team and the team moves on foot to the objective. The planner tries the landing points nearest the objective and keeps the cheapest sea leg plus move ashore; surf, the evaporation duct and C2 ashore (relay) are reported. Choose the forecast atmosphere and run first to apply sea state, surf and space weather."},
   "entities": [
     {"name": "Blue LPD (UHF net)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 67.75, "lon": 13.0, "h_agl": 25, "freq_mhz": 252.4, "bw_khz": 25, "eirp_dbm": 50, "sidc": "SFSPCL---------", "sens_dbm": -105, "js_req_db": 0},
     {"name": "Blue frigate (UHF)", "side": "blue", "kind": "receiver", "net": "Blue LPD (UHF net)", "lat": 67.85, "lon": 13.3, "h_agl": 25, "freq_mhz": 252.4, "bw_khz": 25, "eirp_dbm": 47, "sidc": "SFSPCL---------", "track": [[68.0, 13.6]], "speed_kmh": 25},

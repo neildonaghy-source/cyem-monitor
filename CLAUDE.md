@@ -97,6 +97,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
   `met_core.sea_state/sea_clutter_db/platform_limits` (notional `LIMITS`), `met.met_grid` + `GET /api/met/grid` (met map
   layer, batched Open-Meteo, shares `met_cache`). Space weather applies only with `met="forecast"` (`SPACE` contextvar in
   `emo_api.run`). Corridors take met, limits, clutter and space weather per layer (`corridor_api._env_factory`).
+- Phase 6 part 1 (22 Nov 2026): corridor domains `foot` and `amphib` (`corridor_api._amphib`: landing points, sea leg then
+  ashore via `t_off`), grey movers (GNSS only, `jammed_by`, `collateral`), `met_core.battery_factor/surf_limits`.
 - EMO examples (22 Nov 2026, finding 13): JSON in `data/emo_examples/`, checked by `app/emo_examples.check` on load
   (bad files left out and logged); `tests/test_emo_examples.py` must stay green. Notional values only.
 - Default screen: first run opens on the UK with live layers only; reference layers and notional EMO off (`cyem.layersv` migration).

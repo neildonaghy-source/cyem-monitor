@@ -37,7 +37,7 @@ TOP = {"id": (str,), "order": (int,), "title": (str,), "about": (str,), "centre"
        "params": (dict,), "corridor": (dict,), "entities": (list,)}
 TOP_REQUIRED = ("id", "title", "about", "centre", "zoom", "entities")
 CORRIDOR = {"mover": (str,), "to": (list,), "domain": (str,), "step_min": NUM, "alt_m": NUM, "speed_kmh": NUM,
-            "note": (str,)}
+            "ashore": (str,), "note": (str,)}
 SCHEMA = {"top": TOP, "entity": ENTITY, "corridor": CORRIDOR}
 
 
@@ -128,8 +128,10 @@ def check(ex: dict, stem: str | None = None) -> list[str]:
             err.append(f"corridor: mover '{c.get('mover')}' is not an entity in this example")
         if not _latlon(c.get("to")):
             err.append("corridor: 'to' must be [lat, lon]")
-        if c.get("domain") not in ("ground", "sea", "air"):
-            err.append("corridor: domain must be ground, sea or air")
+        if c.get("domain") not in ("ground", "sea", "air", "foot", "amphib"):
+            err.append("corridor: domain must be ground, sea, air, foot or amphib")
+        if c.get("ashore") not in (None, "ground", "foot"):
+            err.append("corridor: ashore must be ground or foot")
     return err
 
 

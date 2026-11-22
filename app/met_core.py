@@ -191,7 +191,26 @@ LIMITS = {
     "air": {"wind_ms": (10.0, 15.0), "gust_ms": (15.0, 20.0), "rain_mm_h": (4.0, 10.0), "visibility_m": (1500.0, None)},
     "sea": {"wind_ms": (11.0, 17.0), "sea_state": (4, 5), "visibility_m": (1000.0, None)},
     "ground": {"rain_mm_h": (8.0, None), "snow_cm_h": (1.0, None), "visibility_m": (200.0, None)},
+    "foot": {"rain_mm_h": (8.0, None), "snow_cm_h": (1.0, None), "wind_ms": (17.0, None)},
 }
+SURF_M = (1.0, 1.5)                                            # wave height at the beach: marginal, no-go for beaching craft
+
+
+def battery_factor(t_c: float | None) -> float:
+    """Usable fraction of a lithium battery's rated capacity at an air temperature (notional): 1 at 20 C and above,
+    falling 2% per degree below, not under 0.4."""
+    if t_c is None:
+        return 1.0
+    return round(max(0.4, min(1.0, 1 - 0.02 * (20.0 - t_c))), 2)
+
+
+def surf_limits(wave_m: float | None) -> dict:
+    """Beaching limit for landing craft from the wave height off the beach (notional)."""
+    if wave_m is None:
+        return {"status": "unknown", "reason": "no sea state for the beach"}
+    mg, ng = SURF_M
+    st = "no-go" if wave_m >= ng else "marginal" if wave_m >= mg else "go"
+    return {"status": st, "reason": f"surf: waves {wave_m:g} m off the beach (marginal from {mg:g} m, no-go from {ng:g} m)"}
 LIMIT_COST = {"go": 0.0, "marginal": 0.3, "no-go": 3.0, "unknown": 0.0}
 SEA_SPEED = {3: 0.9, 4: 0.75, 5: 0.5}                          # small craft speed factor by sea state (6 and over: 0.3)
 
@@ -210,7 +229,7 @@ def platform_limits(domain: str, st: dict, alt_m: float | None = None, track_deg
     flying height in cloud, rain or fog); ground speed from the headwind along the track. Sea: wind, sea state
     (speed falls with it), visibility. Ground: heavy rain, snow, fog slow the move but never stop it."""
     if st.get("source") != "open-meteo":
-        return {"status": "unknown", "speed_factor": 1.0, "cost": 0.0, "sea_state": None,
+        return {"status": "unknown", "speed_factor": 1.0, "cost": 0.0, "sea_state": None, "battery_factor": 1.0,
                 "reasons": ["no forecast chosen: platform limits not assessed"]}
     lim, reasons, worst = LIMITS[domain], [], "go"
     rank = {"go": 0, "marginal": 1, "no-go": 2}
@@ -256,11 +275,15 @@ def platform_limits(domain: str, st: dict, alt_m: float | None = None, track_deg
                 reasons.append(f"headwind about {hw:.0f} m/s along the track: ground speed {factor * 100:.0f}% of air speed")
     elif domain == "sea":
         factor = SEA_SPEED.get(ss, 1.0 if (ss or 0) < 3 else 0.3)
-    else:
+    else:                                                       # ground and foot
         if (st.get("snow_cm_h") or 0) >= 3:
             factor = 0.5
         elif (st.get("snow_cm_h") or 0) >= 1 or (st.get("rain_mm_h") or 0) >= 8:
             factor = 0.7
         if (st.get("visibility_m") or 1e9) < 200:
             factor = min(factor, 0.8)
-    return {"status": worst, "speed_factor": round(factor, 2), "cost": LIMIT_COST[worst], "sea_state": ss, "reasons": reasons}
+    bat = battery_factor(st.get("temp_c")) if domain in ("air", "foot") else 1.0
+    if bat < 1.0:
+        reasons.append(f"batteries about {bat * 100:.0f}% of rated capacity at {st.get('temp_c'):g} C (radios, UAS endurance)")
+    return {"status": worst, "speed_factor": round(factor, 2), "cost": LIMIT_COST[worst], "sea_state": ss,
+            "battery_factor": bat, "reasons": reasons}

@@ -133,3 +133,18 @@ def test_ground_is_slowed_never_stopped():
     r = m.platform_limits("ground", _st(snow_cm_h=4.0, visibility_m=100.0))
     assert r["status"] == "marginal" and r["speed_factor"] == 0.5
     assert m.platform_limits("ground", _st(rain_mm_h=9.0))["speed_factor"] == 0.7
+
+
+# ---- phase 6 part 1: on foot, batteries, surf ----------------------------------------------------------------------
+def test_foot_limits_and_batteries():
+    r = m.platform_limits("foot", _st(temp_c=-5.0, snow_cm_h=2.0))
+    assert r["status"] == "marginal" and r["speed_factor"] == 0.7 and r["battery_factor"] == 0.5
+    assert any("batteries about 50%" in x for x in r["reasons"])
+    assert m.platform_limits("foot", _st(temp_c=25.0))["battery_factor"] == 1.0
+    assert m.platform_limits("ground", _st(temp_c=-5.0))["battery_factor"] == 1.0          # vehicle power
+    assert m.battery_factor(None) == 1.0 and m.battery_factor(-40) == 0.4 and m.battery_factor(10) == 0.8
+
+
+def test_surf():
+    assert m.surf_limits(None)["status"] == "unknown"
+    assert [m.surf_limits(w)["status"] for w in (0.5, 1.2, 2.0)] == ["go", "marginal", "no-go"]

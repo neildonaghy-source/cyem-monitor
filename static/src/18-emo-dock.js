@@ -13,9 +13,10 @@
     corrLayer.clearLayers(); document.body.dataset.corrLegs = 0; const c = EMO.corr; if (!c) return;
     if (c.to) L.circleMarker(c.to, { radius: 6, color: '#fff', weight: 2, fillColor: '#3c8cff', fillOpacity: 0.9 }).bindTooltip('Corridor destination').addTo(corrLayer);
     const r = c.res; document.body.dataset.corrLegs = r ? r.legs.length : 0; if (!r) return;
-    if (r.band) L.imageOverlay(r.band, r.bounds, { opacity: 0.8, interactive: false }).addTo(corrLayer);
+    for (const bd of (r.bands || [{ band: r.band, bounds: r.bounds }])) if (bd.band) L.imageOverlay(bd.band, bd.bounds, { opacity: 0.8, interactive: false }).addTo(corrLayer);
+    if (r.summary?.landing) L.circleMarker(r.summary.landing, { radius: 7, color: '#fff', weight: 2, fillColor: '#2bb9a8', fillOpacity: 0.95 }).bindTooltip(`Landing point, T+${r.summary.land_t}`).addTo(corrLayer);
     r.legs.forEach((lg, i) => {
-      const tip = `Leg ${i + 1}: ${lg.hold ? `hold ${lg.minutes} min` : `${lg.km} km, ${lg.minutes} min`}, ${lg.emcon}, T+${lg.t_from ?? '?'} to T+${lg.t_to ?? '?'}<br>detect ${lg.p_detect}% · fix ${lg.p_fix}% · radar ${lg.p_radar}% · GNSS ${lg.p_gnss ?? 0}% · C2 ${lg.p_c2}%`;
+      const tip = `Leg ${i + 1}${lg.phase ? ` (${lg.phase})` : ''}: ${lg.hold ? `hold ${lg.minutes} min` : `${lg.km} km, ${lg.minutes} min`}, ${lg.emcon}, T+${lg.t_from ?? '?'} to T+${lg.t_to ?? '?'}<br>detect ${lg.p_detect}% · fix ${lg.p_fix}% · radar ${lg.p_radar}% · GNSS ${lg.p_gnss ?? 0}% · C2 ${lg.p_c2}%`;
       if (lg.hold) L.circleMarker(lg.from, { radius: 8, color: '#fff', weight: 2, fillColor: CORR_COL[lg.emcon], fillOpacity: 0.9 }).bindTooltip(tip).addTo(corrLayer);
       else L.polyline(lg.path, { color: CORR_COL[lg.emcon], weight: 5, opacity: 0.95 }).bindTooltip(tip).addTo(corrLayer);
     });
@@ -29,26 +30,38 @@
     return `<p class="${CORR_LIM[s.limits] || ''}">Platform limits: <b>${esc(s.limits)}</b>${(s.limit_reasons || []).length ? ` (${esc(s.limit_reasons.join('; '))})` : ''}.${spd}${s.max_sea_clutter_db ? ` Sea clutter up to ${s.max_sea_clutter_db} dB on the radar term over the sea.` : ''}</p>
       ${s.limits_warning ? `<p class="bad">${esc(s.limits_warning)}</p>` : ''}<p class="dim">${esc(s.space || '')}${s.gnss_space_db ? ` GNSS fails at ${s.gnss_space_db} dB less J/S.` : ''}</p>`;
   }
+  function emoCorridorAmphib(s) {
+    if (!s.landing) return '';
+    return `<p>Lands at <span class="mono">${s.landing[0]}, ${s.landing[1]}</span> at T+${s.land_t} (sea ${s.sea_km} km at ${s.speed_kmh} km/h, ashore ${s.ashore_km} km at ${s.ashore_speed_kmh} km/h);
+      surf <span class="${CORR_LIM[s.surf] || 'dim'}">${esc(s.surf)}</span>.${s.relay_needed ? ' <span class="warn">C2 ashore falls below 50%: a relay from ship to beach is needed.</span>' : ''}
+      <span class="dim">${(s.landings_tried || []).length} landing points tried.</span></p>`;
+  }
+  function emoCorridorCollateral(r) {
+    const c = r.collateral; if (!c || !Object.keys(c).length) return r.side === 'grey' ? '<p class="dim">No jammer denies this civil route on its own.</p>' : '';
+    return `<p>${r.side === 'grey' ? 'Civil route denied by' : 'GNSS denied by'}: ${Object.entries(c).map(([sd, xs]) => xs.map((x) => `<span style="color:${SIDE_COL[sd] || '#c8d3e0'}">${esc(x.effector)}</span> (legs ${x.legs.join(', ')})`).join(', ')).join('; ')}.</p>`;
+  }
   function emoCorridorHtml(r) {
     const s = r.summary, v = (lg) => lg.verified ? `${lg.verified.p_detect}%${lg.verified.p_c2 != null ? ` / ${lg.verified.p_c2}%` : ''}` : '–';
     const when = s.layers > 1 ? ` Through ${s.layers} time layers ${s.step_min} min apart; arrives T+${s.arrive_t} min${s.hold_min ? ` including ${s.hold_min} min holding` : ''}.` : '';
     return `<p><b>${esc(r.unit)}</b> (${esc(r.domain)}) ${s.km} km in about ${s.minutes} min at ${s.speed_kmh} km/h <span class="dim">(direct ${s.direct_km} km)</span>; transmitting on ${s.transmit_pct}% of the route.${when}
-      Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, GNSS denied ${s.max_p_gnss ?? 0}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost} against ${s.direct_cost} straight; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
-      ${s.duct ? `<p class="warn">Duct: ${esc(s.duct)}</p>` : ''}${emoCorridorEnv(s)}${(s.gnss_jammers || []).length ? `<p class="dim">GNSS jammers counted: ${esc(s.gnss_jammers.join(', '))}.</p>` : ''}
+      Worst: detect ${s.max_p_detect}%, fix ${s.max_p_fix}%, radar ${s.max_p_radar}%, GNSS denied ${s.max_p_gnss ?? 0}%, C2 at least ${s.min_p_c2}% <span class="dim">(${esc(s.c2)})</span>. Cost ${s.cost}${s.direct_cost != null ? ` against ${s.direct_cost} straight` : ''}; band ${s.band_km2} km² at ${s.cell_m} m cells.</p>
+      ${s.duct ? `<p class="warn">Duct: ${esc(s.duct)}</p>` : ''}${emoCorridorAmphib(s)}${emoCorridorEnv(s)}${emoCorridorCollateral(r)}${(s.gnss_jammers || []).length ? `<p class="dim">GNSS jammers counted: ${esc(s.gnss_jammers.join(', '))}.</p>` : ''}
       <p><span style="color:${CORR_COL.transmit}">■</span> transmit leg <span style="color:${CORR_COL.silent}">■</span> silent leg <span style="color:#fff">●</span> hold <span style="color:#45d38a;opacity:.6">■</span> corridor band</p>
       <table class="grid"><tr><th>Leg</th><th>T+</th><th>km</th><th>min</th><th>EMCON</th><th>Detect</th><th>Fix</th><th>Radar</th><th>GNSS</th><th>C2</th><th title="platform limits on the leg's layer; sea clutter on the radar term">Limits</th><th title="exact pairwise model at the leg's worst point: detection / C2">Verified</th><th>Heard by</th></tr>
-      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.t_from ?? '–'}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.hold ? 'hold, ' : ''}${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_gnss ?? 0}%</td><td class="mono">${lg.p_c2}%</td><td class="${CORR_LIM[lg.limits] || ''}">${esc(lg.limits || '–')}${lg.sea_clutter_db ? ` <span class="dim">clutter ${lg.sea_clutter_db} dB</span>` : ''}</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
+      ${r.legs.map((lg, i) => `<tr><td>${i + 1}</td><td class="mono">${lg.t_from ?? '–'}</td><td class="mono">${lg.km}</td><td class="mono">${lg.minutes}</td><td style="color:${CORR_COL[lg.emcon]}">${lg.phase === 'ashore' ? 'ashore, ' : ''}${lg.hold ? 'hold, ' : ''}${lg.emcon}</td><td class="mono">${lg.p_detect}%</td><td class="mono">${lg.p_fix}%</td><td class="mono">${lg.p_radar}%</td><td class="mono">${lg.p_gnss ?? 0}%</td><td class="mono">${lg.p_c2}%</td><td class="${CORR_LIM[lg.limits] || ''}">${esc(lg.limits || '–')}${lg.sea_clutter_db ? ` <span class="dim">clutter ${lg.sea_clutter_db} dB</span>` : ''}</td><td class="mono">${v(lg)}</td><td>${esc((lg.heard_by || []).join(', ')) || '–'}</td></tr>`).join('')}</table>
       ${s.sensors.length ? '' : '<p class="dim">No opposing ES sensor covers this unit\'s band.</p>'}<p class="dim">${esc(r.notes)}</p>`;
   }
   function emoCorridor() {
-    const units = EMO.ents.filter((e) => e.side === 'blue' || e.side === 'red');
-    if (!units.length) return emoDockCard('Corridor', '<p class="dim">No blue or red units in this scenario.</p>');
-    const foc = EMO.ents.find((e) => e.id === EMO.focus && e.side !== 'grey');
-    const c = EMO.corr = EMO.corr || { domain: 'ground', emcon: 'auto', silent: 0.6, alt: 150, speed: '', step: 10, hold: true };
+    // blue and red first; civil (grey) units too, for evacuation or civil air routes (only GNSS jamming counts for them)
+    const units = EMO.ents.filter((e) => e.side === 'blue' || e.side === 'red').concat(EMO.ents.filter((e) => e.side === 'grey' && e.kind !== 'emitter'));
+    if (!units.length) return emoDockCard('Corridor', '<p class="dim">No units in this scenario.</p>');
+    const foc = EMO.ents.find((e) => e.id === EMO.focus);
+    const c = EMO.corr = EMO.corr || { domain: 'ground', emcon: 'auto', silent: 0.6, alt: 150, speed: '', step: 10, hold: true, ashore: 'ground' };
     if (!units.some((e) => e.name === c.mover)) c.mover = (foc || units.find((e) => e.side === EMO.side) || units[0]).name;
     const b = emoDockCard('Corridor', `<div class="specset">Unit <select id="corr-unit" aria-label="Unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
-        <select id="corr-dom" aria-label="Domain">${[['ground', 'Ground'], ['sea', 'Sea'], ['air', 'Air (low level)']].map(([k, l]) => `<option value="${k}"${c.domain === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
-        <span id="corr-altw"${c.domain === 'air' ? '' : ' hidden'}>at <input id="corr-alt" aria-label="Height, m above ground" type="number" min="1" max="1000" value="${c.alt}" style="width:58px"> m AGL</span></div>
+        <select id="corr-dom" aria-label="Domain">${[['ground', 'Ground (vehicle)'], ['foot', 'On foot (dismounted)'], ['sea', 'Sea'], ['amphib', 'Amphibious (sea, then ashore)'], ['air', 'Air (low level)']].map(([k, l]) => `<option value="${k}"${c.domain === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <span id="corr-altw"${c.domain === 'air' ? '' : ' hidden'}>at <input id="corr-alt" aria-label="Height, m above ground" type="number" min="1" max="1000" value="${c.alt}" style="width:58px"> m AGL</span>
+        <span id="corr-ashw"${c.domain === 'amphib' ? '' : ' hidden'}>ashore <select id="corr-ash" aria-label="Ashore">${[['ground', 'by vehicle'], ['foot', 'on foot']].map(([k, l]) => `<option value="${k}"${c.ashore === k ? ' selected' : ''}>${l}</option>`).join('')}</select></span></div>
       <div class="specset">Speed <input id="corr-speed" aria-label="Speed, km/h" type="number" min="1" max="1000" placeholder="auto" value="${c.speed}" style="width:60px"> km/h
         EMCON <select id="corr-emcon" aria-label="EMCON">${[['auto', 'Auto'], ['emit', 'Transmit'], ['silent', 'Silent']].map(([k, l]) => `<option value="${k}"${c.emcon === k ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <span title="Cost per cell of moving without two-way C2: higher means the planner transmits more">silent price <input id="corr-sil" aria-label="Silent price" type="number" min="0" max="10" step="0.1" value="${c.silent}" style="width:52px"></span></div>
@@ -61,12 +74,12 @@
       <div id="corr-out">${c.res ? emoCorridorHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min, with the last run's atmosphere. Notional data; screening grade.</p>`}</div>`);
     const read = () => { c.mover = b.querySelector('#corr-unit').value; c.domain = b.querySelector('#corr-dom').value; c.alt = +b.querySelector('#corr-alt').value || 150;
       c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0);
-      c.step = Math.max(0, +b.querySelector('#corr-step').value || 0); c.hold = b.querySelector('#corr-hold').checked; };
+      c.step = Math.max(0, +b.querySelector('#corr-step').value || 0); c.hold = b.querySelector('#corr-hold').checked; c.ashore = b.querySelector('#corr-ash').value; };
     b.querySelector('#corr-vig')?.addEventListener('click', () => {
-      const v = EMO.vignette; read(); Object.assign(c, { mover: v.mover, domain: v.domain, to: v.to, step: v.step_min || 0, alt: v.alt_m || c.alt, speed: v.speed_kmh || '', emcon: v.emcon || 'auto', res: null });
+      const v = EMO.vignette; read(); Object.assign(c, { mover: v.mover, domain: v.domain, to: v.to, step: v.step_min || 0, alt: v.alt_m || c.alt, speed: v.speed_kmh || '', emcon: v.emcon || 'auto', ashore: v.ashore || 'ground', res: null });
       emoCorridorDraw(); emoCorridor();
     });
-    b.querySelector('#corr-dom').addEventListener('change', (e) => { b.querySelector('#corr-altw').hidden = e.target.value !== 'air'; });
+    b.querySelector('#corr-dom').addEventListener('change', (e) => { b.querySelector('#corr-altw').hidden = e.target.value !== 'air'; b.querySelector('#corr-ashw').hidden = e.target.value !== 'amphib'; });
     b.querySelector('#corr-pick').addEventListener('click', () => {
       read();
       pickOnMap('the corridor destination', (ev) => { c.to = [+ev.latlng.lat.toFixed(5), +ev.latlng.lng.toFixed(5)]; c.res = null; emoCorridorDraw(); if (document.getElementById('emo-dockcard')) emoCorridor(); }, () => { if (document.getElementById('emo-dockcard')) emoCorridor(); });
@@ -78,6 +91,7 @@
       st.innerHTML = '<span class="spinner"></span> planning…';
       const body = { mover: c.mover, to_lat: c.to[0], to_lon: c.to[1], domain: c.domain, emcon: c.emcon, silent_cost: c.silent, step_min: c.step, wait: c.hold };
       if (c.domain === 'air') body.alt_m = c.alt;
+      if (c.domain === 'amphib') body.ashore = c.ashore;
       if (+c.speed > 0) body.speed_kmh = +c.speed;
       try {
         c.res = await postJson(`/api/emo/plan/corridor?t_min=${EMO.t}`, body); clearInterval(tick);

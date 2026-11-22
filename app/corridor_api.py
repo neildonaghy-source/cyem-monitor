@@ -26,7 +26,8 @@ from . import met_core
 from .corridor_core import corridor_time, legs, phi, straight_cost
 
 router = APIRouter(prefix="/api/emo/plan", tags=["emo-plan"])
-SPEED = {"ground": 20.0, "sea": 25.0, "air": 150.0}
+SPEED = {"ground": 20.0, "sea": 25.0, "air": 150.0, "foot": 4.0}
+SLOPE = {"ground": 30.0, "foot": 60.0}                       # default slope limits (%)
 W_DET, W_FIX, W_RADAR, W_C2 = 1.0, 2.0, 2.0, 1.0
 W_GNSS, W_GNSS_AIR = 0.5, 1.5                                  # loss of GNSS: worse for an uncrewed aircraft
 W_LIM = 1.0                                                    # platform limits: marginal 0.3, no-go 3 per cell (met_core.LIMIT_COST)
@@ -36,12 +37,17 @@ class CorridorIn(BaseModel):
     mover: str                                                  # entity name: the unit that moves
     to_lat: float = Field(ge=-85, le=85)
     to_lon: float = Field(ge=-180, le=180)
-    domain: str = Field(default="ground", pattern="^(ground|sea|air)$")
+    domain: str = Field(default="ground", pattern="^(ground|sea|air|foot|amphib)$")   # amphib: sea, then ashore
     speed_kmh: float | None = Field(default=None, gt=0, le=1000)
     alt_m: float | None = Field(default=None, ge=1, le=1000)   # air: height above ground (low level)
     emcon: str = Field(default="auto", pattern="^(auto|emit|silent)$")
     silent_cost: float = Field(default=0.6, ge=0, le=10)       # price per cell of moving without transmitting
-    max_slope_pct: float = Field(default=30, gt=0, le=100)     # ground
+    max_slope_pct: float | None = Field(default=None, gt=0, le=100)   # ground 30, on foot 60 when blank
+    from_lat: float | None = Field(default=None, ge=-85, le=85)      # start here instead of where the unit is at T+t
+    from_lon: float | None = Field(default=None, ge=-180, le=180)
+    ashore: str = Field(default="ground", pattern="^(ground|foot)$")  # amphib: how the unit moves once landed
+    ashore_speed_kmh: float | None = Field(default=None, gt=0, le=200)
+    landings: int = Field(default=3, ge=1, le=6)                      # amphib: landing points tried
     margin: float = Field(default=0.15, ge=0, le=1)
     cell_m: float = Field(default=500, ge=100, le=5000)
     step_min: float = Field(default=0, ge=0, le=120)           # 0: one time step; else time layers this far apart
@@ -74,29 +80,34 @@ def _cell(LA, LO, pt):
 
 
 @router.post("/corridor")
-async def plan_corridor(body: CorridorIn, t_min: float = 0):
+async def plan_corridor(body: CorridorIn, t_min: float = 0, t_off: float = 0):
+    """t_min: the run's time; t_off: start this many minutes later (the others where they will be then)."""
     from . import dem
     from .emo_plan import _ctx, _pseudo
     from .ems_core import overlay_png, region_masks, sample
     from .link_core import haversine_m
+    if body.domain == "amphib":
+        return await _amphib(body, t_min)
     emo_api, ents, p, pos = _ctx(t_min)
     mover = next((e for e in ents.values() if e["name"] == body.mover), None)
     if not mover:
         raise HTTPException(404, "unit not found")
     side = mover["side"]
-    if side == "grey":
-        raise HTTPException(422, "corridors are for blue or red units")
+    grey = side == "grey"                                      # civil: threatened by either side's GNSS jamming, not hiding
     opp = "red" if side == "blue" else "blue"
-    start, goal = tuple(pos(mover)), (body.to_lat, body.to_lon)
+    opp_sides = {"red", "blue"} if grey else {opp}
+    start = (body.from_lat, body.from_lon) if body.from_lat is not None and body.from_lon is not None else tuple(pos(mover))
+    goal = (body.to_lat, body.to_lon)
     LA, LO, bounds, cell = _grid(start, goal, body.cell_m)
     s_ij, g_ij = _cell(LA, LO, start), _cell(LA, LO, goal)
 
     # platform limits
     hts = dem.grid_sampler(bounds[0][0], bounds[0][1], bounds[1][0], bounds[1][1])(LA, LO).astype(float)
     sea = hts <= 0.5
-    if body.domain == "ground":
+    slope_lim = body.max_slope_pct or SLOPE.get(body.domain, 30.0)
+    if body.domain in ("ground", "foot"):
         gy, gx = np.gradient(hts, cell)
-        ok = ~sea & (np.hypot(gx, gy) * 100 <= body.max_slope_pct)
+        ok = ~sea & (np.hypot(gx, gy) * 100 <= slope_lim)
     elif body.domain == "sea":
         ok = sea.copy()
     else:
@@ -116,17 +127,17 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
 
     # platform limits set the speed (the slowest layer the trip is likely to cross), then the time layers follow
     K = n_layers(nominal)
-    factor = min([(await env_at(t_min + k * body.step_min))["lim"]["speed_factor"] for k in range(K)])
+    factor = min([(await env_at(t_min + t_off + k * body.step_min))["lim"]["speed_factor"] for k in range(K)])
     speed = round(nominal * factor, 1)
     K = n_layers(speed)
     mpc = cell / 1000 / speed * 60                             # minutes to cross one cell
     emits = mover.get("eirp_dbm") is not None and mover.get("fixed_level_dbm") is None
     ub = emo_api.band(mover)
-    sensors = [x for x in ents.values() if x["kind"] == "sensor" and x["side"] == opp and emo_api.overlap(*ub, *emo_api.band(x))]
+    sensors = [] if grey else [x for x in ents.values() if x["kind"] == "sensor" and x["side"] == opp and emo_api.overlap(*ub, *emo_api.band(x))]
     ctl = ents.get(mover.get("net") or "")
     users = [u for u in ents.values() if u.get("net") == mover["id"] and u["kind"] == "receiver"]
     nav = next((e for e in ents.values() if e["side"] == side and e.get("category") == "nav" and e.get("fixed_level_dbm") is not None), None)
-    jams = [e for e in ents.values() if e["kind"] == "effector" and e["side"] == opp and e.get("category") == "nav"
+    jams = [e for e in ents.values() if e["kind"] == "effector" and e["side"] in opp_sides and e.get("category") == "nav"
             and e.get("eirp_dbm") is not None] if body.gnss else []
     zero = np.zeros(LA.shape)
 
@@ -138,6 +149,14 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
             radius = max(haversine_m(a[0], a[1], LA[r, c], LO[r, c]) for r, c in ((0, 0), (0, -1), (-1, 0), (-1, -1))) / 1000 + 2
             cov = await emo_api.coverage_for(_pseudo(src, at, a, eirp, radius), a, rx_h)
             return sample(cov, LA, LO)
+
+        def reach(e):
+            """The emitter with its compute radius stretched to the grid's farthest corner (capped at 100 km): its own
+            footprint radius would cut a jammer or radar off at 30 to 40 km, while the run's pairwise paths go any distance."""
+            a = posk(e)
+            r = max(haversine_m(a[0], a[1], LA[i, j], LO[i, j]) for i, j in ((0, 0), (0, -1), (-1, 0), (-1, -1))) / 1000 + 2
+            r = min(100.0, max(r, e.get("radius_km") or 0))
+            return e if r <= (e.get("radius_km") or 0) else {**e, "id": f"{e['id']}:reach{int(r)}", "radius_km": r}
 
         # ES: the unit's own emissions heard by opposing sensors (reciprocity), DF fixes from two or more bearings
         P = {}
@@ -159,9 +178,9 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
         if body.domain in ("air", "sea"):
             rcs = mover.get("rcs_m2") or emo_api._default_rcs({**unit, "sidc": "xxA" if body.domain == "air" else "xxS"})
             tr = []
-            for rd in [e for e in ents.values() if e.get("category") == "radar" and e["kind"] == "emitter" and e["side"] == opp
+            for rd in [e for e in ents.values() if e.get("category") == "radar" and e["kind"] == "emitter" and e["side"] == opp and not grey
                        and emo_api.on_air(e, tk) and e.get("eirp_dbm") is not None]:
-                one = np.nan_to_num(sample(await emo_api.coverage_for(rd, posk(rd), h), LA, LO), nan=-999, neginf=-999)
+                one = np.nan_to_num(sample(await emo_api.coverage_for(reach(rd), posk(rd), h), LA, LO), nan=-999, neginf=-999)
                 R = np.maximum(200.0, _dist_m(posk(rd), LA, LO))
                 lam = 3e8 / (rd["freq_mhz"] * 1e6)
                 fspl = 20 * np.log10(R) + 20 * math.log10(rd["freq_mhz"] * 1e6) - 147.55
@@ -188,14 +207,16 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
             p_c2, c2_what = phi(worst / sig), f"reaches its {len(users)} users"
 
         # GNSS: opposing jammers (or spoofers) against the satellite level, power-summed; J/S over the threshold denies
-        p_gnss = zero
+        p_gnss, PJ = zero, {}
         on = [e for e in jams if emo_api.on_air(e, tk)]
         if on:
             mw = 0.0
-            for e in on:
-                mw = mw + 10 ** (np.nan_to_num(sample(await emo_api.coverage_for(e, posk(e), h), LA, LO), nan=-999, neginf=-999) / 10)
             S = nav["fixed_level_dbm"] if nav else -128.0
             req = ((nav or {}).get("js_req_db") or 35.0) - env["space"]["gnss"]["loss_db"]
+            for e in on:
+                lv = np.nan_to_num(sample(await emo_api.coverage_for(reach(e), posk(e), h), LA, LO), nan=-999, neginf=-999)
+                mw = mw + 10 ** (lv / 10)
+                PJ[e["name"]] = phi((lv - S - req) / sig)            # this jammer alone: who denies the route (collateral)
             p_gnss = phi((10 * np.log10(np.maximum(mw, 1e-30)) - S - req) / sig)
 
         # EMCON per cell: transmit (risk) or stay silent (two-way C2 lost, priced per cell); radar and GNSS either way
@@ -214,12 +235,12 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
         cost = c + W_RADAR * p_trk + w_gnss * p_gnss + W_LIM * env["lim"]["cost"]
         risk = np.maximum(np.where(emit, np.maximum(p_det, p_fix), 0.0), np.maximum(p_trk, p_gnss))
         return {"P": P, "p_det": p_det, "p_fix": p_fix, "p_trk": p_trk, "p_c2": p_c2, "p_gnss": p_gnss, "emit": emit,
-                "cost": cost, "risk": risk, "c2": c2_what, "jams": [e["name"] for e in on], "env": env, "clutter": clut_max}
+                "cost": cost, "risk": risk, "c2": c2_what, "jams": [e["name"] for e in on], "env": env, "clutter": clut_max, "PJ": PJ}
 
     layers, posfs = [], []
     for k in range(K):
-        tk = t_min + k * body.step_min
-        posk = pos if k == 0 else (lambda e, tk=tk: tuple(emo_api.position_at(e, tk)))
+        tk = t_min + t_off + k * body.step_min
+        posk = pos if k == 0 and not t_off else (lambda e, tk=tk: tuple(emo_api.position_at(e, tk)))
         posfs.append(posk)
         layers.append(await fields(tk, posk))
     st = lambda name: np.stack([L[name] for L in layers])                                    # noqa: E731
@@ -234,7 +255,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
     N = len(S_)
     q = lambda n: (S_[n][2], S_[n][0], S_[n][1])                                              # noqa: E731
     cl = lambda n: S_[n][:2]                                                                  # noqa: E731
-    at_t = lambda n: round(t_min + T_[n] * mpc, 1)                                           # noqa: E731
+    at_t = lambda n: round(t_min + t_off + T_[n] * mpc, 1)                                           # noqa: E731
 
     def mk_leg(a, b, hold=False):
         idx = list(range(a, b + 1))
@@ -253,6 +274,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
               "over_sea": bool(any(sea[cl(n)] for n in idx)), "_k": S_[w][2],
               "limits": layers[S_[w][2]]["env"]["lim"]["status"], "sea_clutter_db": layers[S_[w][2]]["clutter"],
               "gnss_space_db": layers[S_[w][2]]["env"]["space"]["gnss"]["loss_db"],
+              "jammed_by": sorted(nm for nm, pj in layers[S_[w][2]]["PJ"].items() if max(float(pj[cl(n)]) for n in idx) >= 0.5),
               "path": [_ll(LA, LO, cl(a))] * 2 if hold else _thin(LA, LO, [cl(n) for n in range(max(0, a - 1), b + 1)])}
         return lg
 
@@ -302,10 +324,10 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                "band_km2": round(float(band.sum()) * (cell / 1000) ** 2, 1), "c2": layers[0]["c2"], "sensors": [x["name"] for x in sensors],
                "gnss_jammers": sorted({nm for L in layers for nm in L["jams"]}), "duct": duct["text"] if duct else None,
                "nominal_speed_kmh": nominal, "speed_factor": factor, **_env_summary(layers, sorted({S_[n][2] for n in range(N)}), t_min, body.step_min)}
-    when = (f"through {K} time layers {body.step_min:g} min apart from T+{t_min:g} (other units move on their tracks; "
+    when = (f"through {K} time layers {body.step_min:g} min apart from T+{t_min + t_off:g} (other units move on their tracks; "
             + ("holding allowed" if body.wait else "no holding") + "), with the last run's atmosphere") if K > 1 else \
         "at one time step with the last run's atmosphere; other units frozen at T+t"
-    return {"unit": mover["name"], "side": side, "domain": body.domain, "t_min": t_min, "bounds": bounds,
+    return {"unit": mover["name"], "side": side, "domain": body.domain, "t_min": t_min + t_off, "bounds": bounds,
             "path": [_ll(LA, LO, cl(n)) for n in range(0, N, max(1, N // 200))] + [_ll(LA, LO, cl(N - 1))],
             "band": layer, "legs": out_legs, "summary": summary, "met": (emo_api._LAST.get("met") or {}).get("used"),
             "notes": f"Screening grade, {when}. Corridor = cells on routes within {round(body.margin * 100)}% of the best "
@@ -317,9 +339,122 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
                         "speed, sea clutter lowers the radar term over sea cells, storms lower the GNSS failure J/S (notional "
                         "generic limits, met_core.LIMITS). " if getattr(p, "met", "standard") == "forecast" else
                         "Platform limits, sea clutter and space weather need the forecast chosen (not applied). ")
-                     + "Ground routes avoid sea and slopes over "
-                     f"{body.max_slope_pct:g}%; sea routes keep to water; air routes fly a set height above ground"
-                     + (f" ({h:g} m)." if body.domain == "air" else ".")}
+                     + ("Civil unit: only GNSS jamming by either side and its own C2 are counted (it is not hiding from ES "
+                        "or radar); each leg names the jammers that deny it on their own (collateral). " if grey else "")
+                     + "Ground and foot routes avoid sea and slopes over "
+                     f"{slope_lim:g}%; sea routes keep to water; air routes fly a set height above ground"
+                     + (f" ({h:g} m)." if body.domain == "air" else "."), **({"collateral": _collateral(out_legs, ents)} if grey or any(lg["jammed_by"] for lg in out_legs) else {})}
+
+
+async def _amphib(body: CorridorIn, t_min: float) -> dict:
+    """Ship to shore: try the landing points on the coast nearest the objective, plan the sea leg to each (landing craft
+    limits, radar, ES, the evaporation duct) and the move ashore from it starting when the craft arrives, keep the
+    cheapest pair. Surf at the beach and C2 ashore (a relay from ship to beach) are reported."""
+    from . import dem
+    from .emo_plan import _ctx
+    emo_api, ents, p, pos = _ctx(t_min)
+    mover = next((e for e in ents.values() if e["name"] == body.mover), None)
+    if not mover:
+        raise HTTPException(404, "unit not found")
+    start = (body.from_lat, body.from_lon) if body.from_lat is not None and body.from_lon is not None else tuple(pos(mover))
+    goal = (body.to_lat, body.to_lon)
+    LA, LO, bounds, cell = _grid(start, goal, body.cell_m)
+    sea = dem.grid_sampler(bounds[0][0], bounds[0][1], bounds[1][0], bounds[1][1])(LA, LO).astype(float) <= 0.5
+    s_ij, g_ij = _cell(LA, LO, start), _cell(LA, LO, goal)
+    if not sea[s_ij]:
+        raise HTTPException(422, "amphibious: the unit must start at sea")
+    if sea[g_ij]:
+        raise HTTPException(422, "amphibious: the objective must be ashore")
+    land = ~sea
+    nb = np.zeros_like(sea)
+    nb[1:, :] |= land[:-1, :]; nb[:-1, :] |= land[1:, :]; nb[:, 1:] |= land[:, :-1]; nb[:, :-1] |= land[:, 1:]  # noqa: E702
+    coast = sea & nb
+    coast[0, :] = coast[-1, :] = coast[:, 0] = coast[:, -1] = False
+    ii, jj = np.nonzero(coast)
+    if not len(ii):
+        raise HTTPException(422, "amphibious: no coastline between the start and the objective")
+    d = _dist_m(goal, LA[ii, jj], LO[ii, jj])
+    spacing = max(2000.0, 3 * cell)
+    cands = []
+    for k in np.argsort(d):
+        pt = (float(LA[ii[k], jj[k]]), float(LO[ii[k], jj[k]]))
+        if all(float(_dist_m(c, np.array([pt[0]]), np.array([pt[1]]))[0]) >= spacing for c in cands):
+            cands.append(pt)
+        if len(cands) >= body.landings:
+            break
+    # the move ashore starts from the nearest land cell with land all round it (on its own grid a cell on the water's
+    # edge can snap to the sea)
+    inland = land.copy()
+    inland[1:, :] &= land[:-1, :]; inland[:-1, :] &= land[1:, :]; inland[:, 1:] &= land[:, :-1]; inland[:, :-1] &= land[:, 1:]  # noqa: E702
+    li, lj = np.nonzero(inland if inland.any() else land)
+    tried, best = [], None
+    for lat, lon in cands:
+        k = int(np.argmin(_dist_m((lat, lon), LA[li, lj], LO[li, lj])))
+        alat, alon = float(LA[li[k], lj[k]]), float(LO[li[k], lj[k]])
+        try:
+            r1 = await plan_corridor(body.model_copy(update={"domain": "sea", "to_lat": lat, "to_lon": lon}), t_min)
+            t1 = r1["summary"]["arrive_t"] - t_min
+            r2 = await plan_corridor(body.model_copy(update={"domain": body.ashore, "speed_kmh": body.ashore_speed_kmh,
+                                                             "from_lat": alat, "from_lon": alon, "max_slope_pct": None}), t_min, t1)
+        except HTTPException as e:
+            tried.append({"landing": [round(lat, 5), round(lon, 5)], "error": e.detail})
+            continue
+        tot = r1["summary"]["cost"] + r2["summary"]["cost"]
+        tried.append({"landing": [round(lat, 5), round(lon, 5)], "cost": round(tot, 1), "arrive_t": r2["summary"]["arrive_t"]})
+        if best is None or tot < best[0]:
+            best = (tot, r1, r2, (lat, lon))
+    if not best:
+        raise HTTPException(422, "amphibious: no landing point gives a route (" + "; ".join(str(t.get("error")) for t in tried) + ")")
+    tot, r1, r2, beach = best
+    for lg in r1["legs"]:
+        lg["phase"] = "sea"
+    for lg in r2["legs"]:
+        lg["phase"] = "ashore"
+    a, b = r1["summary"], r2["summary"]
+    wave = None
+    if getattr(p, "met", "standard") == "forecast":
+        from . import met as metmod
+        from datetime import timedelta
+        st = await metmod.met_state(beach[0], beach[1], emo_api._parse_time(p.met_time) + timedelta(minutes=a["arrive_t"]))
+        wave = (st.get("sea") or {}).get("wave_m")
+    surf = met_core.surf_limits(wave)
+    ashore_c2 = b["min_p_c2"]
+    rank = {"unknown": -1, "go": 0, "marginal": 1, "no-go": 2}
+    worst = max((a.get("limits", "unknown"), b.get("limits", "unknown"), surf["status"]), key=lambda x: rank[x])
+    summary = {"km": round(a["km"] + b["km"], 1), "direct_km": round(_dist_m(start, np.array([goal[0]]), np.array([goal[1]]))[0] / 1000, 1),
+               "minutes": a["minutes"] + b["minutes"], "arrive_t": b["arrive_t"], "landing": [round(beach[0], 5), round(beach[1], 5)],
+               "land_t": a["arrive_t"], "sea_km": a["km"], "ashore_km": b["km"], "speed_kmh": a["speed_kmh"], "ashore_speed_kmh": b["speed_kmh"],
+               "hold_min": a["hold_min"] + b["hold_min"], "layers": max(a["layers"], b["layers"]), "step_min": body.step_min,
+               "transmit_pct": round((a["transmit_pct"] * a["km"] + b["transmit_pct"] * b["km"]) / max(a["km"] + b["km"], 1e-6)),
+               **{k: max(a[k], b[k]) for k in ("max_p_detect", "max_p_fix", "max_p_radar", "max_p_gnss")},
+               "min_p_c2": min(a["min_p_c2"], b["min_p_c2"]), "cost": round(tot, 1), "direct_cost": None,
+               "cell_m": a["cell_m"], "band_km2": round(a["band_km2"] + b["band_km2"], 1), "c2": a["c2"], "sensors": a["sensors"],
+               "gnss_jammers": sorted(set(a["gnss_jammers"]) | set(b["gnss_jammers"])), "duct": a["duct"] or b["duct"],
+               "limits": worst, "limit_reasons": list(dict.fromkeys(a.get("limit_reasons", []) + b.get("limit_reasons", []) + [surf["reason"]])),
+               "surf": surf["status"], "relay_needed": ashore_c2 < 50, "landings_tried": tried,
+               "max_sea_clutter_db": a.get("max_sea_clutter_db", 0), "gnss_space_db": max(a.get("gnss_space_db", 0), b.get("gnss_space_db", 0)),
+               "space": a.get("space"), "speed_factor": a.get("speed_factor"), "nominal_speed_kmh": a.get("nominal_speed_kmh")}
+    if worst == "no-go":
+        summary["limits_warning"] = "Outside limits: " + "; ".join(r for r in summary["limit_reasons"] if r.startswith("no-go") or (surf["status"] == "no-go" and r == surf["reason"])) + "."
+    notes = (f"Amphibious: {len(cands)} landing points on the coast nearest the objective were tried; the cheapest sea leg plus "
+             f"move ashore ({body.ashore}) is shown, the move ashore starting when the craft lands (T+{a['arrive_t']:g}). "
+             + ("C2 ashore falls to " + f"{ashore_c2}%: a relay from ship to beach is needed. " if ashore_c2 < 50 else "")
+             + "Surf limits for beaching craft are notional (marginal from 1 m, no-go from 1.5 m waves). Sea leg: " + r1["notes"])
+    return {"unit": r1["unit"], "side": r1["side"], "domain": "amphib", "t_min": t_min, "bounds": r1["bounds"],
+            "path": r1["path"] + r2["path"], "band": r1["band"], "bands": [{"band": r1["band"], "bounds": r1["bounds"]},
+                                                                          {"band": r2["band"], "bounds": r2["bounds"]}],
+            "legs": r1["legs"] + r2["legs"], "summary": summary, "met": r1["met"], "notes": notes,
+            **({"collateral": r2["collateral"]} if r2.get("collateral") else {})}
+
+
+def _collateral(out_legs, ents) -> dict:
+    """Jammers that deny the route's GNSS on their own, by side, with the legs they deny."""
+    side_of = {e["name"]: e["side"] for e in ents.values()}
+    out: dict[str, dict[str, list[int]]] = {}
+    for i, lg in enumerate(out_legs, 1):
+        for nm in lg.get("jammed_by") or []:
+            out.setdefault(side_of.get(nm, "?"), {}).setdefault(nm, []).append(i)
+    return {sd: [{"effector": nm, "legs": v} for nm, v in d.items()] for sd, d in out.items()}
 
 
 def _bearing(a, b) -> float:

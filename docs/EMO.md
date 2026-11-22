@@ -127,6 +127,25 @@ Plain (B Coy to a blocking position, ground, 10-minute layers), 3 Solent (the sh
 X-band radar; choose the forecast atmosphere to see the evaporation duct flag), 6 UAS transit through GNSS jamming
 (air at 120 m, 5-minute layers, a moving jammer).
 
+Phase 6 part 1 (22 Nov 2026):
+
+- **On foot** (`domain: foot`): dismounted and SOF, 4 km/h, slopes up to 60%, the same leg-by-leg EMCON against
+  red ES and DF. With the forecast chosen, cold lowers battery endurance (`met_core.battery_factor`, notional: 2% per
+  degree below 20 C, not under 40%; also reported for UAS), and heavy rain or snow slow the move.
+- **Amphibious** (`domain: amphib`, `ashore: ground|foot`): ship to shore. The planner tries the `landings` (default 3)
+  coast points nearest the objective, plans the sea leg to each and the move ashore from the nearest inland cell,
+  starting when the craft lands (other units where they will be then), and keeps the cheapest pair. Legs carry
+  `phase` (sea, ashore); the summary gives the landing point and time, surf at the beach (`met_core.surf_limits`,
+  notional: marginal from 1 m waves, no-go from 1.5 m), and `relay_needed` when C2 ashore falls below 50%.
+- **Civil (grey)** units can plan too: only GNSS jamming by either side and their own C2 count (a civil unit is not
+  hiding from ES or radar). Every leg names the jammers that deny it on their own (`jammed_by`); `collateral` groups
+  them by side and leg, which is the collateral check on own EA.
+- GNSS jammers and radars in corridors now reach the grid's far corner (up to 100 km) instead of stopping at their
+  footprint radius, as the sensors already did.
+- Worked vignettes added: 0c Vestfjord (amphibious: landing craft from the LPD, raid team on foot), 2 Brecon
+  (dismounted patrol), 0b Suwałki (a notional civil air ambulance at 600 m through two-sided GNSS jamming; the road
+  below is masked by terrain).
+
 ## Known limits
 
 - Net availability counts a user only if it holds its own control station (in range, control on air) and is not

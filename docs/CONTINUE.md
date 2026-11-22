@@ -3,7 +3,7 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 13:45 UTC)
+## Where things are (22 Nov 2026, 13:00 UTC)
 
 - Phase 6 part 1 (22 Nov, PRs #63, #64, release 2026-11-22b): amphibious ship to shore. Corridor domain `amphib`
   (landing craft keeps to water; land only within 1 km of the landing point), `met_core.LIMITS["amphib"]`,

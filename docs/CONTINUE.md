@@ -3,13 +3,18 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## In progress: do not start (22 Nov 2026, 15:40 UTC)
+## Where things are (22 Nov 2026, 16:05 UTC)
 
-- Phase 6c (satcom and GNSS windows) is being done in an interactive session with Neil, started 15:40 UTC. A
-  scheduled run that finds this section must not start 6c or any other slice: report that an interactive session
-  holds the rebuild and stop. The interactive session removes this section when 6c is merged, deployed and recorded.
-
-## Where things are (22 Nov 2026, 14:50 UTC)
+- Phase 6 part 3 (22 Nov, PR #76, release 2026-11-22f): satcom and GNSS windows. `app/satwin_core.py` (pure, tested:
+  GEO look angle, slot from antenna azimuth, terrain horizon, uplink J/S, GNSS status, spans) and `app/satwin_api.py`
+  (`POST /api/emo/plan/windows`); Sat/GNSS card in the EMO dock; example key `windows` (schema `WINDOWS`); 0c Vestfjord
+  gains a notional red satcom uplink jammer (off the air T+40 to T+70). 216 tests pass. `main` 991ccf2 deployed on the
+  EVO (healthy, 0 restarts). Live check in private workspace p6live6 (emptied): 0c raid satcom slot 18.5 E, elevation
+  13.4 deg, terrain clear, uplink jammer J/S 15 dB, window T+40 to T+60; fighters' GNSS denied throughout, UAV windows
+  T+0-20 and T+40-120, landing craft clear; A303 users hold (Larkhill degraded from T+20); Salisbury Plain satcom clear at
+  30.9 deg. Recorded on trade (CHANGELOG, runbook 4.2) and on the Mac mini (bundle of the `main` that includes this entry;
+  see README there). Done in an interactive session with Neil; the scheduled task was disabled at 15:37 while it ran
+  (an "in progress" section in this file held off scheduled runs; removed now).
 
 - Phase 6 part 2 (22 Nov, PRs #71 to #73, release 2026-11-22e): sub-surface exposure windows. `app/exposure_core.py`
   (pure, tested: notional `MASTS`, combine, reach, dwell, `windows`, HF groundwave rule `hf_groundwave_p` with
@@ -153,7 +158,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    sea state, cloud base, icing) feeding the corridor cost.
 6. [x] **Phase 6 part 1: amphibious ship to shore** (done 22 Nov, PRs #63, #64).
 6b. [x] **Phase 6 part 2: sub-surface exposure windows** (done 22 Nov, PRs #71 to #73).
-6c. **Phase 6 part 3: satcom and GNSS windows** (dismounted and SOF done 22 Nov, PR #67: domain `foot`).
+6c. [x] **Phase 6 part 3: satcom and GNSS windows** (done 22 Nov, PR #76; dismounted and SOF done 22 Nov, PR #67).
 6d. **Phase 6 part 4: spectrum (frequency-time)** (grey (civil) corridors done 22 Nov, PR #67) (`docs/REBUILD-PLAN.md`,
    corridor table).
 7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.

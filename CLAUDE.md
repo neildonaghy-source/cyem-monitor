@@ -104,5 +104,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Amphibious (phase 6 part 1, 22 Nov 2026): corridor domain `amphib` (water to the beach, land only within 1 km of it),
   `met_core.LIMITS["amphib"]`, `breaker_height_m`, `surf` (priced round the landing point per layer; holds allowed),
   summary `beach` (relay check through the craft). Opposing comms EA lowers corridor C2 in every domain. Example 7 Studland.
+- Sub-surface exposure windows (phase 6 part 2, 22 Nov 2026): `exposure_core.py` (pure: MASTS, combine, reach, dwell,
+  windows, HF groundwave rule; tested) and `exposure_api.py` (`POST /api/emo/plan/exposure`, Exposure in the EMO dock).
+  Example `subsurface-minches` carries an `exposure` vignette (schema in `emo_examples.EXPOSURE`). Notional masts only.
 - Default screen: first run opens on the UK with live layers only; reference layers and notional EMO off (`cyem.layersv` migration).
 - Icon source and build script: `native/Icon/` (`build_icons.py` regenerates the Xcode AppIcon set and `static/icons/`).

@@ -98,6 +98,63 @@
     });
     return b;
   }
+  // ---- Exposure: sub-surface mast exposure windows (POST /api/emo/plan/exposure)
+  const expLayer = L.layerGroup().addTo(map);
+  const MASTS = [['uhf', 'UHF to the net'], ['satcom', 'UHF satcom'], ['hf', 'HF'], ['periscope', 'Periscope (no transmission)']];
+  function emoExposureClear() { if (EMO.exp) EMO.exp.res = null; expLayer.clearLayers(); document.body.dataset.expWindows = 0; }
+  function emoExposureDraw() {
+    expLayer.clearLayers(); const r = EMO.exp?.res; document.body.dataset.expWindows = r ? r.windows.length : 0; if (!r) return;
+    if (r.band) L.imageOverlay(r.band, r.bounds, { opacity: 0.8, interactive: false }).addTo(expLayer);
+    L.rectangle(r.bounds, { color: '#9aa4b2', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(expLayer);
+    r.windows.forEach((w, i) => L.circleMarker(w.at, { radius: 8, color: '#fff', weight: 2, fillColor: '#45d38a', fillOpacity: 0.9 })
+      .bindTooltip(`Window ${i + 1}: T+${w.t_from} to T+${w.t_to}, best T+${w.t_best}<br>risk ${w.risk_over_dwell}% (radar ${w.p_radar}%, ES ${w.p_esm}%), link ${w.p_link}%<br>verified: detect ${w.verified.p_detect}%${w.verified.p_link != null ? `, link ${w.verified.p_link}%` : ''}`).addTo(expLayer));
+  }
+  function emoExposureHtml(r) {
+    const s = r.summary, pc = (x) => (x == null ? '–' : `${x}%`);
+    return `<p>${esc(s.text)}</p>
+      ${r.band ? `<p><span style="color:#45d38a;opacity:.7">■</span> water clear for the dwell at T+${r.band_t} <span style="color:#45d38a">●</span> window, best cell</p>` : ''}
+      <table class="grid"><tr><th>T+</th><th>Window</th><th title="best usable cell, worst risk over the dwell">Risk</th><th>Radar</th><th>ES</th><th>Fix</th><th>Link</th><th>Clear km²</th><th>Reach km²</th><th title="radars on air; sea state">Radars</th></tr>
+      ${r.layers.map((x) => { const b = x.best || {}; return `<tr><td class="mono">${x.t}</td><td class="${x.window ? 'ok' : 'dim'}">${x.window ? 'yes' : 'no'}</td><td class="mono">${pc(b.risk_over_dwell)}</td><td class="mono">${pc(b.p_radar)}</td><td class="mono">${pc(b.p_esm)}</td><td class="mono">${pc(b.p_fix)}</td><td class="mono">${pc(b.p_link)}</td><td class="mono">${x.safe_km2}</td><td class="mono">${x.reach_km2}</td><td>${esc(x.radars.join(', ') || '–')}${x.sea_state != null ? ` <span class="dim">SS${x.sea_state}</span>` : ''}</td></tr>`; }).join('')}</table>
+      ${r.windows.length ? `<p class="dim">Verified at the best cells (exact pairwise): ${r.windows.map((w, i) => `${i + 1}: detect ${w.verified.p_detect}%${w.verified.p_link != null ? `, link ${w.verified.p_link}%` : ''}${(w.heard_by || []).length ? ` (heard by ${esc(w.heard_by.join(', '))} on the grid)` : ''}`).join('; ')}.</p>` : ''}
+      <p class="dim">Link: ${esc(r.layers[0]?.link || '')}. ${esc(r.notes)}</p>`;
+  }
+  function emoExposure() {
+    const units = EMO.ents.filter((e) => (e.side === 'blue' || e.side === 'red') && e.kind !== 'sensor');
+    if (!units.length) return emoDockCard('Exposure', '<p class="dim">No blue or red units in this scenario.</p>');
+    const c = EMO.exp = EMO.exp || { mast: 'uhf', dwell: 10, radius: 15, step: 30, layers: 6, thr: 20, speed: 10 };
+    if (!units.some((e) => e.name === c.mover)) c.mover = (units.find((e) => /SS|sub/i.test(e.name + (e.sidc || '')) && e.side === EMO.side) || units.find((e) => e.side === EMO.side) || units[0]).name;
+    const num = (id, v, min, max, w, label) => `<input id="${id}" aria-label="${label}" type="number" min="${min}" max="${max}" value="${v}" style="width:${w}px">`;
+    const b = emoDockCard('Exposure', `<div class="specset">Unit <select id="exp-unit" aria-label="Unit">${units.map((e) => `<option${e.name === c.mover ? ' selected' : ''} style="color:${SIDE_COL[e.side]}">${esc(e.name)}</option>`).join('')}</select>
+        Mast <select id="exp-mast" aria-label="Mast">${MASTS.map(([k, l]) => `<option value="${k}"${c.mast === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="specset">Up for ${num('exp-dwell', c.dwell, 1, 120, 50, 'Mast up, minutes')} min within ${num('exp-rad', c.radius, 2, 60, 50, 'Radius, km')} km
+        at ${num('exp-speed', c.speed, 1, 50, 46, 'Transit speed, km/h')} km/h</div>
+      <div class="specset">Layers every ${num('exp-step', c.step, 0, 180, 50, 'Layers every, minutes')} min × ${num('exp-n', c.layers, 1, 8, 40, 'Number of layers')}
+        risk at most ${num('exp-thr', c.thr, 1, 90, 44, 'Highest risk, %')}%
+        ${EMO.expVignette ? '<button id="exp-vig" title="Fill in the worked exposure that comes with this example">Worked vignette</button>' : ''}</div>
+      ${EMO.expVignette ? `<p class="dim">${esc(EMO.expVignette.note || '')}</p>` : ''}
+      <div class="specset"><button id="exp-go" class="primary">Find windows</button> <button id="exp-clear">Clear</button> <span id="exp-st" class="dim"></span></div>
+      <div id="exp-out">${c.res ? emoExposureHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min round the unit, with the last run's atmosphere. Notional mast profiles; screening grade.</p>`}</div>`);
+    const read = () => { c.mover = b.querySelector('#exp-unit').value; c.mast = b.querySelector('#exp-mast').value; c.dwell = +b.querySelector('#exp-dwell').value || 10;
+      c.radius = +b.querySelector('#exp-rad').value || 15; c.speed = +b.querySelector('#exp-speed').value || 10; c.step = Math.max(0, +b.querySelector('#exp-step').value || 0);
+      c.layers = Math.min(8, Math.max(1, +b.querySelector('#exp-n').value || 6)); c.thr = Math.min(90, Math.max(1, +b.querySelector('#exp-thr').value || 20)); };
+    b.querySelector('#exp-vig')?.addEventListener('click', () => {
+      const v = EMO.expVignette; read(); Object.assign(c, { mover: v.mover, mast: v.mast || c.mast, dwell: v.dwell_min || c.dwell, step: v.step_min ?? c.step, layers: v.layers || c.layers, radius: v.radius_km || c.radius, speed: v.speed_kmh || c.speed, thr: v.threshold ? Math.round(v.threshold * 100) : c.thr, res: null });
+      emoExposureDraw(); emoExposure();
+    });
+    b.querySelector('#exp-clear').addEventListener('click', () => { emoExposureClear(); emoExposure(); });
+    b.querySelector('#exp-go').addEventListener('click', async () => {
+      read(); const st = b.querySelector('#exp-st'), t0 = Date.now();
+      const tick = setInterval(() => { st.textContent = `searching… ${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+      st.innerHTML = '<span class="spinner"></span> searching…';
+      const body = { mover: c.mover, mast: c.mast, dwell_min: c.dwell, radius_km: c.radius, speed_kmh: c.speed, step_min: c.step, layers: c.layers, threshold: c.thr / 100 };
+      try {
+        c.res = await postJson(`/api/emo/plan/exposure?t_min=${EMO.t}`, body); clearInterval(tick);
+        emoExposureDraw(); if (c.res.bounds) map.fitBounds(c.res.bounds, { padding: [20, 20] });
+        if (document.getElementById('emo-dockcard')) emoExposure();
+      } catch (err) { clearInterval(tick); st.innerHTML = `<span class="bad">${esc(err.message)}</span>`; }
+    });
+    return b;
+  }
   function emoDockCard(title, html) {
     let c = document.getElementById('emo-dockcard'); if (!c) { c = document.createElement('div'); c.id = 'emo-dockcard'; document.body.appendChild(c); }
     c.innerHTML = `<div class="emo-card-head"><b>${title}</b><span class="btns"><button id="emo-dockclose">×</button></span></div><div id="emo-dockbody">${html}</div>`;
@@ -121,6 +178,7 @@
       return;
     }
     if (tool === 'corridor') { emoCorridor(); return; }
+    if (tool === 'exposure') { emoExposure(); return; }
     if (tool === 'time') { const sc = document.getElementById('emo-scrub'); if (sc) sc.classList.toggle(matchMedia('(pointer: coarse)').matches ? 'open' : 'closed'); else emoScrubber(); return; }
     if (tool === 'side') { EMO.side = EMO.side === 'blue' ? 'red' : 'blue'; localStorage.setItem('cyem-side', EMO.side); document.getElementById('emo-dock')?.remove(); emoDock(); document.getElementById('emo-dockcard')?.remove(); return; }
     if (tool === 'layers') {
@@ -228,7 +286,7 @@
   function emoDock() {
     if (EMO.hidden || document.getElementById('emo-dock') || !EMO.ents.length) return;
     const d = document.createElement('div'); d.id = 'emo-dock';
-    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
+    d.innerHTML = [['side', EMO.side === 'red' ? 'Red' : 'Blue'], ['undo', 'Undo'], ['layers', 'Overlays'], ['score', 'Score'], ['time', 'Time'], ['coa', 'COA'], ['red', 'Adv COA'], ['timeline', 'Timeline'], ['corridor', 'Corridor'], ['exposure', 'Exposure'], ['space', wsId() === 'default' ? 'Shared' : 'Device'], ['panel', 'Panel']].map(([k, l]) => `<button data-dock="${k}" style="${k === 'side' ? `border-color:${SIDE_COL[EMO.side]}` : ''}">${l}</button>`).join('');
     document.body.appendChild(d);
     d.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => emoDockTool(b.dataset.dock)));
   }
@@ -314,7 +372,7 @@
     EMO.hidden = true; EMO.playing = false; EMO.pending = false; try { EMO.abort?.abort(); } catch (e) { /* ignore */ }
     if (staleTimer) { clearInterval(staleTimer); staleTimer = null; } clearInterval(emoTick);
     EMO.focus = null; EMO.focusRes = null; EMO.multi = false; EMO.sel = []; EMO.multiRes = {}; EMO.pairRes = {}; EMO.res = null;
-    emoLayer.clearLayers(); planLayer.clearLayers(); emoCorridorClear();
+    emoLayer.clearLayers(); planLayer.clearLayers(); emoCorridorClear(); emoExposureClear();
     ['emo-chip', 'emo-dock', 'emo-dockcard', 'emo-card', 'emo-askbar', 'emo-askcard', 'emo-stale', 'emo-scrub'].forEach((id) => document.getElementById(id)?.remove());
     document.body.classList.remove('emo-hascard', 'emo-nolabels');
     if ($('#modal-title').textContent.startsWith('EMO')) $('#modal').classList.remove('show');
@@ -538,7 +596,7 @@
       try {
         emoAbortRun();
         const r = await postJson(`/api/emo/examples/${encodeURIComponent(id)}`, {});
-        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; emoCorridorClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
+        EMO.ents = r.entities; EMO.about = r.about; EMO.vignette = r.corridor || null; EMO.expVignette = r.exposure || null; emoCorridorClear(); emoExposureClear(); EMO.params = { rx_h: 2, js_req_db: 0, df_fix_good_m: 1000, met: EMO.params.met, met_time: EMO.params.met_time, ...(r.params || {}) }; EMO.t = 0; EMO.res = null; EMO.editId = null; EMO.draft = null;
         map.setView(r.centre, r.zoom); emoDraw(); await openEMO(); emoRun();
       } catch (err) { emoStatus(err.message); }
     });

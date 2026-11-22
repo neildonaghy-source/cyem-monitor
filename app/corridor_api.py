@@ -166,7 +166,7 @@ async def plan_corridor(body: CorridorIn, t_min: float = 0):
         # ES: the unit's own emissions heard by opposing sensors (reciprocity), DF fixes from two or more bearings
         P = {}
         if emits:
-            for x in sensors:
+            for x in [x for x in sensors if emo_api.on_air(x, tk)]:        # sensors keep their on-station schedules
                 lv = await level_from(mover, x, mover["eirp_dbm"], h)
                 P[x["name"]] = phi((np.nan_to_num(lv, nan=-999, neginf=-999) - (x.get("sens_dbm") or p.default_sens)) / sig)
         p_det = 1 - np.prod([1 - v for v in P.values()], axis=0) if P else zero

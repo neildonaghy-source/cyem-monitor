@@ -14,7 +14,7 @@ def test_every_example_file_loads_clean():
     assert sorted(ee.EXAMPLES) == files and len(files) >= 11
     orders = [x["order"] for x in ee.EXAMPLES.values()]
     assert orders == sorted(orders) and len(set(orders)) == len(orders)
-    assert list(ee.EXAMPLES)[:2] == ["sussex-coast", "corsham-hub"] and list(ee.EXAMPLES)[-2:] == ["cuas-vs-datalink", "amphib-studland"]
+    assert list(ee.EXAMPLES)[:2] == ["sussex-coast", "corsham-hub"] and list(ee.EXAMPLES)[-3:] == ["cuas-vs-datalink", "amphib-studland", "subsurface-minches"]
     for k in ("bg-vignette", "solent-maritime", "uas-gnss"):
         assert ee.EXAMPLES[k]["corridor"]["mover"]
 

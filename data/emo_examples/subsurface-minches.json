@@ -1,0 +1,21 @@
+{
+  "id": "subsurface-minches",
+  "order": 12,
+  "title": "8. Sub-surface exposure windows (the North Minch; notional)",
+  "about": "A blue submarine in the North Minch needs to raise a mast to talk to a notional shore control on Lewis. Red has a maritime patrol aircraft on a racetrack over the Minch (on station T+0 to T+60 and from T+120; radar and ESM), a frigate working north up the Minch with its own radar and ESM, and a second ES/DF ship off Rubha Reidh. Use Exposure in the EMO dock to find where and when a UHF, satcom or HF mast can go up, or just a periscope. All values notional.",
+  "centre": [58.0, -5.9],
+  "zoom": 9,
+  "params": {"df_fix_good_m": 3000},
+  "exposure": {"mover": "Blue SSK", "mast": "uhf", "dwell_min": 10, "step_min": 30, "layers": 6, "radius_km": 20,
+               "note": "Worked exposure (sub-surface): UHF mast up for 10 minutes within 20 km of the boat, half-hourly layers over three hours. The MPA's gap from T+60 to T+120 should open a window away from the frigate's radar; choose the forecast and run first for sea clutter."},
+  "entities": [
+    {"name": "Blue MOC UHF (Lewis)", "side": "blue", "kind": "emitter", "category": "comms", "lat": 58.19, "lon": -6.45, "h_agl": 30, "freq_mhz": 250.0, "bw_khz": 25, "eirp_dbm": 50, "sens_dbm": -110, "js_req_db": 0, "sidc": "SFGPUH---------", "notes": "Notional shore control"},
+    {"name": "Blue SSK", "side": "blue", "kind": "receiver", "net": "Blue MOC UHF (Lewis)", "lat": 58.0, "lon": -5.9, "h_agl": 2, "freq_mhz": 250.0, "bw_khz": 25, "eirp_dbm": 40, "sidc": "SFUPSS---------", "notes": "Notional submarine at periscope depth when a mast is up"},
+    {"name": "Red MPA radar", "side": "red", "kind": "emitter", "category": "radar", "lat": 58.15, "lon": -5.6, "h_agl": 1000, "freq_mhz": 9500, "bw_khz": 20000, "eirp_dbm": 88, "sidc": "SHAPMFP--------", "track": [[57.85, -6.1], [58.15, -5.6]], "speed_kmh": 350, "schedule": [[0, 60], [120, 600]], "notes": "Notional maritime patrol aircraft"},
+    {"name": "Red MPA ESM", "side": "red", "kind": "sensor", "category": "df", "lat": 58.15, "lon": -5.6, "h_agl": 1000, "freq_mhz": 2, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -110, "df_rms_deg": 5, "sidc": "SHAPMFP--------", "track": [[57.85, -6.1], [58.15, -5.6]], "speed_kmh": 350, "schedule": [[0, 60], [120, 600]]},
+    {"name": "Red frigate radar", "side": "red", "kind": "emitter", "category": "radar", "lat": 57.8, "lon": -6.05, "h_agl": 20, "freq_mhz": 9400, "bw_khz": 20000, "eirp_dbm": 85, "sidc": "SHSPCLFF-------", "track": [[58.1, -6.0]], "speed_kmh": 15},
+    {"name": "Red frigate ESM", "side": "red", "kind": "sensor", "category": "df", "lat": 57.8, "lon": -6.05, "h_agl": 25, "freq_mhz": 2, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -112, "df_rms_deg": 3, "sidc": "SHSPCLFF-------", "track": [[58.1, -6.0]], "speed_kmh": 15},
+    {"name": "Red ES/DF ship (Rubha Reidh)", "side": "red", "kind": "sensor", "category": "df", "lat": 57.9, "lon": -5.85, "h_agl": 15, "freq_mhz": 2, "f_hi_mhz": 3000, "bw_khz": 25, "sens_dbm": -110, "df_rms_deg": 3, "sidc": "SHSPCL---------"},
+    {"name": "Fishing vessel (marine VHF)", "side": "grey", "kind": "emitter", "category": "comms", "lat": 58.08, "lon": -5.7, "h_agl": 4, "freq_mhz": 156.8, "bw_khz": 25, "eirp_dbm": 44, "sidc": "SNSPXF---------"}
+  ]
+}

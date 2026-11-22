@@ -94,6 +94,7 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 | POST /plan/coa {side, coa: mlcoa or mdcoa}, POST /plan/coa/revert | Other side's response, applied and reversible |
 | POST /plan/timeline {step_min, net} | Per-step strips, advantage windows, scoreboard per step |
 | POST /plan/corridor {mover, to_lat, to_lon, domain, step_min, wait, gnss, ...} | EM manoeuvre corridor: band, legs (EMCON, holds, T+), verified worst points |
+| POST /plan/exposure {mover, mast, dwell_min, radius_km, speed_kmh, step_min, layers, threshold, ...} | Sub-surface exposure windows: risk per time layer, windows (T+, best cell, verified), clear-water overlay |
 | GET/POST /coas, POST /coas/{id}/load, DELETE /coas/{id} | Courses of action |
 | POST /ask {question, selected} | Computed plan for siting questions, else Qwen summary |
 
@@ -158,6 +159,29 @@ Only when the unit hears a control station; a control station's own users are no
   their footprint radius, as the sensors already did.
 - Worked vignettes: 2 Brecon (the patrol on foot), 0b Suwałki (a notional civil air ambulance at 600 m through
   two-sided GNSS jamming; the road below is masked by terrain, so a road evacuation shows nothing).
+
+### Sub-surface exposure windows (phase 6 part 2, 22 Nov 2026)
+
+`POST /api/emo/plan/exposure` (`app/exposure_api.py`, pure helpers in `app/exposure_core.py`), the Exposure button in the
+EMO dock. For one blue or red unit (a submarine), over the water within `radius_km` of it (or of `centre_lat/lon`),
+every `step_min` minutes for `layers` layers: the chance opposing radar (ship, shore or maritime patrol aircraft, with
+their tracks and on-station schedules) tracks the raised mast (notional cross-section, sea clutter at the mast's height
+from the forecast sea state), and if the mast transmits the chance opposing ES hears it and two or more DF sensors fix it
+(sensors keep their schedules too). Risk = radar or ES. The link the mast is raised for: `uhf` the unit's net control
+station (less opposing comms jamming); `satcom` assumed (satellite in view, uplink beam not modelled); `hf` from the
+space weather (normal 95%, degraded 60%, blackout 10%); `periscope` transmits nothing. A cell is usable when it is
+water, the boat can reach it by then at `speed_kmh`, and the link is 50% or better. A window is a layer where some
+usable cell stays at or under `threshold` for the whole dwell (the same cell held across layers when the dwell is longer
+than a step); consecutive layers merge, and each window's best cell is re-checked with the exact pairwise model.
+
+Mast profiles (`exposure_core.MASTS`, notional): periscope 1.5 m, 0.1 m²; UHF 250 MHz 40 dBm; UHF satcom 300 MHz,
+20 dBm towards the horizon; HF 8 MHz 47 dBm; masts 2 m, 0.5 m². The coverage model starts at 20 MHz, so HF interception
+is a screening rule: heard by opposing HF ES out to about 250 km over the sea (`hf_groundwave_p`); skywave interception
+by distant ES is not modelled. No bathymetry (all water is taken as deep enough), no acoustic, visual, wake or
+radar-periscope-detection modes beyond the radar term. Vignette 8, the North Minch (`subsurface-minches`): an MPA on
+station T+0 to T+60 and from T+120, a frigate working north and an ES/DF ship off Rubha Reidh.
+
+Corridors now respect sensors' on-station schedules too (an airborne ES off station no longer hears the unit).
 
 ## Known limits
 

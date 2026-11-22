@@ -3,15 +3,14 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Deploy pending (22 Nov 2026)
+## Where things are (22 Nov 2026, 03:00 UTC)
 
-- `main` 3d8d7eb (PR #57, finding 13: EMO examples as JSON) is merged and tested (167 passed) but **not deployed**: the
-  MacBook was linked, but its Tailscale was stopped, so `ssh Neil@100.91.241.55` timed out (the EVO itself was up: the
-  Funnel answered). Left alone rather than starting Tailscale on Neil's Mac. Next run: deploy first (script below), check
-  `GET /api/emo/examples` lists 11 and load one in a private workspace (then empty it), record on trade and the Mac mini,
-  tick item 4, remove this section.
-
-## Where things are (20 Nov 2026, 16:10 UTC)
+- Finding 13 (22 Nov, PRs #57, #58): the 11 EMO examples are JSON files in `data/emo_examples/<id>.json`, checked on
+  load by `app/emo_examples.check` (bad files left out and logged); `tests/test_emo_examples.py`; 167 tests pass.
+  `main` c13cd2b deployed on the EVO (healthy, 0 restarts). Live check in private workspace ex13live1: 11 examples
+  listed, no load errors, a303-gnss loaded (12 entities) and ran; emptied. Recorded on trade (CHANGELOG, runbook 4.2)
+  and on the Mac mini (`cyem-monitor-20261122-main-c13cd2b.bundle`, clone-verified, README updated; older bundles kept).
+  The deploy waited about half an hour for Tailscale on the MacBook, which Neil restarted.
 
 - Native apps 0.5.0 (20 Nov, W5): widget "CyEM status" (Kp and band, NOAA scales, GNSS interference cells, items in 24 h,
   high, latest brief; small and medium, iPhone also Lock Screen). The extension does no networking: the app writes
@@ -90,9 +89,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
    and PW_CHROME = the 1228 chrome-headless-shell): emo_smoke 15/15, ui_audit 0 issues, corridor_check all pass,
    plan_smoke 11/12 on a stale title check (fixed in #55). sdr_live_check (rewritten) and plan_smoke not yet re-run on
    2026-11-20b: the MacBook link dropped. Optional: remove the Airspy HF+ and SDRPlay entries from OpenWebRX+ on trade.
-4. [ ] **Finding 13**: move `app/emo_examples.py` scenarios to JSON files with a schema check and a test that loads them all.
-   Code merged 22 Nov (PR #57): `data/emo_examples/<id>.json`, `emo_examples.check`/`load`, `tests/test_emo_examples.py`.
-   Deploy and live check pending (see the top).
+4. [x] **Finding 13** (done 22 Nov, PRs #57, #58): scenarios moved from `app/emo_examples.py` to
+   `data/emo_examples/*.json` with a schema check on load and `tests/test_emo_examples.py`.
 5. **Phase 4 part 2**: met layer on the map (k, rain, visibility, ducts at a glance), HF availability and GNSS
    degradation per time step (space weather), sea clutter factor and platform limits (wind, sea state, cloud base,
    icing) feeding the corridor cost.
@@ -154,8 +152,6 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 
 ## Waiting for Neil
 
-- Tailscale on the MacBook was stopped on 22 Nov, so scheduled runs cannot reach the EVO. If that was not deliberate,
-  start it again; runs will not start it themselves.
 
 - Native 0.5.0 on the iPhone: Xcode on the MacBook has no Apple ID signed in at present (Settings > Accounts; the
   signed iPhone build stops with "No Accounts"). The widget also needs the App Groups capability

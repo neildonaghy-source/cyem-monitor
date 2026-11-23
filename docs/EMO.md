@@ -97,6 +97,7 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 | POST /plan/windows {terminal, sat_lon, side, step_min, horizon_min} | Satcom and GNSS windows: look angle, terrain horizon, uplink jamming; each GNSS user by step |
 | POST /plan/spectrum {net, lo_mhz, hi_mhz, step_khz, hop, step_min, horizon_min, wtr_km} | Spectrum by frequency and time: each channel, the net's own and a hop set across the band, step by step against opposing jamming; own, civil and Ofcom WTR clashes; best channels |
 | GET /plan/corridor/brief.docx | The last planned corridor as a Word brief: task, summary, environment, beach and collateral where they apply, route schematic, legs table |
+| GET /ar | For the iPhone AR view: every entity at the last run's time (T+0 if not run), on air or not, what the run found for it, and the last corridor's legs |
 | POST /plan/exposure {mover, mast, dwell_min, radius_km, speed_kmh, step_min, layers, threshold, ...} | Sub-surface exposure windows: risk per time layer, windows (T+, best cell, verified), clear-water overlay |
 | GET/POST /coas, POST /coas/{id}/load, DELETE /coas/{id} | Courses of action |
 | POST /ask {question, selected} | Computed plan for siting questions, else Qwen summary |

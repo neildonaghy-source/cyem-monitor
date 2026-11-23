@@ -108,6 +108,8 @@ through Funnel, on the internet with a log-in. Until 7 Oct 2026 it was on trade 
 - Phase 7 (23 Nov 2026): `corridor_brief.py` (Word brief of the last corridor, Ask answer with positions and legs, context
   lines); `corridor_api.plan_corridor` keeps `_LAST["corridor"]`; `GET /api/emo/plan/corridor/brief.docx`. Downloads may
   pass `?ws=` (GET only, same validation; the header wins).
+- iPhone 0.6.0 (23 Nov 2026): AR view (`native/Shared/ARScreen.swift`, `ARGeo.swift` pure and tested; server `GET /api/emo/ar`);
+  no notifications and no widget on the iPhone (Neil); the Mac app keeps both. Native rules otherwise unchanged.
 - EMO examples (22 Nov 2026, finding 13): JSON in `data/emo_examples/`, checked by `app/emo_examples.check` on load
   (bad files left out and logged); `tests/test_emo_examples.py` must stay green. Notional values only.
 - Amphibious (phase 6 part 1, 22 Nov 2026): corridor domain `amphib` (water to the beach, land only within 1 km of it),

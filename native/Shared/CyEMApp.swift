@@ -17,9 +17,6 @@ struct CyEMApp: App {
                 .preferredColorScheme(.dark)
         }
         .defaultSize(width: 1440, height: 900)
-        #if os(iOS)
-        .backgroundTask(.appRefresh(Notifier.refreshTask)) { await notifier.backgroundCheck() }
-        #endif
         .commands {
             CommandGroup(after: .toolbar) {
                 Button("Reload") { web.reload() }.keyboardShortcut("r", modifiers: .command)
@@ -47,6 +44,9 @@ struct RootView: View {
     @Environment(Tailnet.self) private var tailnet
     @Environment(Notifier.self) private var notifier
     @State private var showSettings = false
+    @State private var arWorkspace: ARLaunch?                     // iOS: the AR view, opened from the menu
+
+    struct ARLaunch: Identifiable { let workspace: String; var id: String { workspace } }
 
     var body: some View {
         ZStack {
@@ -74,6 +74,7 @@ struct RootView: View {
             Menu {
                 Button { web.reload() } label: { Label("Reload", systemImage: "arrow.clockwise") }
                 Button { model.homeTick += 1 } label: { Label("Home", systemImage: "house") }
+                Button { Task { arWorkspace = ARLaunch(workspace: await web.workspace()) } } label: { Label("AR view", systemImage: "camera.viewfinder") }
                 if let u = web.currentURL { ShareLink(item: u) { Label("Share page", systemImage: "square.and.arrow.up") } }
                 Button { showSettings = true } label: { Label("Server", systemImage: "gearshape") }
             } label: {
@@ -84,6 +85,7 @@ struct RootView: View {
         }
         .sheet(isPresented: $showSettings) { NavigationStack { SettingsView().environment(model).environment(tailnet).environment(notifier) } }
         .sheet(item: Binding(get: { web.shareFile }, set: { web.shareFile = $0 })) { f in ShareSheet(url: f.url) }
+        .fullScreenCover(item: $arWorkspace) { a in ARScreen(server: model.serverURL, workspace: a.workspace, proxy: tailnet.proxy) }
         #else
         .sheet(isPresented: $showSettings) { SettingsView().environment(model).environment(tailnet).environment(notifier).frame(width: 460).padding() }
         #endif
@@ -98,9 +100,11 @@ struct RootView: View {
         }
         .onAppear {
             tailnet.start()
+            #if os(macOS)                                            // the iPhone app has no notifications (Neil, 23 Nov)
             notifier.openInApp = { [weak web] u in web?.open(u) }
             syncNotifier()
             notifier.start()
+            #endif
         }
         .onChange(of: tailnet.generation) { syncNotifier() }
         .onChange(of: tailnet.mode) { syncNotifier() }
@@ -208,6 +212,7 @@ struct SettingsView: View {
                      ? (tailnet.hasKey ? "The app joins the tailnet by itself (\(Tailnet.nodeName)), limited to the CyEM server; no Tailscale account or app needed." : "This build has no tailnet key, so built-in Tailscale needs a Tailscale sign-in.")
                      : "The app uses this device's network: the Tailscale app on the tailnet, or from the internet the CyEM username and password.")
             }
+            #if os(macOS)
             Section {
                 Toggle("High-severity items (4 and 5)", isOn: Binding(get: { notifier.itemsOn }, set: { notifier.itemsOn = $0 }))
                 Toggle("Finished briefs", isOn: Binding(get: { notifier.briefsOn }, set: { notifier.briefsOn = $0 }))
@@ -223,6 +228,7 @@ struct SettingsView: View {
                 Text("The app asks the server every 5 minutes while it is open, and updates the widgets; in the background only when iOS allows (often hours apart). Severity is a keyword heuristic.")
                 #endif
             }
+            #endif
             Section("About") {
                 LabeledContent("App", value: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"))")
             }

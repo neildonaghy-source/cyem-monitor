@@ -12,7 +12,7 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: 747JXF57MZ
     CODE_SIGN_STYLE: Automatic
-    MARKETING_VERSION: "0.5.0"
+    MARKETING_VERSION: "0.6.0"
     CURRENT_PROJECT_VERSION: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon             # Shared/Assets.xcassets (built by Icon/build_icons.py)
@@ -30,16 +30,16 @@ targets:
       - framework: Vendor/ios/TailscaleKit.framework        # scripts/build-tailscalekit.sh
         embed: true
         codeSign: true
-      - target: CyEMWidget-iOS                             # widgets (W5), embedded in PlugIns
-    entitlements:
-      path: CyEM-iOS.entitlements
-      properties:
-        com.apple.security.application-groups: [group.com.neildonaghy.cyem]   # widget snapshot (WidgetSnapshot.Store)
+      - sdk: ARKit.framework                               # AR view (0.6.0)
+    # No widget and no notifications on the iPhone (0.6.0, Neil 23 Nov): the free team's profile carries no App Groups.
+    # The CyEMWidget-iOS target is kept below for when a profile with App Groups exists; it is not embedded.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.neildonaghy.cyem
         PRODUCT_NAME: CyEM
-        INFOPLIST_FILE: Info/iOS.plist                       # background refresh and Handoff keys, merged
+        INFOPLIST_FILE: Info/iOS.plist                       # Handoff key, merged
+        INFOPLIST_KEY_NSCameraUsageDescription: "The AR view shows the EMO scenario's units over the camera picture."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "The AR view uses your position to place the scenario's units by bearing and distance."
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: CyEM
@@ -127,6 +127,7 @@ targets:
       testTargets: [CyEMTests]
     sources:
       - Tests
+      - Shared/ARGeo.swift
       - Shared/NotifyPlan.swift
       - Shared/WidgetSnapshot.swift
       - Shared/Models.swift

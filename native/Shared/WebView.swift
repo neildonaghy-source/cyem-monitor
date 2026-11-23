@@ -26,6 +26,19 @@ final class WebController {
     /// Shows a page of the server (a Handoff from the other device, a tapped notification).
     func open(_ url: URL) { loadError = nil; view?.load(URLRequest(url: url)) }
 
+    /// The EMO workspace the web app uses (its wsId(): 'default' is shared, 'device' mode keeps a private one), so the
+    /// AR view shows the same scenario as the map.
+    func workspace() async -> String {
+        guard let v = view else { return "default" }
+        let js = "localStorage.getItem('cyem-ws-mode') === 'device' ? (localStorage.getItem('cyem-ws') || 'default') : 'default'"
+        return await withCheckedContinuation { (k: CheckedContinuation<String, Never>) in
+            v.evaluateJavaScript(js) { r, _ in
+                let s = (r as? String) ?? "default"
+                k.resume(returning: s.isEmpty ? "default" : s)
+            }
+        }
+    }
+
     #if os(macOS)
     /// File > Share…: the system share picker for the page's address.
     func sharePage() {

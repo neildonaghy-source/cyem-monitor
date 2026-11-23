@@ -954,6 +954,33 @@ async def score_now():
     return {"t": _LAST.get("t", 0), "score": _LAST.get("score"), "entities": per}
 
 
+@router.get("/ar")
+async def ar_view():
+    """Everything the iPhone AR view draws, in one answer: every entity of this workspace where it is at the last run's
+    time (T+0 positions if nothing has been run), whether it is on the air, what the run found for it (detected by,
+    jamming status, denies, target-quality fix), and the last planned corridor's legs. Read-only."""
+    ents = _all()
+    ran = bool(_LAST) and "detections" in _LAST
+    t = _LAST.get("t", 0) if ran else 0
+    pos = (_LAST.get("pos") or {}) if ran else {}
+    per = (await score_now())["entities"] if ran else {}
+    out = []
+    for e in ents:
+        la, lo = pos.get(e["id"]) or position_at(e, t)
+        f = per.get(e["id"]) or {}
+        out.append({"id": e["id"], "name": e["name"], "side": e["side"], "kind": e["kind"], "category": e.get("category"),
+                    "lat": round(la, 6), "lon": round(lo, 6), "h_agl": e.get("h_agl") or 0, "freq_mhz": e.get("freq_mhz"),
+                    "on_air": on_air(e, t), "detected_by": f.get("detected_by", []), "status": f.get("status"),
+                    "denies": f.get("denies", []), "target_quality": bool(f.get("target_quality"))})
+    c = _LAST.get("corridor") if _LAST else None
+    corr = None
+    if c:
+        corr = {"unit": c["res"].get("unit"), "side": c["res"].get("side"),
+                "legs": [{"emcon": lg.get("emcon"), "hold": bool(lg.get("hold")), "t_from": lg.get("t_from"), "path": lg.get("path") or []}
+                         for lg in c["res"].get("legs") or []]}
+    return {"t": t, "ran": ran, "entities": out, "corridor": corr}
+
+
 @router.get("/examples")
 async def examples():
     from .emo_examples import EXAMPLES

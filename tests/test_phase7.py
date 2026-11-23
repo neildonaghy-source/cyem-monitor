@@ -115,3 +115,21 @@ def test_download_names_its_workspace(emo, monkeypatch):
         assert seen["ws"] == "hdr1"                                          # the header wins
     finally:
         app.router.routes[:] = [r for r in app.router.routes if getattr(r, "path", "") != "/api/emo/_wsprobe"]
+
+
+def test_ar_view_endpoint(emo, monkeypatch):
+    """GET /api/emo/ar: positions at the last run's time, run findings and the corridor legs, for the iPhone AR view."""
+    _flat(monkeypatch)
+
+    async def before():
+        await emo.load_example("uas-gnss")
+        return await emo.ar_view()
+    a = asyncio.run(before())
+    assert a["ran"] is False and a["t"] == 0 and a["corridor"] is None and len(a["entities"]) == 9
+    assert all(x["detected_by"] == [] and x["status"] is None for x in a["entities"])
+    res = _plan(emo)                                                     # runs the scenario and plans the UAV corridor
+    a = asyncio.run(emo.ar_view())
+    assert a["ran"] is True and a["corridor"]["unit"] == "Blue UAV" and len(a["corridor"]["legs"]) == len(res["legs"])
+    uav = next(x for x in a["entities"] if x["name"] == "Blue UAV")
+    assert set(uav) >= {"lat", "lon", "h_agl", "side", "on_air", "detected_by", "status", "denies", "target_quality"}
+    assert any(x["detected_by"] for x in a["entities"]) or any(x["status"] for x in a["entities"])

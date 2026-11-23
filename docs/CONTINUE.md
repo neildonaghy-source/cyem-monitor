@@ -180,8 +180,8 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 3a. **Audit follow-ups**: closed 20 Nov (PRs #51, #55; release 2026-11-20b). UKFAT 16.30-16.36 MHz is a gap in Ofcom's own
    table (PDF page 22), reported as such. UI checks against the EVO on 20 Nov (from trade, ~/cyemui with the ha-review venv
    and PW_CHROME = the 1228 chrome-headless-shell): emo_smoke 15/15, ui_audit 0 issues, corridor_check all pass,
-   plan_smoke 11/12 on a stale title check (fixed in #55). sdr_live_check (rewritten) and plan_smoke not yet re-run on
-   2026-11-20b: the MacBook link dropped. Optional: remove the Airspy HF+ and SDRPlay entries from OpenWebRX+ on trade.
+   plan_smoke 11/12 on a stale title check (fixed in #55). sdr_live_check (rewritten) and plan_smoke re-run on 23 Nov
+   against 2026-11-23a from trade (`~/cyemui/20261123b`): 7 and 12 PASS. Optional: remove the Airspy HF+ and SDRPlay entries from OpenWebRX+ on trade.
 4. [x] **Finding 13** (done 22 Nov, PRs #57, #58): scenarios moved from `app/emo_examples.py` to
    `data/emo_examples/*.json` with a schema check on load and `tests/test_emo_examples.py`.
 5. [x] **Phase 4 part 2** (done 22 Nov, PRs #60, #61): met layer on the map,

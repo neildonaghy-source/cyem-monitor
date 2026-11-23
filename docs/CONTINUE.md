@@ -3,7 +3,22 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (23 Nov 2026, 01:00 UTC)
+## Where things are (23 Nov 2026, 01:15 UTC)
+
+- **Every item under "Next" is done** (phase 7 on 23 Nov). The scheduled task "CyEM rebuild: continue" has been off
+  since Neil disabled it at 15:37 on 22 Nov; with nothing left under "Next" it should stay off unless new items are added.
+  Not built: the AR overlay in phase 7's row of `docs/REBUILD-PLAN.md` ("if the apps return"); it was never under "Next".
+
+- Phase 7 (23 Nov, PR #84, release 2026-11-23a): Word corridor brief and Ask answers with positions and legs.
+  `app/corridor_brief.py` (`brief_docx`, `ask_answer`, `context_lines`); `corridor_api.plan_corridor` keeps
+  `_LAST["corridor"]`; `GET /api/emo/plan/corridor/brief.docx`; Word brief button in the Corridor card; Ask answers route
+  questions from the plan with no language model. Fix: downloads name their workspace with `?ws=` (the EMO briefing and
+  COA annex from a private workspace used to come from the shared one). 229 tests pass. `main` 63de1a9 deployed on the
+  EVO (healthy, 0 restarts). Live check in private workspace p7live1 (emptied): UAS corridor 15.1 km in 3 legs; Ask listed
+  all 3 with positions and verified checks; the Word brief (48 KB, legs table and schematic) came through the `?ws=` link
+  and the shared workspace gave 409 for the same link. From trade (`~/cyemui/20261123a`): corridor_check 12 PASS,
+  ui_audit 45 PASS, 0 FAIL. Recorded on trade (CHANGELOG, runbook 4.2) and on the Mac mini (bundle of `main` at this
+  entry; see the README there).
 
 - Phase 6 part 4 (22 Nov, PR #81, release 2026-11-22h): spectrum by frequency and time. `app/fqt_core.py` (pure,
   tested: band defaults, channel grid, net status, ranking) and `app/fqt_api.py` (`POST /api/emo/plan/spectrum`: levels
@@ -176,7 +191,7 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 6b. [x] **Phase 6 part 2: sub-surface exposure windows** (done 22 Nov, PRs #71 to #73).
 6c. [x] **Phase 6 part 3: satcom and GNSS windows** (done 22 Nov, PR #76; dismounted and SOF done 22 Nov, PR #67).
 6d. [x] **Phase 6 part 4: spectrum (frequency-time)** (done 22 Nov, PR #81; grey (civil) corridors done 22 Nov, PR #67).
-7. **Phase 7**: Word corridor brief, Ask answers with positions and legs.
+7. [x] **Phase 7**: Word corridor brief, Ask answers with positions and legs (done 23 Nov, PR #84).
 
 ## How to work
 

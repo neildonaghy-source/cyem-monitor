@@ -3,12 +3,7 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (22 Nov 2026, 16:40 UTC)
-
-- **Still to do from phase 6 part 4 (the MacBook link dropped at 16:35):** read the browser checks that were left
-  running on trade (`~/cyemui/20261122h/{spectrum,windows,corridor}_check.log`, `~/cyemui/out/ui_audit-20261122h.log`;
-  each check empties its own workspace) and make the Mac mini bundle for `main` at this entry. Trade's CHANGELOG and
-  runbook 4.2 are done. The scheduled task "CyEM rebuild: continue" was disabled by Neil at 15:37 and is still off.
+## Where things are (23 Nov 2026, 01:00 UTC)
 
 - Phase 6 part 4 (22 Nov, PR #81, release 2026-11-22h): spectrum by frequency and time. `app/fqt_core.py` (pure,
   tested: band defaults, channel grid, net status, ranking) and `app/fqt_api.py` (`POST /api/emo/plan/spectrum`: levels
@@ -19,7 +14,10 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
   (emptied): the battlegroup net is denied on its own channel throughout (J/S 37 dB) and by 5 dB even as a hop set;
   33 of 49 channels outside the 40-60 MHz barrage clear; the Bowman hopper at Suwałki denied by the barrage (J/S 3 dB);
   WTR on real data: 9 of 49 channels in 150-175 MHz have business radio licences within 30 km of the Plain (none in
-  30-88 MHz). Phase 6 is complete. Recorded on trade (CHANGELOG, runbook 4.2).
+  30-88 MHz). Phase 6 is complete. Recorded on trade (CHANGELOG, runbook 4.2) and on the Mac mini
+  (`cyem-monitor-20261122-main-e6f7adf.bundle`, clone-verified, README updated; older bundles kept). From trade
+  (`~/cyemui/20261122h`): spectrum_check 7, windows_check 8, corridor_check 12, ui_audit 45 PASS, 0 FAIL (read on 23 Nov
+  after the MacBook link came back). The scheduled task "CyEM rebuild: continue" is still off (Neil, 15:37 on 22 Nov).
 
 - Phase 6 part 3 (22 Nov, PR #76, release 2026-11-22f): satcom and GNSS windows. `app/satwin_core.py` (pure, tested:
   GEO look angle, slot from antenna azimuth, terrain horizon, uplink J/S, GNSS status, spans) and `app/satwin_api.py`

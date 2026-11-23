@@ -68,7 +68,8 @@
         ${EMO.vignette ? '<button id="corr-vig" title="Fill in the worked corridor that comes with this example">Worked vignette</button>' : ''}</div>
       ${EMO.vignette ? `<p class="dim" id="corr-vignote">${esc(EMO.vignette.note || '')}</p>` : ''}
       <div class="specset"><button id="corr-pick">Pick destination</button> <span id="corr-to" class="mono dim">${c.to ? `${c.to[0]}, ${c.to[1]}` : 'none'}</span>
-        <button id="corr-go" class="primary"${c.to ? '' : ' disabled'}>Plan</button> <button id="corr-clear">Clear</button> <span id="corr-st" class="dim"></span></div>
+        <button id="corr-go" class="primary"${c.to ? '' : ' disabled'}>Plan</button> <button id="corr-clear">Clear</button>
+        ${c.res ? `<a href="/api/emo/plan/corridor/brief.docx?ws=${encodeURIComponent(wsId())}" download><button title="The planned corridor as a Word brief: task, summary, route schematic, legs">Word brief</button></a>` : ''} <span id="corr-st" class="dim"></span></div>
       <div id="corr-out">${c.res ? emoCorridorHtml(c.res) : `<p class="dim">From T+${Math.round(EMO.t)} min, with the last run's atmosphere. Notional data; screening grade.</p>`}</div>`);
     const read = () => { c.mover = b.querySelector('#corr-unit').value; c.domain = b.querySelector('#corr-dom').value; c.alt = +b.querySelector('#corr-alt').value || 150;
       c.speed = b.querySelector('#corr-speed').value; c.emcon = b.querySelector('#corr-emcon').value; c.silent = Math.max(0, +b.querySelector('#corr-sil').value || 0);
@@ -296,7 +297,7 @@
     } else if (tool === 'score') {
       emoDockCard('Scoreboard', emoScoreTable(EMO.res) + (EMO.stale ? '<p class="dim">Stale: run again after moves.</p>' : ''));
     } else if (tool === 'coa') {
-      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" aria-label="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button> <a href="/api/emo/coas/export.docx" download><button>Word annex</button></a></p><div id="emo-dockcoalist"></div>`);
+      const b = emoDockCard('Courses of action', `<p><input id="emo-dockcoaname" placeholder="COA name" aria-label="COA name" style="width:140px"> <button id="emo-dockcoasave">Save current</button> <a href="/api/emo/coas/export.docx?ws=${encodeURIComponent(wsId())}" download><button>Word annex</button></a></p><div id="emo-dockcoalist"></div>`);
       const box = b.querySelector('#emo-dockcoalist');
       b.querySelector('#emo-dockcoasave').addEventListener('click', async () => { if (await emoCoaSave(b.querySelector('#emo-dockcoaname'))) emoCoaList(box); });
       emoCoaList(box);
@@ -694,7 +695,7 @@
       e.preventDefault();
       const ph = $('#emo-phases').value.split(/[,\s]+/).filter((x) => x !== '' && !isNaN(+x)).join(',') || '0';
       emoStatus('Building briefing… (download starts when ready)');
-      window.location.href = `/api/emo/export.docx?phases=${encodeURIComponent(ph)}&df_fix_good_m=${EMO.params.df_fix_good_m}`;
+      window.location.href = `/api/emo/export.docx?phases=${encodeURIComponent(ph)}&df_fix_good_m=${EMO.params.df_fix_good_m}&ws=${encodeURIComponent(wsId())}`;
     });
     $('#emo-ask').addEventListener('click', () => { const q = $('#emo-askq').value.trim(); if (q.length >= 2) emoAskStream(q, $('#emo-askout')); });
     $('#emo-ex-go').addEventListener('click', async () => {

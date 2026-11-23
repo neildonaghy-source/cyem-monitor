@@ -83,6 +83,31 @@ def _cell(LA, LO, pt):
 
 @router.post("/corridor")
 async def plan_corridor(body: CorridorIn, t_min: float = 0):
+    """Plan a corridor and keep it as this workspace's last corridor (for the Word brief and Ask)."""
+    from . import emo_api
+    res = await _plan_corridor(body, t_min)
+    emo_api._LAST["corridor"] = {"in": body.model_dump(), "t_min": t_min, "res": res}
+    return res
+
+
+@router.get("/corridor/brief.docx")
+async def corridor_brief():
+    """The workspace's last planned corridor as a Word brief (no re-planning)."""
+    from datetime import datetime, timezone
+    from fastapi.responses import StreamingResponse
+    from . import corridor_brief as cb
+    from . import emo_api
+    c = emo_api._LAST.get("corridor")
+    if not c:
+        raise HTTPException(409, "plan a corridor first (Corridor in the EMO dock)")
+    data = cb.brief_docx(c, emo_api._all(), emo_api._LAST.get("pos") or {}, emo_api.met_line(emo_api._LAST.get("met")),
+                         emo_api.MODEL_CAVEAT)
+    name = f"CyEM-corridor-{c['res'].get('unit', 'unit').replace(' ', '-')[:30]}-{datetime.now(timezone.utc):%Y%m%d-%H%MZ}.docx"
+    return StreamingResponse(iter([data]), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+async def _plan_corridor(body: CorridorIn, t_min: float = 0):
     from . import dem
     from .emo_plan import _ctx, _pseudo
     from .ems_core import overlay_png, region_masks, sample

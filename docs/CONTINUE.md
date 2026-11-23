@@ -3,7 +3,16 @@
 A scheduled task runs this after each usage reset. Each run does **one slice** from "Next" below, end to end, then
 updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British English, plain, no marketing tone.
 
-## Where things are (23 Nov 2026, 01:15 UTC)
+## Where things are (23 Nov 2026, 01:50 UTC)
+
+- iPhone 0.6.0 (23 Nov, PR #87, Neil's request): AR view rebuilt (`native/Shared/ARScreen.swift`, `ARGeo.swift` with
+  5 XCTests; server `GET /api/emo/ar`, deployed in `main` bd0e0ac, live-checked in private workspace arlive1, emptied);
+  no notifications and no widget on the iPhone (the Mac app keeps both, still 0.5.0 installed). Built on the MacBook,
+  signed after Neil signed in to Xcode with a fresh profile valid to 30 Nov 07:03 (the old one, to 26 Nov, moved to
+  `~/Library/Developer/Xcode/UserData/Provisioning Profiles.bak-20261123`, not deleted), installed on Neil's iPhone.
+  Not yet tried outdoors. 230 pytest and 16 XCTests pass. Recorded on trade (CHANGELOG, runbook 4.2). Neil asked why
+  OpenWebRX+ on trade lists an Airspy HF+ and an SDRplay: they are the image's built-in example receivers, shown because
+  the settings volume holds `{}`; fixing it means writing a settings file with only the RTL-SDR (Neil's call).
 
 - **Every item under "Next" is done** (phase 7 on 23 Nov). The scheduled task "CyEM rebuild: continue" has been off
   since Neil disabled it at 15:37 on 22 Nov; with nothing left under "Next" it should stay off unless new items are added.
@@ -248,14 +257,10 @@ updates this file and `docs/REBUILD-PLAN.md`, and stops. Write for Neil: British
 ## Waiting for Neil
 
 
-- Native 0.5.0 on the iPhone: Xcode on the MacBook has no Apple ID signed in at present (Settings > Accounts; the
-  signed iPhone build stops with "No Accounts"). The widget also needs the App Groups capability
-  (`group.com.neildonaghy.cyem`); a free personal team may refuse it. If it does, the choice is the paid developer
-  programme (money: Neil's call) or iPhone without widgets (drop the entitlement on iOS). The 0.4.0 iPhone build expires
-  27 Nov. On the Mac, add the widget: right-click the desktop > Edit Widgets > CyEM.
+- iPhone 0.6.0 expires 30 Nov 07:03 (free team, 7 days): rebuild and reinstall from the MacBook before then
+  (`native/README.md`); Xcode now has Neil's Apple ID. Try the AR view outdoors (menu > AR view; allow camera and
+  location once) and say what is off. On the Mac, add the widget if wanted: right-click the desktop > Edit Widgets > CyEM.
 
-- Native 0.4.0: allow notifications for CyEM when asked (Mac: the prompt on first launch, or System Settings >
-  Notifications > CyEM; iPhone: on first open). Then Settings > Notifications > Check now shows the last check; the next
-  high-severity item or brief should appear as a notification. Tell the next run if none arrive.
+- OpenWebRX+ on trade: write a settings file with only the RTL-SDR so the Airspy HF+ and SDRplay examples go? (Neil.)
 
 - EMO examples on real sites (0e Corsham, 0d Thorney Island, Boscombe Down): Neil said leave them (19 Nov).

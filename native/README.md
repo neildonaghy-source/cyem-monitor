@@ -28,7 +28,8 @@ xcrun devicectl device install app --device <iPhone id> build/Build/Products/Deb
 ```
 
 The iPhone build needs an Apple ID in Xcode (Settings > Accounts) to make the development profile; without one xcodebuild
-stops with "No Accounts". With a free (personal) team the iPhone build expires after 7 days: rebuild and reinstall. Compile check without signing:
+stops with "No Accounts". With a free (personal) team the iPhone build expires after 7 days: rebuild and reinstall. Xcode renews the profile only near its expiry; to get a full 7 days now, move the old
+profile out of `~/Library/Developer/Xcode/UserData/Provisioning Profiles` first (23 Nov: kept in `Provisioning Profiles.bak-20261123`). Compile check without signing:
 `-destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO`.
 
 ## How it works
@@ -68,7 +69,18 @@ stops with "No Accounts". With a free (personal) team the iPhone build expires a
   `group.com.neildonaghy.cyem`) and asks WidgetKit to redraw. The widget shows the age of the snapshot and turns amber
   ("Stale") after 30 minutes, i.e. when the app is not running or cannot reach the server. Settings shows "Widgets
   updated". Add it from the desktop (Mac: right-click the desktop > Edit Widgets) or the Home Screen.
-- `APIClient.swift` and `Models.swift` serve notifications and widgets; the interface does not use them.
+- iPhone 0.6.0 (23 Nov): no notifications and no widget on the iPhone (Neil asked for no notifications; the free team's
+  profile carries no App Groups, which the widget needs). The Mac app keeps both. `Notifier` is not started on iOS, the
+  background refresh keys are gone from `Info/iOS.plist`, and the iOS target no longer embeds `CyEMWidget-iOS`.
+- AR view (iPhone, 0.6.0; menu > AR view): `ARScreen.swift` runs ARKit with its world aligned to gravity and true north
+  (`.gravityAndHeading`: +x east, +y up, -z north) and CoreLocation for the phone's position, and asks
+  `GET /api/emo/ar` (the web app's workspace, read from its localStorage) for every unit where it is at the last run's
+  time, what the run found (heard by, jamming status, denies, target-quality fix) and the last planned corridor. Each
+  frame the units are placed by bearing, distance and height (`ARGeo.swift`, pure, tested: local tangent plane plus the
+  earth's curve, far points pulled in to 200 m along their direction) and drawn as labels over the camera; the corridor
+  as a dashed line (amber transmit, green silent). Filters: sides, range 1-100 km. Accuracy is the compass's (a few
+  degrees; close and reopen to realign) and the GPS's; no terrain on the phone, heights are above local ground.
+- `APIClient.swift` and `Models.swift` serve notifications, widgets and the AR view; the web interface does not use them.
 - Tests: `xcodebuild -project CyEM.xcodeproj -scheme CyEMTests -destination platform=macOS -derivedDataPath build test`
   (NotifyPlan and WidgetSnapshot: no app host, no TailscaleKit).
 

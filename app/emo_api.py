@@ -1124,6 +1124,8 @@ def scenario_context(selected: list[str] | None = None) -> str:
     L = [f"Time T+{_LAST['t']:g} min. A fix is TARGET-QUALITY FIX if its error is within {thr:g} m.",
          "ATMOSPHERE: " + met_line(_LAST.get("met")),
          "SPACE WEATHER: " + ((_LAST.get("space") or {}).get("text") or "not assessed")]
+    from .corridor_brief import context_lines
+    L += context_lines(_LAST.get("corridor"))
     for side in ("blue", "red"):
         tg = [f for f in fx if f["target_side"] == side and f["targetable"]]
         nt = [f for f in fx if f["target_side"] == side and not f["targetable"]]
@@ -1296,6 +1298,19 @@ class AskIn(BaseModel):
 async def emo_ask(req: AskIn):
     from fastapi.responses import StreamingResponse
     from . import llm
+    from . import corridor_brief
+    q = req.question.lower()
+    if any(w in q for w in corridor_brief.CORRIDOR_WORDS):
+        c = _LAST.get("corridor")
+        text = corridor_brief.ask_answer(c) if c else (
+            "**No corridor planned yet.** Open Corridor in the EMO dock, choose the unit, its domain and the destination, "
+            "and Plan; then ask again and the answer will give the route's positions and legs.")
+        from fastapi.responses import StreamingResponse as _SRc
+
+        async def gen_corr():
+            yield f"data: {json.dumps({'t': text})}\n\n"
+            yield "data: {\"done\": true}\n\n"
+        return _SRc(gen_corr(), media_type="text/event-stream")
     plan = await _plan_facts(req.question, req.selected)
     if plan and not plan.startswith("COMPUTED PLAN: none"):
         from fastapi.responses import StreamingResponse as _SR

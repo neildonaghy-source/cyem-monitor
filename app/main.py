@@ -109,7 +109,8 @@ def _undo_label(method: str, path: str) -> str | None:
 async def cyem_ws_middleware(request, call_next):
     """Scenario workspace for EMO: 'default' is shared; a device can use its own via the X-CyEM-WS header."""
     from .emo_api import WS
-    ws = (request.headers.get("x-cyem-ws") or "default").strip()[:40]
+    # downloads (a plain link cannot send a header) may name the workspace as ?ws=; same validation as the header
+    ws = (request.headers.get("x-cyem-ws") or (request.query_params.get("ws") if request.method == "GET" else None) or "default").strip()[:40]
     token = WS.set(ws if ws.replace("-", "").isalnum() else "default")
     label = _undo_label(request.method, request.url.path)
     snap = None

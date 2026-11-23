@@ -69,7 +69,7 @@ Phase 4 part 2 (22 Nov 2026):
 4. **Plan (EP):** focus a net control station. *Find a better site* draws the score map (green good). *Tune* gives the power cut, best sector antenna and clear channels, each with Apply. *Joint re-site* moves users then control, verified with the exact model.
 5. **Plan (EA):** focus a jammer, pick the target net, *Best site to deny it*.
 6. **Stress-test:** panel, *Other side's response*: **MLCOA** (at most two modest moves) or **MDCOA** (every jammer and DF site re-sited against your highest-value net). Compare COAs; **Revert**.
-7. **Ask:** the bar on the map. Siting questions with a selection return a computed plan (no language model); other questions get a Qwen summary of the facts (treat the prose as a summary, the tables as authority).
+7. **Ask:** the bar on the map. Route questions (corridor, route, transit, infiltration, ingress, egress, "path to", "get to", "which way", "best way") are answered straight from the last planned corridor: summary, start and destination in lat/lon and degrees-minutes, every leg with T+, positions, EMCON and the verified checks (no language model). Siting questions with a selection return a computed plan (no language model); other questions get a Qwen summary of the facts, which now include the planned corridor's legs (treat the prose as a summary, the tables as authority).
 8. **Brief:** Export (Word) from the panel.
 
 Scenario space: *Shared (all devices)* or *This device only* (private per device, its own analyses and COAs).
@@ -96,6 +96,7 @@ Scenario space: *Shared (all devices)* or *This device only* (private per device
 | POST /plan/corridor {mover, to_lat, to_lon, domain, step_min, wait, gnss, ...} | EM manoeuvre corridor: band, legs (EMCON, holds, T+), verified worst points |
 | POST /plan/windows {terminal, sat_lon, side, step_min, horizon_min} | Satcom and GNSS windows: look angle, terrain horizon, uplink jamming; each GNSS user by step |
 | POST /plan/spectrum {net, lo_mhz, hi_mhz, step_khz, hop, step_min, horizon_min, wtr_km} | Spectrum by frequency and time: each channel, the net's own and a hop set across the band, step by step against opposing jamming; own, civil and Ofcom WTR clashes; best channels |
+| GET /plan/corridor/brief.docx | The last planned corridor as a Word brief: task, summary, environment, beach and collateral where they apply, route schematic, legs table |
 | POST /plan/exposure {mover, mast, dwell_min, radius_km, speed_kmh, step_min, layers, threshold, ...} | Sub-surface exposure windows: risk per time layer, windows (T+, best cell, verified), clear-water overlay |
 | GET/POST /coas, POST /coas/{id}/load, DELETE /coas/{id} | Courses of action |
 | POST /ask {question, selected} | Computed plan for siting questions, else Qwen summary |
@@ -226,6 +227,16 @@ one net's control station and steps through time from T+t (units on their tracks
   its channel; WTR round the Plain), 0b Suwałki (the Bowman hopping division net against a 35-55 MHz barrage).
 - Browser checks: `tests/ui/windows_check.py` (Sat/GNSS, private workspace wincheck1) and `tests/ui/spectrum_check.py`
   (private workspace speccheck1), each emptied at the end.
+
+### Corridor brief and Ask (phase 7, 23 Nov 2026)
+
+- Every corridor plan is kept as the workspace's last corridor (`_LAST["corridor"]`; cleared when an example or
+  scenario is loaded). **Word brief** in the Corridor card (`GET /api/emo/plan/corridor/brief.docx`,
+  `app/corridor_brief.py`): task, summary, the met, space weather and limits lines, beach and GNSS collateral where they
+  apply, a route schematic (legs by EMCON over the units, no basemap) and the legs table. Nothing is re-planned.
+- Ask answers route questions from the same plan, with positions and legs, and says how to plan one if none exists.
+- Downloads can name their workspace with `?ws=` (a plain link cannot send `X-CyEM-WS`); the header wins when both are
+  sent. Before this, the briefing and COA exports from a private workspace came from the shared one.
 
 ## Known limits
 
